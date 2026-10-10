@@ -35,14 +35,14 @@ func TestMigrateTwiceIsANoop(t *testing.T) {
 		}
 	}
 	var n int
-	if err := pool.QueryRow(ctx, "select count(*) from schema_migrations where version = 'migrations/001_purge.sql'").Scan(&n); err != nil {
+	if err := pool.QueryRow(ctx, "select count(*) from schema_migrations where version = 'migrations/001_module_off.sql'").Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	if n != 1 {
 		t.Fatalf("001 recorded %d times, want 1", n)
 	}
-	if _, err := pool.Exec(ctx, "select p.ids, c.read_through, c.threads_listed_at from purge_postings p, purge_channels c limit 0"); err != nil {
-		t.Fatalf("the purge index: %v", err)
+	if _, err := pool.Exec(ctx, "select guild_id, module from module_off limit 0"); err != nil {
+		t.Fatalf("module_off: %v", err)
 	}
 }
 
@@ -92,7 +92,7 @@ func TestModuleSwitchesRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	save := SaveModule(pool)
-	s := core.Switch{Guild: 1 << 60, Module: "preen"}
+	s := core.Switch{Guild: 1 << 60, Module: "perf"}
 	for _, on := range []bool{false, false} {
 		if err := save(ctx, s, on); err != nil {
 			t.Fatal(err)
