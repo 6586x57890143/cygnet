@@ -32,6 +32,7 @@ import (
 	"github.com/6586x57890143/cygnet/internal/intents"
 	"github.com/6586x57890143/cygnet/internal/modules/help"
 	"github.com/6586x57890143/cygnet/internal/modules/perf"
+	"github.com/6586x57890143/cygnet/internal/modules/provision"
 	"github.com/6586x57890143/cygnet/internal/modules/status"
 	"github.com/6586x57890143/cygnet/internal/obs"
 	"github.com/6586x57890143/cygnet/internal/ratelimit"
@@ -134,12 +135,16 @@ func run(log *slog.Logger) error {
 	})
 	// The hub runs only where birds are configured, and listens only on the
 	// fleet's private network: never published, never behind a public name.
+	// provision reads the fleet through it; a nil interface, not a nil *Hub,
+	// when it is off.
+	var fleet provision.Fleet
 	if v := os.Getenv("CYGNET_BOTS"); v != "" {
 		bots, err := hub.Parse(v)
 		if err != nil {
 			return err
 		}
 		h := hub.New(bots, log)
+		fleet = h
 		st.WithFleet(h.Fleet)
 		srv := &http.Server{Addr: env("CYGNET_HUB_ADDR", ":7700"), Handler: h, ReadHeaderTimeout: 5 * time.Second}
 		go func() {
@@ -154,6 +159,7 @@ func run(log *slog.Logger) error {
 	all := []core.Module{
 		st,
 		perf.New(obs.Default),
+		provision.New(fleet, func() discord.Permissions { return core.Install(running).Permissions }, func(i discord.Interaction) bool { return router.Admin(i) }),
 		help.New(func() []core.Module { return running }, func(i discord.Interaction) bool { return router.Admin(i) }, toggles),
 	}
 

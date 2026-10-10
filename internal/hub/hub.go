@@ -369,6 +369,36 @@ func (h *Hub) fanout(from *peer, f link.Frame) {
 	}
 }
 
+// Call is cygnet calling a bird herself, as /provision does for a bird's
+// manifest: routed like any bird's call, from Self, with ctx's deadline.
+func (h *Hub) Call(ctx context.Context, method string, in, out any) error {
+	f := link.Frame{V: link.V, ID: link.NewID(), Kind: link.KindCall, Method: method}
+	if in != nil {
+		body, err := json.Marshal(in)
+		if err != nil {
+			return err
+		}
+		f.Body = body
+	}
+	if d, ok := ctx.Deadline(); ok {
+		f.Deadline = d.UnixMilli()
+	}
+	got := make(chan link.Frame, 1)
+	h.route(ctx, Self, f, func(r link.Frame) { got <- r })
+	select {
+	case r := <-got:
+		if r.Err != nil {
+			return r.Err
+		}
+		if out != nil && len(r.Body) > 0 {
+			return json.Unmarshal(r.Body, out)
+		}
+		return nil
+	case <-ctx.Done():
+		return link.Err(link.Timeout)
+	}
+}
+
 // builtin answers calls to cygnet itself.
 func (h *Hub) builtin(verb string) (json.RawMessage, *link.Error) {
 	switch verb {

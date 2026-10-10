@@ -12,6 +12,32 @@ import (
 // and kept here as text so a change is reviewable. The source icon is
 // named beside each.
 var moduleGlyphs = map[string][]string{
+	"provision": { // drawn here on pixelarticons' grid: three sliders
+		"........................",
+		"........................",
+		"........................",
+		"..............wwww......",
+		"..............wwww......",
+		"..wwwwwwwwwwwwwwwwwwww..",
+		"..wwwwwwwwwwwwwwwwwwww..",
+		"..............wwww......",
+		"..............wwww......",
+		"......wwww..............",
+		"......wwww..............",
+		"..wwwwwwwwwwwwwwwwwwww..",
+		"..wwwwwwwwwwwwwwwwwwww..",
+		"......wwww..............",
+		"......wwww..............",
+		"................wwww....",
+		"................wwww....",
+		"..wwwwwwwwwwwwwwwwwwww..",
+		"..wwwwwwwwwwwwwwwwwwww..",
+		"................wwww....",
+		"................wwww....",
+		"........................",
+		"........................",
+		"........................",
+	},
 	"status": { // analytics
 		"........................",
 		"........................",

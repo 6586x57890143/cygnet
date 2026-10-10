@@ -432,3 +432,26 @@ func TestManifest(t *testing.T) {
 		t.Fatal("a linked client reads as unlinked")
 	}
 }
+
+// cygnet calls a bird herself and gets its answer, or why not.
+func TestHubCall(t *testing.T) {
+	h, url := fleet(t)
+	bird(t, url, "skua", func(c *link.Client) {
+		c.Handle(link.ManifestMethod, func(context.Context, link.Call) (any, error) {
+			return link.Manifest{Build: "abc", Perms: "1024"}, nil
+		})
+	})
+	linked(t, h, "skua")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var m link.Manifest
+	if err := h.Call(ctx, "skua."+link.ManifestMethod, nil, &m); err != nil || m.Build != "abc" || m.Perms != "1024" {
+		t.Fatalf("got %+v, %v", m, err)
+	}
+	code(t, h.Call(ctx, "merlin."+link.ManifestMethod, nil, nil), link.Offline)
+	code(t, h.Call(ctx, "skua.nope", nil, nil), link.Invalid)
+	if h.Call(ctx, "skua.manifest", func() {}, nil) == nil {
+		t.Fatal("a body that will not marshal went out")
+	}
+}
