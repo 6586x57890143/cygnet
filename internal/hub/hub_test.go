@@ -149,6 +149,13 @@ func TestRefusals(t *testing.T) {
 	short, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
 	defer cancel()
 	code(t, skua.Call(short, "merlin.hold", nil, nil), link.Timeout)
+	// The caller can give up a moment before the hub's own timer at the same
+	// deadline frees merlin's slot.
+	for deadline := time.Now().Add(5 * time.Second); h.Fleet()[0].Inflight != 0; time.Sleep(time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the timed out call never freed its slot")
+		}
+	}
 
 	// merlin takes two at once (Inflight: 2); the third is refused.
 	errs := make(chan error, 2)
