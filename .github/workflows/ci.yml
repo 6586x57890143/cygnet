@@ -38,6 +38,8 @@ jobs:
           go-version-file: go.mod
           check-latest: true
       - run: go vet ./...
+      # link is its own module, so the birds import it without cygnet.s deps.
+      - run: go -C link vet ./... && go -C link test -race ./...
       - uses: golangci/golangci-lint-action@v9
         with:
           version: v2.13.1
@@ -177,6 +179,7 @@ jobs:
             set -e
             cd "$VPS_DIR"
             test -f .env || { echo "$VPS_DIR/.env is missing; run tools/setup against this host"; exit 1; }
+            docker network inspect fleet >/dev/null 2>&1 || docker network create fleet >/dev/null
             export CYGNET_IMAGE_TAG="$IMAGE_TAG"
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
             docker compose -f docker-compose.prod.yml pull bot
