@@ -363,6 +363,11 @@ func TestLeavingAndReplacing(t *testing.T) {
 	if f, err := link.Read(context.Background(), conn); err != nil || f.Kind != link.KindGoaway {
 		t.Fatalf("Close: %+v %v", f, err)
 	}
+	for deadline := time.Now().Add(5 * time.Second); skua.Linked(); time.Sleep(time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("skua still reads as linked after the hub went away")
+		}
+	}
 }
 
 // raw is a hand-driven link as name, past its welcome.
@@ -397,5 +402,26 @@ func BenchmarkCall(b *testing.B) {
 		if err := skua.Call(ctx, "merlin.ping", nil, nil); err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+// A manifest crosses the hub intact: what /provision will read.
+func TestManifest(t *testing.T) {
+	h, url := fleet(t)
+	want := link.Manifest{Build: "abc", Perms: "2048", Intents: 1, Commands: []link.Command{{Name: "status", Tier: link.Admin}}}
+	bird(t, url, "skua", func(c *link.Client) {
+		c.Handle(link.ManifestMethod, func(context.Context, link.Call) (any, error) { return want, nil })
+	})
+	merlin := bird(t, url, "merlin", nil)
+	linked(t, h, "merlin", "skua")
+	var got link.Manifest
+	if err := merlin.Call(context.Background(), "skua."+link.ManifestMethod, nil, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Build != want.Build || got.Perms != want.Perms || got.Intents != 1 || len(got.Commands) != 1 || got.Commands[0] != want.Commands[0] {
+		t.Fatalf("got %+v", got)
+	}
+	if !merlin.Linked() {
+		t.Fatal("a linked client reads as unlinked")
 	}
 }

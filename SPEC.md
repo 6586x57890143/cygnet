@@ -61,6 +61,9 @@ The contract every bird speaks, the same over the WebSocket and `POST /v1/call`.
   refused `busy` at once rather than queued.
 - **Draining.** `goaway` before a deploy: the bot stops taking calls, finishes what it
   holds and closes, and its leases go to whoever can take them.
+- **Every bird has a manifest.** `<bot>.manifest` answers `link.Manifest`: build, the union
+  of its running modules' permissions, its intents and each command with its tier
+  (`public`, `admin`, `breakglass`). `/provision` reads these, never a copy.
 - **Bots never talk to each other through Discord.** Interop is the hub's job; a bird
   ignores other bots' messages, so no two of them can loop in a channel.
 
