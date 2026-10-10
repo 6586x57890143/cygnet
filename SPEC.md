@@ -1,19 +1,59 @@
 # cygnet spec
 
-cygnet is the fleet's coordinator: a private Discord bot that every other bot (skua,
-merlin, peregrine) connects to so they can call each other, and that provisions
-Discord servers for them. It is built from skua's spine and keeps skua's habits:
-bleeding-edge Go, every performance claim measured, safety that costs nothing
-measurable. It adds one more: **nothing leaves that we did not choose to send.**
+cygnet runs Discord servers for the flock. She builds a server to a layout and keeps it
+there, decides who gets in and traces every join to its cause, and runs a launch from
+the first person who shows interest to the last wave let in. The public sees one quiet
+page at `cygnet.lol`; everything behind it is private, and everything she decides can
+be explained from its inputs.
 
-The flock, each lean and kept to its own job:
+She is built from skua's spine and keeps skua's habits: bleeding-edge Go, every
+performance claim measured, safety that costs nothing measurable. She adds one more:
+**nothing leaves that we did not choose to send.**
 
 | Bird | Job |
 |---|---|
-| peregrine | engagement |
-| merlin | general purpose moderation, highly modular |
-| skua | the test bed: experiments, UX, the newer and less general modules |
-| cygnet | the backend: links the others, provisions servers that fit all their permission schemes |
+| cygnet | the server's keeper: layout, membership, invites, launches |
+| skua | the test bed, and the flock's memory of who is active: answers cygnet's questions about members without handing over what it knows |
+| merlin | moderation; joins the hub when a rule wants its answers |
+| peregrine | engagement; joins the hub when a rule wants its answers |
+
+## What a member sees
+
+1. **Interest.** A launch has a page at `cygnet.lol/<launch>`: the server's art, one line
+   about it, and *count me in*. Signing in with Discord (and a Turnstile check nobody
+   has to click) puts them on the list and shows their place in it. Nothing else is
+   asked for.
+2. **A way in that is theirs.** When their wave opens, cygnet adds them to the server
+   herself: no invite link exists for anyone to forward. Someone who would rather not
+   grant that gets a Discord invite made for them alone: one use, gone in minutes.
+3. **Bringing friends.** In the server, `/invite` hands a member a link of their own to
+   give (`cygnet.lol/i/<code>`), one person per link. It unfurls in Discord as a pixel
+   card with the bird and who it's from. They see who used each one, and can take back
+   any that hasn't been.
+4. **Earning more.** Each server sets rules for how members earn invites: time in the
+   server, being active, holding a role, turning up to an event. `/invite` shows how
+   close they are to the next one (`12 of 50 messages ▰▰▱▱▱`), so nobody wonders what
+   counts.
+
+`/invite` is also a user-installed command, so a member can make a link from any DM
+or server without leaving the conversation they're in.
+
+## What an admin sees
+
+- **`/provision`.** A layout (roles, their order, categories, channels, permission
+  overwrites, onboarding) applied by diff: cygnet shows what would change, then changes
+  only that. For a new server, a guild template to start from, then a live install card
+  with one button per bird that ticks itself off as each one joins, with exactly the
+  permissions that bird's manifest asks for.
+- **Drift.** A role or overwrite changed by hand shows up as a card with the diff and a
+  *put it back* button. Each server picks how far cygnet goes on her own: `watch`
+  (tell), `propose` (the card, the default) or `act` (put it back and say so).
+- **The tree.** Every member's line back to the code, rule or wave that let them in. A
+  sponsor whose invitees keep getting removed earns more slowly, by a rule anyone can
+  read.
+- **The valve.** A launch admits waves, sized by the server's measured load: messages
+  a minute, joins a minute, and, once merlin is linked, its open cases. The next wave
+  waits until the last one has settled.
 
 ## Principles
 
@@ -22,23 +62,67 @@ The flock, each lean and kept to its own job:
 2. **Ask Discord, don't assume.** Intents from the portal's flags, `wants ∩ granted`;
    install settings written from the running modules' `Perms`.
 3. **Fail closed, cheaply.** A command with no tier fails boot. `internal/guard` caps
-   every Discord write per guild and op, with a per-guild breaker.
+   every Discord write per guild and op, with a per-guild breaker. A provision applies
+   no change it did not first show.
 4. **Nothing pings.** Every send carries `core.NoPings()`.
 5. **Smallest thing that works.** No table, cache, job or option until something needs
    it; shortcuts carry a `ponytail:` comment naming their ceiling.
-6. **Private by default.** The app is not public and advertises nothing: no invite
-   button, no source link. The hub listens only on a private network and never on a
-   public port. The one public surface (invite codes, signups) is a Cloudflare Worker,
-   so foundry opens no port and the origin is never named. It never holds the Discord
-   token. The hub never logs or keeps a frame's body: it routes and forgets.
-   Logs carry IDs and counts, never message content or tokens. A bot learns
-   only what is addressed to it.
-7. **cygnet authenticates, the callee authorizes.** Every frame's `from` is stamped by
-   cygnet from the connection's token. What a bot will do for whom is its own decision.
-8. **Rules, not a model.** cygnet decides with deterministic policies whose every
-   outcome can be explained from its inputs: leases with a TTL, budgets, breakers,
-   health from heartbeats and measured load. No LLM is in any decision path. Smart
-   means it reads the fleet's state and acts on it, not that it guesses.
+6. **Private by default.** The app is not public and advertises nothing. The hub listens
+   only on the private `fleet` network. The one public surface is the edge Worker, so
+   foundry opens no port and the origin is never named; the Worker never holds the bot
+   token. Logs carry IDs and counts, never message content or tokens.
+7. **cygnet reads no messages.** She identifies without message intents. Anything
+   about what members say comes from a bird that already sees it, as an answer to a
+   question, never as data.
+8. **Questions, not data.** A bird answers `<bot>.check` with whether a member meets a
+   rule and how far along they are (`{met, have, need}`), never the messages, counts
+   by channel or history behind it. cygnet keeps the answer, not the inputs.
+9. **Bearer secrets are kept as hashes.** Invite codes, hub tokens: cygnet stores
+   their SHA-256 and compares in constant time. A member's Discord OAuth token is used
+   once and dropped, unless they chose to be added at launch, and then it is sealed
+   (below).
+10. **Rules, not a model.** Every decision (who gets in, who earns an invite, how big a
+    wave is) comes from a deterministic rule whose outcome can be explained from its
+    inputs, and `/invite` and the tree show that explanation. No LLM is in any
+    decision path.
+11. **Every join has a cause.** A member who joined through cygnet is traced to a code,
+    a rule or a wave. A join cygnet cannot trace is shown as such, never guessed.
+
+## Membership
+
+**Codes.** 20 random bytes, base32, shown once; cygnet stores the hash, the owner, the
+launch or server and whether it is spent. Spending is one conditional `UPDATE` in
+Postgres, so a code is spent once however many tabs race for it.
+
+**Redemption.** The Worker serves the page and the Discord sign-in (`identify` and
+`guilds.join`), then hands cygnet the code, the user's ID and their access token over
+the tunnel. cygnet spends the code, checks the server's gate (not banned, account age,
+whatever the layout asks) and adds the member with `PUT /guilds/{guild}/members/{user}`.
+The token is dropped as soon as that returns. Without `guilds.join` she mints a Discord
+invite instead (`max_uses: 1`, `max_age: 300`, `unique: true`) and the page sends them
+straight to it. Either way the code is spent before anyone is let in.
+
+**Attribution.** A direct add is attributed when cygnet makes it. An invite join is
+matched by the invite cygnet minted for that redemption: she sees `INVITE_DELETE`
+when its one use is spent, and `GUILD_MEMBER_ADD` for who arrived.
+
+**Sealed until launch.** Someone who signs up early and ticks *add me when it opens*
+leaves a refresh token that the Worker encrypts to cygnet's public key and cannot
+decrypt itself. At their wave cygnet opens it, refreshes it, adds them and forgets it.
+Anyone who changes their mind deletes it from the page. A list with no sealed tokens
+works the same: the page tells them their way in is ready the next time they sign in.
+
+**Earning.** A rule is a small expression the layout holds, checked when its inputs
+change and swept daily:
+
+```
+earn 1 when tenure >= 14d and skua.active(30d) >= 50 and not merlin.actioned(30d)
+hold at most 3
+```
+
+Inputs cygnet sees herself: tenure, roles, scheduled event attendance (the event's
+voice channel). Inputs from a bird come from `<bot>.check`. A rule naming a bird that
+isn't linked fails at load, not at night.
 
 ## Protocol
 
@@ -48,10 +132,10 @@ The contract every bird speaks, the same over the WebSocket and `POST /v1/call`.
   build, the methods it serves, the events it emits and its limits. cygnet answers with
   what it accepted. An unknown frame kind or a version outside the range is refused at
   the door, never half understood.
-- **Typed frames.** `{v, id, kind, from, to, method, body, err, deadline, trace}`. Kinds:
-  `call`, `reply`, `event`, `lease`, `goaway`. Methods are `<bot>.<verb>`, bodies are
-  JSON objects with a published shape, errors carry a code (`offline`, `timeout`,
-  `denied`, `busy`, `invalid`, `internal`) and a short reason, never a stack.
+- **Typed frames.** `{v, id, kind, from, to, method, body, err, deadline}`. Kinds:
+  `hello`, `welcome`, `call`, `reply`, `event`, `goaway`. Methods are `<bot>.<verb>`,
+  bodies are JSON objects with a published shape, errors carry a code (`offline`,
+  `timeout`, `denied`, `busy`, `invalid`, `internal`) and a short reason, never a stack.
 - **Deadlines travel.** Every call carries an absolute deadline; past it cygnet drops the
   frame unsent. No call waits forever, and a reply after the deadline is discarded.
 - **At most once, retried on purpose.** cygnet never redelivers. A caller that retries
@@ -60,43 +144,44 @@ The contract every bird speaks, the same over the WebSocket and `POST /v1/call`.
 - **Backpressure.** Each link has an in-flight cap from its `hello`; over it, a call is
   refused `busy` at once rather than queued.
 - **Draining.** `goaway` before a deploy: the bot stops taking calls, finishes what it
-  holds and closes, and its leases go to whoever can take them.
-- **Every bird has a manifest.** `<bot>.manifest` answers `link.Manifest`: build, the union
-  of its running modules' permissions, its intents and each command with its tier
-  (`public`, `admin`, `breakglass`). `/provision` reads these, never a copy.
-- **Bots never talk to each other through Discord.** Interop is the hub's job; a bird
-  ignores other bots' messages, so no two of them can loop in a channel.
+  holds and closes.
+- **Every bird has a manifest.** `<bot>.manifest` answers `link.Manifest`: build, the
+  union of its running modules' permissions, its intents and each command with its tier.
+  `/provision` reads these, never a copy.
+- **Checks.** `<bot>.check {guild, user, rule}` answers `{met, have, need}`. A bird
+  lists the rules it can answer in its manifest; cygnet asks only those.
+- **cygnet authenticates, the callee authorizes.** Every frame's `from` is stamped by
+  cygnet from the connection's token. What a bot will do for whom is its own decision.
+- **Bots never talk to each other through Discord.** A bird ignores other bots'
+  messages, so no two of them can loop in a channel.
 
-## Coordination
+## skua and cygnet
 
-Shared state lives in cygnet and is handed out as **leases**: a named duty or resource,
-one holder, a TTL renewed by heartbeat. A holder that stops renewing loses it, and
-cygnet grants it to the next bot that declared it can take it. Duties (one bot posts a
-server's welcome, one runs a nightly job) and shards are both leases.
+skua is where a surface is tried before cygnet keeps it, and the one bird cygnet asks
+about activity.
 
-**Sharding.** Each bird is its own Discord application, so its gateway limits are its own.
-cygnet holds each one's `GET /gateway/bot` answer and coordinates its processes:
-
-- assigns shard ranges to the bot's processes as leases, sized from Discord's
-  recommended count and each process's measured guild load, never more than 2500
-  guilds a shard;
-- grants every IDENTIFY as a slot in bucket `shard_id % max_concurrency`, one per bucket
-  per 5 seconds, so no process starts a session on its own;
-- guards the 1000 identifies a day: past a reserve, slots go to RESUME first and a
-  process in a crash loop is held off instead of identifying, since running out resets
-  the token;
-- moves a shard only through drain then grant, so no shard runs twice or not at all.
-
-A bot with one process and one shard needs none of this and asks for nothing.
+- **Activity checks.** skua's purge index already holds who wrote which message (IDs and
+  authors, never content). `skua.check` answers `active(window) >= n` from it, so
+  cygnet gets a yes, a no and a count, and no new copy of anything exists. A server
+  opts in on skua's side; without it the check answers `denied`.
+- **Tried on skua first.** The invite card, the pixel unfurl and the progress bars go
+  out as a skua experiment in one server, are measured, and move to cygnet when the
+  numbers say so. A surface cygnet ships has a row in skua's experiment log.
+- **notify meets launches.** A launch page can carry a creator's live state from
+  skua's notify (live, how many watching), and a code minted for that creator traces
+  every join from their audience back to the stream.
+- **Shared art, copied.** skua's stream pictures and cygnet's cards come from the same
+  drawing rules (`UX.md`, Art). The code is copied, not imported, as with every shared
+  package.
 
 ## Stack
 
 | | |
 |---|---|
-| Discord | `disgoorg/disgo` v0.19, zstd-stream gateway, every cache off except guilds |
-| Database | Postgres 18 via `pgx/v5`, optional; migrations compiled in |
+| Discord | `disgoorg/disgo` v0.19, zstd-stream gateway, every cache off except guilds; intents `GUILDS`, `GUILD_MEMBERS`, `GUILD_INVITES`, `GUILD_SCHEDULED_EVENTS`, `GUILD_VOICE_STATES` |
+| Database | Postgres 18 via `pgx/v5`; migrations compiled in. Required once membership lands |
 | Hub | WebSocket on the private `fleet` Docker network. An off-host bot comes in through a Cloudflare Tunnel whose hostname answers only to an Access service token; foundry opens no port |
-| Edge | `cygnet.lol`: a Cloudflare Worker + D1 + Turnstile for invite codes and signups (milestones 4-5), the only public surface. Worker to cygnet goes through the same tunnel and Access, never the open internet |
+| Edge | `cygnet.lol`: a Cloudflare Worker with D1 (launch lists) and Turnstile, OG card images drawn at the edge. Worker to cygnet goes through the same tunnel and Access |
 | Build | Go 1.27.2, `CGO_ENABLED=0 -trimpath -s -w`, distroless nonroot, PGO when present |
 | Deploy | as skua: CI image to GHCR, foundry pulls by SHA; `scripts/deploy.sh` by hand |
 
@@ -105,17 +190,23 @@ A bot with one process and one shard needs none of this and asks for nothing.
 | # | Experiment | State |
 |---|---|---|
 | 1 | Hub frame encoding: JSON against a fixed binary header with a raw body, round trip and allocations per call between two `link` clients | open. JSON baseline (`go test ./internal/hub -bench Call`): 97 us and 122 allocs a call and reply, two WebSocket hops on Windows loopback |
-| 2 | Hub call latency floor on one host: WebSocket against a Unix socket on a shared volume | open |
-| 3 | `permessage-deflate` off against on for hub frames (expected: off wins, frames are small) | open |
+| 2 | Redemption round trip, sign-in return to member added, p50 and p99 from the Worker's clock: direct add against minted invite | open |
+| 3 | Code spend under a race: 1000 concurrent redemptions of one code, exactly one wins, and the cost of the conditional `UPDATE` | open |
+| 4 | Invites restricted to chosen users by Discord itself, if the API offers it, against cygnet's own one-use binding | open; verify the API first |
+| 5 | The unfurl: an OG card drawn in the Worker against one pre-drawn per code, time to first byte and Discord's cache behaviour | open |
+| 6 | Wave sizing: the valve's rule replayed against a recorded launch, joins a minute held under a ceiling with no idle gap | open |
 
 ## Milestones
 
 | # | Milestone | State |
 |---|---|---|
 | 0 | Scaffold from skua: core, guard, intents, obs, ratelimit, store, brand, `/status` `/perf` `/help`, CI, deploy, setup | done |
-| 1 | `internal/hub` and the public `link` package (its own module): hello, calls, events, deadlines, backpressure, goaway; the fleet on `/status`; skua joins first | built and tested; skua not linked yet |
-| 2 | merlin and peregrine join through `link` (discordgo) on the shared `fleet` network | open |
-| 3 | `/provision`: compiled-in layouts applied by diff, fleet install links from what each bot declares, new servers through a guild template (bot `POST /guilds` is deprecated; verify first) | open |
-| 4 | Invite codes: `/invite` mints codes, the edge Worker redeems one for a fresh single-use Discord invite minted by cygnet, every join traced to a code | open |
-| 5 | Signups: an edge page per upcoming launch, Discord OAuth2 and Turnstile, interest counted in D1; at launch cygnet adds members straight in or sends them a code | open |
-| 6 | Leases: duties and failover between birds, then sharding: shard leases, identify slots per bucket, the daily identify reserve, drain-then-grant moves | open |
+| 1 | `internal/hub` and the public `link` module: hello, calls, events, deadlines, backpressure, goaway, manifests; the fleet on `/status`; skua linked | done; skua speaks it, linked once its token is set on foundry |
+| 2 | `/provision`: compiled-in layouts applied by diff with a preview, the live install card from each bird's manifest, role order, onboarding; drift cards at `watch`, `propose` or `act` | open |
+| 3 | Codes: `/invite` (in the server and user-installed), the Worker's redemption page, direct add with the one-use invite fallback, attribution, the tree | open |
+| 4 | Launches: interest pages, places in line, sealed tokens, the valve and its waves | open |
+| 5 | Earning: rules in the layout, `skua.check` for activity, progress on `/invite`, sponsor standing | open |
+
+Not planned: leases, failover between birds and sharding. The birds do different jobs
+as different apps, so none can take over another's duty, and each runs as one
+process. merlin and peregrine join the hub when a rule wants their answers, not before.
