@@ -28,6 +28,8 @@ Written 2026-10-11. Read this with `CLAUDE.md` and `SPEC.md`.
   shows the new plan instead of running. `apply.go` runs the writes in order off the
   gateway goroutine, one apply per server, each through `guard` (`RoleEdit` is new),
   redrawing a progress bar at most once a second, and stops at the first refusal.
+  Role order is one change: the layout's roles swap the positions they already hold,
+  so they never climb past the server's other roles.
 
 Decisions worth keeping:
 
@@ -51,7 +53,7 @@ Decisions worth keeping:
 
 ## Not done yet, deliberately
 
-- Role order (positions) and onboarding in layouts.
+- Onboarding in layouts.
 - More layouts than `flock`, and a way to choose channel positions.
 - Drift cards at `watch`, `propose` or `act`, and the intents they need.
 - The live install card: needs `GUILD_MEMBERS`.

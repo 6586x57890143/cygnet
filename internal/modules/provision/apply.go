@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/rest"
@@ -16,6 +17,8 @@ import (
 
 // Writes is what applying a layout calls on Discord.
 type Writes interface {
+	GetRoles(guildID snowflake.ID, opts ...rest.RequestOpt) ([]discord.Role, error)
+	UpdateRolePositions(guildID snowflake.ID, rolePositionUpdates []discord.RolePositionUpdate, opts ...rest.RequestOpt) ([]discord.Role, error)
 	CreateRole(guildID snowflake.ID, createRole discord.RoleCreate, opts ...rest.RequestOpt) (*discord.Role, error)
 	UpdateRole(guildID, roleID snowflake.ID, roleUpdate discord.RoleUpdate, opts ...rest.RequestOpt) (*discord.Role, error)
 	CreateGuildChannel(guildID snowflake.ID, guildChannelCreate discord.GuildChannelCreate, opts ...rest.RequestOpt) (discord.GuildChannel, error)
@@ -44,13 +47,13 @@ func apply(ctx context.Context, w Writes, g *guard.Guard, s state, l Layout, cha
 			continue
 		}
 		op := guard.ChannelEdit
-		if c.kind == roleCreate || c.kind == roleUpdate {
+		if c.kind == roleCreate || c.kind == roleUpdate || c.kind == roleOrder {
 			op = guard.RoleEdit
 		}
 		if err := g.Allow(s.guild, op); err != nil {
 			return done, fmt.Errorf("%w: %w", core.Tell("stopped at cygnet's hourly limit for this server; check again in a while and apply the rest"), err)
 		}
-		err := c.do(s.guild, w, opts, roles, cats, target)
+		err := c.do(s.guild, w, opts, l, roles, cats, target)
 		g.Report(s.guild, struggling(err))
 		if err != nil {
 			return done, fmt.Errorf("%s: %w", c.line(), err)
@@ -61,7 +64,7 @@ func apply(ctx context.Context, w Writes, g *guard.Guard, s state, l Layout, cha
 	return done, nil
 }
 
-func (c change) do(guild snowflake.ID, w Writes, opts []rest.RequestOpt, roles, cats map[string]snowflake.ID, target func(string) (snowflake.ID, bool)) error {
+func (c change) do(guild snowflake.ID, w Writes, opts []rest.RequestOpt, l Layout, roles, cats map[string]snowflake.ID, target func(string) (snowflake.ID, bool)) error {
 	switch c.kind {
 	case roleCreate:
 		perms := c.role.Perms
@@ -74,6 +77,8 @@ func (c change) do(guild snowflake.ID, w Writes, opts []rest.RequestOpt, roles, 
 		perms, color, hoist := c.role.Perms, c.role.Color, c.role.Hoist
 		_, err := w.UpdateRole(guild, c.id, discord.RoleUpdate{Permissions: &perms, Color: &color, Hoist: &hoist}, opts...)
 		return err
+	case roleOrder:
+		return order(guild, w, opts, l)
 	case categoryCreate:
 		ch, err := w.CreateGuildChannel(guild, discord.GuildCategoryChannelCreate{Name: c.category}, opts...)
 		if err == nil {
@@ -102,6 +107,31 @@ func (c change) do(guild snowflake.ID, w Writes, opts []rest.RequestOpt, roles, 
 	}
 	allow, deny := c.ow.Allow, c.ow.Deny
 	return w.UpdatePermissionOverwrite(c.id, id, discord.RolePermissionOverwriteUpdate{Allow: &allow, Deny: &deny}, opts...)
+}
+
+// order hands l's roles the positions they hold between them, highest to
+// the first, so they keep their place among the server's other roles.
+func order(guild snowflake.ID, w Writes, opts []rest.RequestOpt, l Layout) error {
+	have, err := w.GetRoles(guild, opts...)
+	if err != nil {
+		return err
+	}
+	s := state{guild: guild, roles: have}
+	var ids []snowflake.ID
+	var slots []int
+	for _, want := range l.Roles {
+		if r, ok := s.role(want.Name); ok {
+			ids, slots = append(ids, r.ID), append(slots, r.Position)
+		}
+	}
+	slices.Sort(slots)
+	slices.Reverse(slots)
+	moves := make([]discord.RolePositionUpdate, len(ids))
+	for i, id := range ids {
+		moves[i] = discord.RolePositionUpdate{ID: id, Position: &slots[i]}
+	}
+	_, err = w.UpdateRolePositions(guild, moves, opts...)
+	return err
 }
 
 // struggling is whether Discord's answer says it is struggling (429, 5xx),

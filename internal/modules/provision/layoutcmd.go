@@ -234,7 +234,11 @@ func (p planned) preview(note string) discord.ContainerComponent {
 		for _, c := range p.changes {
 			if c.blocked != "" {
 				color = brand.ColorWarn
-				b.WriteString("\n! can't change **" + c.role.Name + "**: " + c.blocked)
+				what := "change **" + c.role.Name + "**"
+				if c.kind == roleOrder {
+					what = "reorder the roles"
+				}
+				b.WriteString("\n! can't " + what + ": " + c.blocked)
 			}
 		}
 	}

@@ -14,6 +14,9 @@ type kind uint8
 const (
 	roleCreate kind = iota
 	roleUpdate
+	// roleOrder puts the layout's roles in its order, among the positions
+	// they already hold.
+	roleOrder
 	categoryCreate
 	channelCreate
 	overwriteSet
@@ -70,6 +73,9 @@ func plan(l Layout, s state) (changes []change, waiting []string) {
 			changes = append(changes, c)
 		}
 	}
+	if c, ok := s.order(l); ok {
+		changes = append(changes, c)
+	}
 	var later []change
 	for _, cat := range l.Categories {
 		parent, ok := s.channel(cat.Name, discord.ChannelTypeGuildCategory, 0)
@@ -121,6 +127,28 @@ func (s state) role(name string) (discord.Role, bool) {
 		}
 	}
 	return discord.Role{}, false
+}
+
+// order is the change that puts l's roles in order, if they exist and
+// aren't. A role the layout is about to make is made at the bottom, in the
+// layout's order, so it never needs one.
+func (s state) order(l Layout) (change, bool) {
+	prev := -1
+	var block string
+	for _, want := range l.Roles {
+		have, ok := s.role(want.Name)
+		if !ok {
+			continue
+		}
+		if have.Position >= s.top {
+			block = "its role is above cygnet's; drag cygnet's role above it"
+		}
+		if prev != -1 && have.Position >= prev {
+			return change{kind: roleOrder, role: Role{Name: "order"}, blocked: block}, true
+		}
+		prev = have.Position
+	}
+	return change{}, false
 }
 
 // birdRole is the role Discord made for a bird when it was added.
@@ -205,6 +233,8 @@ func (c change) line() string {
 		return "+ role  " + c.role.Name
 	case roleUpdate:
 		return "! role  " + c.role.Name + ": " + strings.Join(c.fields, ", ")
+	case roleOrder:
+		return "! order roles as the layout lists them"
 	case categoryCreate:
 		return "+ group " + c.category
 	case channelCreate:

@@ -108,6 +108,12 @@ func (g *guildFake) CreateRole(_ snowflake.ID, c discord.RoleCreate, _ ...rest.R
 		return nil, err
 	}
 	g.next++
+	// Discord makes a role at the bottom, just above @everyone.
+	for i := range g.roles {
+		if g.roles[i].ID != guild {
+			g.roles[i].Position++
+		}
+	}
 	r := discord.Role{ID: g.next, Name: c.Name, Permissions: *c.Permissions, Color: c.Color, Hoist: c.Hoist, Position: 1}
 	g.roles = append(g.roles, r)
 	g.writes = append(g.writes, "create role "+c.Name)
@@ -123,6 +129,18 @@ func (g *guildFake) UpdateRole(_, id snowflake.ID, u discord.RoleUpdate, _ ...re
 		}
 	}
 	return nil, errors.New("no such role")
+}
+
+func (g *guildFake) UpdateRolePositions(_ snowflake.ID, moves []discord.RolePositionUpdate, _ ...rest.RequestOpt) ([]discord.Role, error) {
+	for _, mv := range moves {
+		for i := range g.roles {
+			if g.roles[i].ID == mv.ID {
+				g.roles[i].Position = *mv.Position
+			}
+		}
+	}
+	g.writes = append(g.writes, "order roles")
+	return g.roles, nil
 }
 
 func (g *guildFake) CreateGuildChannel(_ snowflake.ID, c discord.GuildChannelCreate, _ ...rest.RequestOpt) (discord.GuildChannel, error) {
@@ -276,7 +294,7 @@ func TestRoleUpdateAndBlocked(t *testing.T) {
 		if c.kind == roleUpdate && c.role.Name == "mod" {
 			update = &p.changes[i]
 		}
-		if c.blocked != "" {
+		if c.blocked != "" && c.kind == roleUpdate {
 			blocked = &p.changes[i]
 		}
 	}
@@ -548,5 +566,44 @@ func TestProgress(t *testing.T) {
 	r := planned{l: flock, waiting: []string{"skua waits"}}.result(1, 1, nil)
 	if !strings.Contains(coretest.Text("", []discord.LayoutComponent{r}), "-# skua waits") {
 		t.Fatal("waiting on the result")
+	}
+}
+
+// Roles in the wrong order swap the positions they hold, and no more.
+func TestRoleOrder(t *testing.T) {
+	g := newGuild()
+	g.roles = append(g.roles,
+		discord.Role{ID: 40, Name: "mod", Position: 3, Color: 0xD1A06A, Hoist: true, Permissions: moderate},
+		discord.Role{ID: 41, Name: "member", Position: 4, Color: 0x7FA08C},
+	)
+	p := planOn(t, g, nil)
+	if p.changes[0].line() != "! order roles as the layout lists them" {
+		t.Fatalf("plan:\n%s", lines(p.changes))
+	}
+	if _, err := apply(context.Background(), g, guard.New(), p.s, flock, p.changes, func(int) {}); err != nil {
+		t.Fatal(err)
+	}
+	pos := map[string]int{}
+	for _, r := range g.roles {
+		pos[r.Name] = r.Position
+	}
+	if pos["mod"] != 4 || pos["member"] != 3 || pos["cygnet"] != 10 {
+		t.Fatalf("positions %v", pos)
+	}
+	if again := planOn(t, g, nil); len(again.changes) != 0 {
+		t.Fatalf("left:\n%s", lines(again.changes))
+	}
+
+	// Above cygnet, she can't move them, and says so.
+	g.roles[3].Position, g.roles[4].Position = 12, 13
+	p = planOn(t, g, nil)
+	text := coretest.Text("", []discord.LayoutComponent{p.preview("")})
+	if !strings.Contains(text, "! can't reorder the roles: its role is above cygnet's") {
+		t.Fatal(text)
+	}
+
+	g.fail["read"] = errors.New("500")
+	if err := order(guild, g, nil, flock); err == nil {
+		t.Fatal("a failed read should fail")
 	}
 }
