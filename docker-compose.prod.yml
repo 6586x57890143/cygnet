@@ -1,0 +1,86 @@
+# Pinned, not taken from the directory name: the volume is always
+# cygnet_pgdata, so a deploy from any other directory (a new host, a renamed
+# checkout) finds the same database instead of silently starting an empty one.
+name: cygnet
+
+services:
+  bot:
+    # Pinned to the exact commit CI built. Rollback, on foundry as deploy:
+    #   cd ~/cygnet && cp previous-tag.env deployed-tag.env
+    #   set -a; . ./deployed-tag.env; set +a
+    #   docker compose -f docker-compose.prod.yml up -d
+    image: ghcr.io/6586x57890143/cygnet:${CYGNET_IMAGE_TAG:-latest}
+    read_only: true
+    cap_drop:
+      - ALL
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Also what makes an intent change in the Developer Portal take effect:
+    # cygnet exits cleanly when it sees one and comes back re-identified.
+    restart: unless-stopped
+    # A deploy stops the old bot with SIGTERM: it closes the gateway and
+    # waits up to 25s for preen's owed removals and fills (drainBy in main)
+    # before Docker's SIGKILL.
+    stop_grace_period: 30s
+    mem_limit: 256m
+    cpus: 1.0
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  postgres:
+    image: postgres:16-alpine
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: cygnet
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+    restart: unless-stopped
+    mem_limit: 256m
+
+  # x and tiktok for notify: they have no free API, so an RSSHub reads them
+  # and cygnet reads its feeds at CYGNET_NOTIFY_RSSHUB=http://rsshub:1200. Only
+  # on compose's network, and only with COMPOSE_PROFILES=rsshub in .env.
+  # Only the one variable it needs is passed, never cygnet's .env.
+  rsshub:
+    # Pinned to the build checked against tiktok, by tag and digest, so a
+    # deploy or a rollback pulls exactly this. Bump both together.
+    image: diygod/rsshub:2026-10-07@sha256:7e2cbe4862d94480e927737cf52f5d8e0c60f14b79d2fc2f02ae6f698b51e75a
+    profiles: [rsshub]
+    environment:
+      NODE_ENV: production
+      CACHE_EXPIRE: "120"
+      # The auth_token cookie of a throwaway x account; x refuses logged-out
+      # reads. Unset, x fails and tiktok still works.
+      TWITTER_AUTH_TOKEN: ${TWITTER_AUTH_TOKEN:-}
+    restart: unless-stopped
+    mem_limit: 384m
+
+  # The way in for notify's pushes (twitch, kick, youtube): a Cloudflare
+  # Tunnel, so foundry opens no port. Its public hostname, hooks.cygnet.lol,
+  # set in the tunnel's dashboard, points at http://bot:8080, and
+  # CYGNET_HOOKS_URL is https://hooks.cygnet.lol. Only with COMPOSE_PROFILES=tunnel in .env, and only the
+  # token is passed.
+  cloudflared:
+    # Pinned by release tag and digest: it holds the tunnel token and stands
+    # in front of the bot, so it changes only when bumped here.
+    image: cloudflare/cloudflared:2026.10.0@sha256:9b49eed8f62806d5d45ddf59ecefb5710429598ea6d3fcccd2af938f621b2b07
+    profiles: [tunnel]
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    read_only: true
+    restart: unless-stopped
+    mem_limit: 128m
+
+volumes:
+  pgdata:

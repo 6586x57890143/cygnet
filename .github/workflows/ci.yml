@@ -1,0 +1,215 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # tools/setup runs this on main to deploy without needing a new commit.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to the same PR supersedes the older run. main is never
+# cancelled: every commit that lands there is one that gets deployed.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+    # internal/store's migration test runs against a real Postgres.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: cygnet
+          POSTGRES_PASSWORD: cygnet
+          POSTGRES_DB: cygnet
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U cygnet" --health-interval 5s --health-retries 10
+    env:
+      CYGNET_TEST_DATABASE_URL: postgres://cygnet:cygnet@localhost:5432/cygnet?sslmode=disable
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - run: go vet ./...
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.13.1
+      - run: scripts/coverage.sh
+      - uses: golang/govulncheck-action@v1
+        with:
+          go-version-file: go.mod
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  prose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: scripts/prose.sh
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      # Built only for the deploy host's platform, which tools/setup reads
+      # from the host's docker daemon into VPS_PLATFORM (foundry, the
+      # default, is aarch64). The builder stage runs on the runner's own
+      # platform and cross-compiles, and the final stage is a COPY onto a
+      # multi-arch base, so no QEMU is needed.
+      # ponytail: an image only runs on the platform it was built for, so
+      # after a move to another architecture, rolling back to a commit from
+      # before the move means rebuilding it (run this workflow on that
+      # commit, or scripts/deploy.sh, which builds on the host itself).
+      # Build both arches here if rollbacks across a move ever matter.
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: ${{ vars.VPS_PLATFORM || 'linux/arm64' }}
+          push: false
+          build-args: REVISION=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  push-image:
+    needs: [lint-test, secret-scan, prose, docker-build]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          build-args: REVISION=${{ github.sha }}
+          platforms: ${{ vars.VPS_PLATFORM || 'linux/arm64' }}
+          cache-from: type=gha
+          tags: |
+            ghcr.io/6586x57890143/cygnet:latest
+            ghcr.io/6586x57890143/cygnet:${{ github.sha }}
+
+  deploy:
+    needs: push-image
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # One cygnet deploy at a time. Concurrency groups are per repository, so
+    # this does NOT serialise against other repositories' deploys to the
+    # same host; the prune below is label-scoped for that reason. Never
+    # cancelled midway: a queued run that is superseded has not started the
+    # script, which is the safe direction.
+    concurrency:
+      group: deploy-vps
+      cancel-in-progress: false
+    # Where on the host, from repository variables that tools/setup writes,
+    # so moving to a host laid out differently needs no workflow change.
+    # The defaults are foundry's. VPS_DIR is absolute: setup asks the host.
+    env:
+      VPS_USER: ${{ vars.VPS_USER || 'deploy' }}
+      VPS_DIR: ${{ vars.VPS_DIR || '/home/deploy/cygnet' }}
+    steps:
+      - uses: actions/checkout@v7
+      # Skips (green, with a notice) rather than failing when the host is not
+      # configured, so an unconfigured deploy never reads as a broken build.
+      # DEPLOY_ENABLED is the deliberate switch: set the repository variable
+      # to "true" once $VPS_DIR/.env exists on the host with a token,
+      # or every merge would start a bot that crash-loops on a missing token.
+      - name: Check deploy is configured
+        id: vps
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          DEPLOY_ENABLED: ${{ vars.DEPLOY_ENABLED }}
+        run: |
+          if [ -z "$VPS_HOST" ] || [ -z "$VPS_SSH_KEY" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping deploy: VPS_HOST/VPS_SSH_KEY not set. The image is on GHCR."
+          elif [ "$DEPLOY_ENABLED" != "true" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping deploy: repository variable DEPLOY_ENABLED is not \"true\". The image is on GHCR."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Copy prod compose file
+        if: steps.vps.outputs.configured == 'true'
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ env.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: "docker-compose.prod.yml"
+          target: ${{ env.VPS_DIR }}
+      - name: Pull and restart on foundry
+        if: steps.vps.outputs.configured == 'true'
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ env.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          envs: GHCR_TOKEN,GHCR_USER,IMAGE_TAG,VPS_DIR
+          script: |
+            set -e
+            cd "$VPS_DIR"
+            test -f .env || { echo "$VPS_DIR/.env is missing; run tools/setup against this host"; exit 1; }
+            export CYGNET_IMAGE_TAG="$IMAGE_TAG"
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            docker compose -f docker-compose.prod.yml pull bot
+            docker compose -f docker-compose.prod.yml up -d --remove-orphans
+            docker logout ghcr.io
+            # A bot that dies in its first 30s (a bad token, a failed
+            # migration) goes back to the tag that was running, and the
+            # deploy fails. Its logs stay on the host: this repository's
+            # Actions logs are public.
+            sleep 30
+            state=$(docker inspect -f '{{.State.Status}} {{.RestartCount}}' "$(docker compose -f docker-compose.prod.yml ps -aq bot)")
+            if [ "$state" != "running 0" ]; then
+              echo "cygnet $IMAGE_TAG did not stay up ($state); see docker compose logs bot on the host"
+              if [ -f deployed-tag.env ]; then
+                set -a; . ./deployed-tag.env; set +a
+                docker compose -f docker-compose.prod.yml up -d bot
+                echo "rolled back to $CYGNET_IMAGE_TAG"
+              fi
+              exit 1
+            fi
+            # Written only once the tag is actually running: the file is
+            # read at the moment somebody needs to roll back, so it must
+            # name a version that exists on the host.
+            [ -f deployed-tag.env ] && cp deployed-tag.env previous-tag.env
+            echo "CYGNET_IMAGE_TAG=$IMAGE_TAG" > deployed-tag.env
+            # Dangling cygnet layers older than a week only: the previous
+            # release survives for a rollback, and the label keeps this from
+            # racing another repo's pull on the same daemon, which fails with
+            # `lease does not exist`.
+            docker image prune -f --filter "until=168h" \
+              --filter "label=org.opencontainers.image.source=https://github.com/6586x57890143/cygnet"
+            docker compose -f docker-compose.prod.yml ps
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+          IMAGE_TAG: ${{ github.sha }}

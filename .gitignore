@@ -1,0 +1,10 @@
+.env
+/cygnet
+/cygnet.exe
+deployed-tag.env
+previous-tag.env
+coverage.out
+*.exe
+.wrangler/
+.claude/settings.local.json
+.claude/worktrees/
