@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27.2-alpine AS builder
 WORKDIR /src
 COPY go.mod go.sum ./
 COPY link/go.mod link/go.sum ./link/
@@ -16,8 +16,8 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
 
 # Pinned by digest: a rebuild of an old commit produces the same image,
 # and the tag lookup is off the path.
-# gcr.io/distroless/static-debian12:nonroot as of 2026-08-26.
-FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
+# gcr.io/distroless/static-debian13:nonroot as of 2026-10-10.
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3
 # Links the GHCR package to the repository, which is what lets the
 # workflow's GITHUB_TOKEN push to it.
 LABEL org.opencontainers.image.source=https://github.com/6586x57890143/cygnet

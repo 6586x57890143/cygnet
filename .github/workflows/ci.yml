@@ -22,7 +22,7 @@ jobs:
     # internal/store's migration test runs against a real Postgres.
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:18-alpine
         env:
           POSTGRES_USER: cygnet
           POSTGRES_PASSWORD: cygnet
@@ -42,7 +42,7 @@ jobs:
       - run: go -C link vet ./... && go -C link test -race ./...
       - uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.13.1
+          version: v2.14.0
       - run: scripts/coverage.sh
       - uses: golang/govulncheck-action@v1
         with:
