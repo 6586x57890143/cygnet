@@ -153,10 +153,10 @@ func (m *Module) warn(what string, guild snowflake.ID, err error) {
 	}
 }
 
-// named is the text channel called name, in any category.
+// named is the text channel called name, styled or not, in any category.
 func (s state) named(name string) (snowflake.ID, bool) {
 	for _, c := range s.channels {
-		if c.Type() == discord.ChannelTypeGuildText && strings.EqualFold(c.Name(), name) {
+		if c.Type() == discord.ChannelTypeGuildText && strings.EqualFold(bare(c.Name()), name) {
 			return c.ID(), true
 		}
 	}

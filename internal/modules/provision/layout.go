@@ -1,6 +1,11 @@
 package provision
 
-import "github.com/disgoorg/disgo/discord"
+import (
+	"strings"
+	"unicode"
+
+	"github.com/disgoorg/disgo/discord"
+)
 
 // A Layout is a server as cygnet builds it: roles top to bottom, then
 // categories and their channels. Applying one only adds and changes what it
@@ -27,7 +32,10 @@ type Category struct {
 	Channels []Channel
 }
 
+// Channel is one channel. On Discord it is called Emoji, sep, Name
+// ("📜│rules"); everywhere else, Name.
 type Channel struct {
+	Emoji       string
 	Name, Topic string
 	Voice       bool
 	Overwrites  []Overwrite
@@ -46,6 +54,18 @@ const Everyone = "@everyone"
 // Self is cygnet's own role in an Overwrite.
 const Self = "cygnet"
 
+// Birds in an Overwrite is every linked bird but cygnet, each by its own
+// role, so a channel they all need lets in whichever are here.
+const Birds = "birds"
+
+// sep goes between a channel's emoji and its name. It is visible because no
+// blank one survives: Discord rewrites every whitespace character in a
+// channel name to a hyphen and strips the zero-width ones, while answering
+// 200 for both, and U+2502 is what came back intact when weloveyou measured
+// them. A separator Discord strips would leave the plan renaming the
+// channel on every run.
+const sep = "│"
+
 const (
 	send     = discord.PermissionSendMessages | discord.PermissionSendMessagesInThreads | discord.PermissionCreatePublicThreads
 	post     = discord.PermissionSendMessages | discord.PermissionEmbedLinks | discord.PermissionAttachFiles
@@ -61,7 +81,7 @@ var layouts = []Layout{flock}
 // hang out in, and a staff channel where cygnet reports drift.
 var flock = Layout{
 	Name:    "flock",
-	About:   "a small community: announcements, a place to talk, a voice room, a staff channel",
+	About:   "a small community: announcements, chatter, a voice room, and a nest where staff and the birds report",
 	Reports: "cygnet",
 	Roles: []Role{
 		{Name: "mod", Color: 0xD1A06A, Perms: moderate, Hoist: true},
@@ -69,31 +89,63 @@ var flock = Layout{
 	},
 	Categories: []Category{
 		{Name: "welcome", Channels: []Channel{
-			{Name: "rules", Topic: "how this server works", Overwrites: []Overwrite{
+			{Emoji: "📜", Name: "rules", Topic: "how this server works", Overwrites: []Overwrite{
 				{Role: Everyone, Deny: send},
 				{Role: "mod", Allow: send},
 			}},
-			{Name: "announcements", Topic: "news from the server and the people it follows", Overwrites: []Overwrite{
+			{Emoji: "📣", Name: "announcements", Topic: "news from the server and the people it follows", Overwrites: []Overwrite{
 				{Role: Everyone, Deny: send},
 				{Role: "mod", Allow: send},
 				{Role: "skua", Allow: post},
 			}},
 		}},
-		{Name: "talk", Channels: []Channel{
-			{Name: "general"},
-			{Name: "media"},
+		{Name: "chatter", Channels: []Channel{
+			{Emoji: "💬", Name: "general"},
+			{Emoji: "📷", Name: "media"},
 		}},
-		{Name: "voice", Channels: []Channel{
-			{Name: "lounge", Voice: true},
+		{Name: "song", Channels: []Channel{
+			{Emoji: "🔊", Name: "lounge", Voice: true},
 		}},
-		{Name: "staff", Channels: []Channel{
-			{Name: "cygnet", Topic: "where cygnet says when this server drifts from its layout", Overwrites: []Overwrite{
+		{Name: "nest", Channels: []Channel{
+			{Emoji: "🦢", Name: "cygnet", Topic: "where the birds report on this server, and cygnet says when it drifts from its layout", Overwrites: []Overwrite{
 				{Role: Everyone, Deny: see},
 				{Role: "mod", Allow: see},
 				{Role: Self, Allow: see | post},
+				{Role: Birds, Allow: see | post},
 			}},
 		}},
 	},
+}
+
+// full is c's name on Discord.
+func (c Channel) full() string {
+	if c.Emoji == "" {
+		return c.Name
+	}
+	return c.Emoji + sep + c.Name
+}
+
+// categoryName is the i-th of n categories' name on Discord: its name
+// behind a mark that draws the categories down the sidebar as a tree
+// ("╭ welcome", "├ chatter", "╰ nest").
+func categoryName(name string, i, n int) string {
+	mark := "├"
+	switch {
+	case n == 1:
+		mark = "─"
+	case i == 0:
+		mark = "╭"
+	case i == n-1:
+		mark = "╰"
+	}
+	return mark + " " + name
+}
+
+// bare is a name without its decoration, whatever leads it that isn't a
+// letter or a digit, so restyling a server renames its channels instead of
+// making new ones beside them.
+func bare(name string) string {
+	return strings.TrimLeftFunc(name, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
 }
 
 // layout is the compiled-in layout called name.

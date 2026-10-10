@@ -9,7 +9,8 @@ Written 2026-10-11. Read this with `CLAUDE.md` and `SPEC.md`.
 | `main` | M0, M1 and the rewritten spec. Deployed to foundry; skua is linked in production |
 | `feat/provision` | `/provision fleet`, `Hub.Call` and `Manifest.App` (PR #8) |
 | `feat/provision-layout` | `/provision layout` on top of it (PR #9) |
-| `feat/provision-drift` | drift reports and `/provision mode` on top of that |
+| `feat/provision-drift` | drift reports and `/provision mode` on top of that (PR #10) |
+| `feat/flock-names` | styled names and birds in the nest on top of that |
 
 ## What M2 has so far
 
@@ -58,6 +59,14 @@ Decisions worth keeping:
 - **Drift reports go to a channel the layout makes.** `#cygnet` is hidden from
   everyone but mods and cygnet, whose own overwrite (`Self`) lets her post there. A
   server whose report channel is gone gets nothing but a log line.
+- **Names are styled, matched bare.** A channel is `emoji` + U+2502 + name on Discord
+  (weloveyou's measured separator: whitespace becomes a hyphen and zero-width
+  characters are stripped, both with a 200), and categories draw a tree down the
+  sidebar (`╭ welcome`, `├ chatter`, `├ song`, `╰ nest`). Matching strips the
+  decoration (`bare`), so restyling a server renames its channels and keeps their
+  history. Discord allows two renames a channel per ten minutes; the rate limiter waits.
+- **`birds` in an overwrite is every linked bird but cygnet**, each by its own role, so
+  the nest lets in whichever birds are linked and in the server.
 - **The glyph is drawn here**, three sliders on pixelarticons' grid, not traced from a
   pixelarticons icon like the others.
 

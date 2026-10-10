@@ -23,6 +23,7 @@ type Writes interface {
 	UpdateRole(guildID, roleID snowflake.ID, roleUpdate discord.RoleUpdate, opts ...rest.RequestOpt) (*discord.Role, error)
 	CreateGuildChannel(guildID snowflake.ID, guildChannelCreate discord.GuildChannelCreate, opts ...rest.RequestOpt) (discord.GuildChannel, error)
 	UpdatePermissionOverwrite(channelID, overwriteID snowflake.ID, permissionOverwrite discord.PermissionOverwriteUpdate, opts ...rest.RequestOpt) error
+	UpdateChannel(channelID snowflake.ID, channelUpdate discord.ChannelUpdate, opts ...rest.RequestOpt) (discord.Channel, error)
 }
 
 // apply makes changes in order, skipping the blocked ones, and stops at the
@@ -80,7 +81,7 @@ func (c change) do(guild snowflake.ID, w Writes, opts []rest.RequestOpt, l Layou
 	case roleOrder:
 		return order(guild, w, opts, l)
 	case categoryCreate:
-		ch, err := w.CreateGuildChannel(guild, discord.GuildCategoryChannelCreate{Name: c.category}, opts...)
+		ch, err := w.CreateGuildChannel(guild, discord.GuildCategoryChannelCreate{Name: c.name}, opts...)
 		if err == nil {
 			cats[c.category] = ch.ID()
 		}
@@ -94,11 +95,25 @@ func (c change) do(guild snowflake.ID, w Writes, opts []rest.RequestOpt, l Layou
 			}
 			ows = append(ows, discord.RolePermissionOverwrite{RoleID: id, Allow: o.Allow, Deny: o.Deny})
 		}
-		var create discord.GuildChannelCreate = discord.GuildTextChannelCreate{Name: c.channel.Name, Topic: c.channel.Topic, ParentID: cats[c.category], PermissionOverwrites: ows}
+		var create discord.GuildChannelCreate = discord.GuildTextChannelCreate{Name: c.name, Topic: c.channel.Topic, ParentID: cats[c.category], PermissionOverwrites: ows}
 		if c.channel.Voice {
-			create = discord.GuildVoiceChannelCreate{Name: c.channel.Name, ParentID: cats[c.category], PermissionOverwrites: ows}
+			create = discord.GuildVoiceChannelCreate{Name: c.name, ParentID: cats[c.category], PermissionOverwrites: ows}
 		}
 		_, err := w.CreateGuildChannel(guild, create, opts...)
+		return err
+	case rename:
+		// ponytail: Discord allows two renames a channel per ten minutes,
+		// and the rate limiter waits that out inside the apply; fine for a
+		// restyle, a per-channel queue if renames ever come in sweeps.
+		name := c.name
+		var update discord.ChannelUpdate = discord.GuildTextChannelUpdate{Name: &name}
+		switch c.typ {
+		case discord.ChannelTypeGuildCategory:
+			update = discord.GuildCategoryChannelUpdate{Name: &name}
+		case discord.ChannelTypeGuildVoice:
+			update = discord.GuildVoiceChannelUpdate{Name: &name}
+		}
+		_, err := w.UpdateChannel(c.id, update, opts...)
 		return err
 	}
 	id, ok := target(c.ow.Role)
