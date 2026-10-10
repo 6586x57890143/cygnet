@@ -1,4 +1,4 @@
-# Handoff: Milestone 0 (scaffold)
+# Handoff: Milestone 1 (the hub)
 
 Written 2026-10-10. Read this with `CLAUDE.md` and `SPEC.md`.
 
@@ -7,6 +7,22 @@ Written 2026-10-10. Read this with `CLAUDE.md` and `SPEC.md`.
 | Branch | State |
 |---|---|
 | `main` | Milestone 0 and the swan art. Public at `6586x57890143/cygnet`. |
+
+## What M1 did
+
+`internal/hub` and the `link` client: tokens by hash, hello and version refusal,
+calls routed by method with deadlines, in-flight caps, at-most-once and goaway, events
+only to subscribers and stamped with the sender, `cygnet.ping` and `cygnet.fleet`, and
+`POST /v1/call`. The hub starts when `CYGNET_BOTS` is set and listens on the external
+`fleet` Docker network as `cygnet:7700`, never published. `/status` shows the fleet.
+
+Not done in M1, deliberately:
+
+- skua is not linked yet: that is a skua PR (`link.New`, `Run`, a `ping` handler).
+  It needs `link` tagged (`link/v0.1.0`) so skua can require it.
+- Callee-side idempotency (keeping recent IDs) is each bird's job; `link` gives
+  `NewID`/`CallID` and leaves state to the callee.
+- A slow callee holds up the caller's read loop for up to 5s a frame (write timeout).
 
 ## What M0 did
 

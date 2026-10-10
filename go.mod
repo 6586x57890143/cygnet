@@ -3,6 +3,8 @@ module github.com/6586x57890143/cygnet
 go 1.27.0
 
 require (
+	github.com/6586x57890143/cygnet/link v0.0.0
+	github.com/coder/websocket v1.8.15
 	github.com/disgoorg/disgo v0.19.6
 	github.com/disgoorg/omit v1.0.0
 	github.com/disgoorg/snowflake/v2 v2.0.3
@@ -24,3 +26,5 @@ require (
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 )
+
+replace github.com/6586x57890143/cygnet/link => ./link

@@ -14,6 +14,7 @@ import (
 	"github.com/6586x57890143/cygnet/internal/brand"
 	"github.com/6586x57890143/cygnet/internal/core"
 	"github.com/6586x57890143/cygnet/internal/core/coretest"
+	"github.com/6586x57890143/cygnet/internal/hub"
 )
 
 func TestNames(t *testing.T) {
@@ -120,5 +121,24 @@ func TestModuleContract(t *testing.T) {
 		if c.Create.CommandName() == "status" && c.Tier != core.Admin {
 			t.Fatal("/status must be admin-only")
 		}
+	}
+}
+
+func TestFleet(t *testing.T) {
+	birds := []hub.Bird{{Name: "merlin", RTT: 400 * time.Microsecond}, {Name: "skua", Draining: true}}
+	for _, c := range []struct {
+		get  func() []hub.Bird
+		want string
+	}{
+		{nil, "hub off"},
+		{func() []hub.Bird { return nil }, "none linked"},
+		{func() []hub.Bird { return birds }, "merlin 0.4 ms, skua not measured yet draining"},
+	} {
+		if got := fleet(c.get); got != c.want {
+			t.Errorf("got %q, want %q", got, c.want)
+		}
+	}
+	if New(nil, nil, nil).WithFleet(func() []hub.Bird { return birds }).fleet == nil {
+		t.Fatal("WithFleet kept nothing")
 	}
 }

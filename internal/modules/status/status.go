@@ -16,6 +16,7 @@ import (
 
 	"github.com/6586x57890143/cygnet/internal/brand"
 	"github.com/6586x57890143/cygnet/internal/core"
+	"github.com/6586x57890143/cygnet/internal/hub"
 	"github.com/6586x57890143/cygnet/internal/intents"
 )
 
@@ -32,11 +33,19 @@ type Module struct {
 	probe   func() Probe
 	db      Pinger
 	latency func() time.Duration
+	fleet   func() []hub.Bird
 	started time.Time
 }
 
 func New(probe func() Probe, db Pinger, latency func() time.Duration) *Module {
 	return &Module{probe: probe, db: db, latency: latency, started: time.Now()}
+}
+
+// WithFleet shows the birds linked to the hub on /status. Without it the
+// hub is off and /status says so.
+func (m *Module) WithFleet(fleet func() []hub.Bird) *Module {
+	m.fleet = fleet
+	return m
 }
 
 func (*Module) Name() string { return "status" }
@@ -103,6 +112,7 @@ func (m *Module) status(ctx context.Context, e *events.ApplicationCommandInterac
 			rows = append(rows, [2]string{"database", ms(time.Since(start))})
 		}
 	}
+	rows = append(rows, [2]string{"fleet", fleet(m.fleet)})
 	rows = append(rows,
 		[2]string{"uptime", core.Duration(time.Since(m.started))},
 		[2]string{"intents", names(p.Identified)},
@@ -179,4 +189,23 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return strings.ToValidUTF8(s[:n], "") + "..."
+}
+
+// fleet is each linked bird and its heartbeat round trip, in name order.
+func fleet(get func() []hub.Bird) string {
+	if get == nil {
+		return "hub off"
+	}
+	birds := get()
+	if len(birds) == 0 {
+		return "none linked"
+	}
+	out := make([]string, len(birds))
+	for i, b := range birds {
+		out[i] = b.Name + " " + gatewayMs(b.RTT)
+		if b.Draining {
+			out[i] += " draining"
+		}
+	}
+	return strings.Join(out, ", ")
 }

@@ -28,6 +28,7 @@ import (
 	"github.com/6586x57890143/cygnet/internal/brand"
 	"github.com/6586x57890143/cygnet/internal/core"
 	"github.com/6586x57890143/cygnet/internal/guard"
+	"github.com/6586x57890143/cygnet/internal/hub"
 	"github.com/6586x57890143/cygnet/internal/intents"
 	"github.com/6586x57890143/cygnet/internal/modules/help"
 	"github.com/6586x57890143/cygnet/internal/modules/perf"
@@ -125,13 +126,33 @@ func run(log *slog.Logger) error {
 	var running []core.Module
 	// One guard for every writer: its breaker is per guild across modules.
 	g := guard.New()
-	all := []core.Module{
-		status.New(func() status.Probe { return probe }, db, func() time.Duration {
-			if client == nil || client.Gateway == nil {
-				return 0
+	st := status.New(func() status.Probe { return probe }, db, func() time.Duration {
+		if client == nil || client.Gateway == nil {
+			return 0
+		}
+		return client.Gateway.Latency()
+	})
+	// The hub runs only where birds are configured, and listens only on the
+	// fleet's private network: never published, never behind a public name.
+	if v := os.Getenv("CYGNET_BOTS"); v != "" {
+		bots, err := hub.Parse(v)
+		if err != nil {
+			return err
+		}
+		h := hub.New(bots, log)
+		st.WithFleet(h.Fleet)
+		srv := &http.Server{Addr: env("CYGNET_HUB_ADDR", ":7700"), Handler: h, ReadHeaderTimeout: 5 * time.Second}
+		go func() {
+			log.Info("hub listening", "addr", srv.Addr, "birds", len(bots))
+			if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+				log.Error("hub stopped", "err", err)
 			}
-			return client.Gateway.Latency()
-		}),
+		}()
+		// Birds hear goaway before the listener goes.
+		defer func() { h.Close(); _ = srv.Shutdown(context.Background()) }()
+	}
+	all := []core.Module{
+		st,
 		perf.New(obs.Default),
 		help.New(func() []core.Module { return running }, func(i discord.Interaction) bool { return router.Admin(i) }, toggles),
 	}

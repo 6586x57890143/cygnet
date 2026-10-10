@@ -12,6 +12,10 @@ sees follows [`UX.md`](./UX.md).
 - `cmd/cygnet/main.go`: wiring only.
 - `internal/core`, `guard`, `intents`, `obs`, `ratelimit`, `store`, `brand`: copied from
   skua and owned here now. A fix that applies to both goes to each repo on its own.
+- `internal/hub`: the bird protocol's server (SPEC.md, Protocol). `link/` is its client and
+  the frame types, a module of its own (`github.com/6586x57890143/cygnet/link`) so a bird
+  imports it without cygnet's dependencies; cygnet uses it through a `replace`. A change
+  to the protocol changes both, and is tagged `link/vX.Y.Z` for the birds.
 - `internal/modules/*`: `status` (the reference), `perf`, `help`.
 - `tools/sprites`: the art. `art/source/cygnet_avatar_source.png` is the drawing; the
   generator keeps its disc, quantises it to its own palette and computes the banner.
@@ -33,6 +37,8 @@ go build ./... && go vet ./...
 golangci-lint run
 scripts/coverage.sh                    # race tests + 85% floor per internal/ package
 scripts/prose.sh                       # no em dashes, ellipses or curly quotes
+go -C link vet ./... && go -C link test -race ./...   # the client module
+go test ./internal/hub -run x -bench Call             # a call's round trip through the hub
 govulncheck ./...
 go run ./tools/sprites                 # regenerate internal/brand/assets and emoji
 

@@ -6,6 +6,15 @@ Discord servers for them. It is built from skua's spine and keeps skua's habits:
 bleeding-edge Go, every performance claim measured, safety that costs nothing
 measurable. It adds one more: **nothing leaves that we did not choose to send.**
 
+The flock, each lean and kept to its own job:
+
+| Bird | Job |
+|---|---|
+| peregrine | engagement |
+| merlin | general purpose moderation, highly modular |
+| skua | the test bed: experiments, UX, the newer and less general modules |
+| cygnet | the backend: links the others, provisions servers that fit all their permission schemes |
+
 ## Principles
 
 1. **One binary, modules by package.** As skua: a module implements `core.Module` and is
@@ -21,7 +30,8 @@ measurable. It adds one more: **nothing leaves that we did not choose to send.**
    button, no source link. The hub listens only on a private network and never on a
    public port. The one public surface (invite codes, signups) is a Cloudflare Worker,
    so foundry opens no port and the origin is never named. It never holds the Discord
-   token. Logs carry IDs and counts, never message content or tokens. A bot learns
+   token. The hub never logs or keeps a frame's body: it routes and forgets.
+   Logs carry IDs and counts, never message content or tokens. A bot learns
    only what is addressed to it.
 7. **cygnet authenticates, the callee authorizes.** Every frame's `from` is stamped by
    cygnet from the connection's token. What a bot will do for whom is its own decision.
@@ -91,7 +101,7 @@ A bot with one process and one shard needs none of this and asks for nothing.
 
 | # | Experiment | State |
 |---|---|---|
-| 1 | Hub frame encoding: JSON against a fixed binary header with a raw body, round trip and allocations per call between two `link` clients | open |
+| 1 | Hub frame encoding: JSON against a fixed binary header with a raw body, round trip and allocations per call between two `link` clients | open. JSON baseline (`go test ./internal/hub -bench Call`): 97 us and 122 allocs a call and reply, two WebSocket hops on Windows loopback |
 | 2 | Hub call latency floor on one host: WebSocket against a Unix socket on a shared volume | open |
 | 3 | `permessage-deflate` off against on for hub frames (expected: off wins, frames are small) | open |
 
@@ -100,7 +110,7 @@ A bot with one process and one shard needs none of this and asks for nothing.
 | # | Milestone | State |
 |---|---|---|
 | 0 | Scaffold from skua: core, guard, intents, obs, ratelimit, store, brand, `/status` `/perf` `/help`, CI, deploy, setup | done |
-| 1 | `internal/hub` and the public `link` package: hello, calls, events, deadlines, backpressure, goaway; the fleet on `/status`; skua joins first | open |
+| 1 | `internal/hub` and the public `link` package (its own module): hello, calls, events, deadlines, backpressure, goaway; the fleet on `/status`; skua joins first | built and tested; skua not linked yet |
 | 2 | merlin and peregrine join through `link` (discordgo) on the shared `fleet` network | open |
 | 3 | `/provision`: compiled-in layouts applied by diff, fleet install links from what each bot declares, new servers through a guild template (bot `POST /guilds` is deprecated; verify first) | open |
 | 4 | Invite codes: `/invite` mints codes, the edge Worker redeems one for a fresh single-use Discord invite minted by cygnet, every join traced to a code | open |
