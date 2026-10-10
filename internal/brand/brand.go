@@ -25,30 +25,6 @@ const (
 	ColorIdle    = 0x6A707A
 )
 
-// platforms are the platforms notify follows, each in its colour muted into
-// the palette above.
-var platforms = map[string]int{
-	"youtube": 0xA85A4E, // muted red
-	"twitch":  0x7A6A9C, // muted violet
-	"kick":    0x6F9A5B, // muted green
-	"x":       0x7C8796, // dark slate
-	"tiktok":  0xA8728A, // muted rose
-}
-
-// ColorEnded is a stream's card once the stream is over, on every
-// platform: a muted ember in the platforms' tone, so a channel reads live
-// from finished at a glance.
-const ColorEnded = 0xA8744E
-
-// PlatformColor is platform's muted colour, or ColorNotice for one cygnet
-// has no colour for.
-func PlatformColor(platform string) int {
-	if c, ok := platforms[platform]; ok {
-		return c
-	}
-	return ColorNotice
-}
-
 //go:embed assets/*.png
 var assets embed.FS
 

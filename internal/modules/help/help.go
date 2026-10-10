@@ -25,12 +25,6 @@ import (
 	"github.com/6586x57890143/cygnet/internal/intents"
 )
 
-// Where the index's two link buttons go.
-const (
-	invite = "https://cygnet.lol"
-	source = "https://github.com/6586x57890143/cygnet"
-)
-
 // id is the one component ID: "help:pick" is the select, "help:index" the
 // back button, "help:on:<module>" and "help:off:<module>" the switches.
 const id = "help"
@@ -188,14 +182,13 @@ func (m *Module) index(guild *snowflake.ID) discord.MessageCreate {
 	}
 	body := []discord.ContainerSubComponent{
 		discord.NewSection(
-			discord.NewTextDisplay("## cygnet\n-# stercorarius · small grey · seen in this server"),
+			discord.NewTextDisplay("## cygnet\n-# cygnus · small grey · seen in this server"),
 		).WithAccessory(discord.NewThumbnail(att.add(brand.Avatar()))),
 		discord.NewSmallSeparator(),
 		discord.NewTextDisplay(strings.TrimSuffix(list.String(), "\n")),
 		discord.NewSmallSeparator(),
 		discord.NewTextDisplay(fmt.Sprintf("-# %d modules · %d commands · build `%s` · nothing she sends pings anyone", len(es), commands, core.Revision())),
 		discord.NewActionRow(menu(es, "")),
-		discord.NewActionRow(discord.NewLinkButton("invite", invite), discord.NewLinkButton("source", source)),
 	}
 	return message(brand.ColorPrimary, body, att)
 }

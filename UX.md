@@ -50,10 +50,10 @@ The rules every bird shares, which `brand/voice_test.go` holds the status lines 
   wrap, or one inside a code block: a wrapped line leaves its text hanging under the
   glyph on a phone. The `/help` index's tree marks each module's name line, and its
   command grid branches subcommands inside the code block.
-- Every other reply is a card (`brand.Card`, `/purge` is the reference): one
+- Every other reply is a card (`brand.Card`): one
   Components V2 container, accented in the mood of what it says (ok when done, warn
   while working, error when it failed, info for a readout), whose first line is the
-  module's emoji, its name in bold and what the reply is: `<emoji> **purge** · status`.
+  module's emoji, its name in bold and what the reply is: `<emoji> **provision** · apply`.
   Below it the content is text: a `✓`/`!` line, a code block grid, `-#` detail, an ASCII
   bar (`▰▱`) or tree (`├ └`). An icon is an app emoji inline, never an attachment, so a
   card uploads nothing and before the emoji sync its head is text alone. A thumbnail
@@ -61,16 +61,6 @@ The rules every bird shares, which `brand/voice_test.go` holds the status lines 
   decoration. Buttons go inside the container, below the text. A live readout is
   edited as a card too (`discord.NewMessageUpdateV2`) and its accent follows its state.
   Errors stay `core.Tell`, plain text.
-- A notify card is the one card accented by platform, not mood: its platform's
-  muted colour from `brand.PlatformColor`, because a channel of them reads by
-  platform. Its button and creator line wear the platform's tile, the glyph in the
-  platform's colour lifted to read on slate (`platformInk` in `tools/sprites`). Its
-  title is the card's heading (`###`), linked to the post or stream. Once its stream
-  is over it turns `brand.ColorEnded`, one muted ember for every platform, so live
-  reads apart from finished. A stream's card carries cygnet's picture of it: the
-  platform's frame under a slate band holding the bird (128 px, one px a cell),
-  the title in the 7 by 13 pixel face at 3 px a cell and who, how long and the
-  audience at 2 px, on slate with the bird at 2 px a cell until there is a frame.
 - A message cygnet posts as someone else (a bridge or a webhook) is their text. What
   cygnet adds to it, such as who it replies to, is a `-#` subtext line below it, never an
   embed: a webhook can't make a real Discord reply, and a box outweighs the message it

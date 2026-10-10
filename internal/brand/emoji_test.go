@@ -56,7 +56,7 @@ func TestEmojiNamesAreValidAndFollowTheArt(t *testing.T) {
 		}
 		keys[e.Key], names[e.Name] = true, true
 	}
-	for _, key := range []string{"cygnet_avatar", "cygnet_ok", "mod_help", "mod_preen"} {
+	for _, key := range []string{"cygnet_avatar", "cygnet_ok", "mod_help", "mod_perf"} {
 		if !keys[key] {
 			t.Errorf("no emoji for %s", key)
 		}
@@ -84,18 +84,18 @@ func TestSyncUploadsOnlyWhatIsMissing(t *testing.T) {
 	if len(files) != 0 || !strings.HasPrefix(e.Thumbnail.URL, "https://cdn.discordapp.com/emojis/") || !strings.HasSuffix(e.Thumbnail.URL, ".png") {
 		t.Fatalf("synced embed: thumbnail %q, %d files", e.Thumbnail.URL, len(files))
 	}
-	for _, get := range []func() (*discord.File, string){Avatar, func() (*discord.File, string) { return ModuleIcon("purge", ColorWarn) }} {
+	for _, get := range []func() (*discord.File, string){Avatar, func() (*discord.File, string) { return ModuleIcon("status", ColorWarn) }} {
 		if file, url := get(); file != nil || !strings.HasPrefix(url, "https://cdn.discordapp.com/emojis/") {
 			t.Errorf("synced icon: file %v, url %q", file, url)
 		}
 	}
-	if m := Mention("mod_purge"); !strings.HasPrefix(m, "<:mod_purge_") || !strings.HasSuffix(m, ">") {
+	if m := Mention("mod_status"); !strings.HasPrefix(m, "<:mod_status_") || !strings.HasSuffix(m, ">") {
 		t.Errorf("mention %q", m)
 	}
 	if Mention("mod_nobody") != "" {
 		t.Error("a mention for an emoji that doesn't exist")
 	}
-	if e := ComponentEmoji("pf_kick"); e == nil || !strings.HasPrefix(e.Name, "pf_kick_") || e.ID == 0 {
+	if e := ComponentEmoji("mod_help"); e == nil || !strings.HasPrefix(e.Name, "mod_help_") || e.ID == 0 {
 		t.Errorf("component emoji %+v", e)
 	}
 	if ComponentEmoji("mod_nobody") != nil {
@@ -136,7 +136,7 @@ func TestSyncFallsBackPerEmoji(t *testing.T) {
 
 func TestModuleIconFallsBack(t *testing.T) {
 	unsynced(t)
-	if f, url := ModuleIcon("purge", ColorWarn); f == nil || url != "attachment://mod_purge.png" {
+	if f, url := ModuleIcon("status", ColorWarn); f == nil || url != "attachment://mod_status.png" {
 		t.Fatalf("unsynced module icon: %v %q", f, url)
 	}
 	if f, url := ModuleIcon("nobody", ColorWarn); f == nil || url != "attachment://cygnet_warn.png" {

@@ -161,8 +161,8 @@ func TestHostFacts(t *testing.T) {
 	}
 	for _, out := range []string{
 		"",
-		"/home/deploy/cygnet\n",                    // docker answered nothing
-		"/home/deploy/cygnet\nwindows/amd64\n",     // not a Linux daemon
+		"/home/deploy/cygnet\n",                // docker answered nothing
+		"/home/deploy/cygnet\nwindows/amd64\n", // not a Linux daemon
 		"/home/deploy/cygnet\nlinux/arm64 extra\n", // not one platform
 		"/home/deploy/cygnet\nlinux/\n",
 		"cygnet\nlinux/amd64\n", // not absolute

@@ -21,13 +21,8 @@ import (
 	"github.com/6586x57890143/cygnet/internal/core/coretest"
 	"github.com/6586x57890143/cygnet/internal/guard"
 	"github.com/6586x57890143/cygnet/internal/intents"
-	"github.com/6586x57890143/cygnet/internal/modules/bird"
-	"github.com/6586x57890143/cygnet/internal/modules/notify"
 	"github.com/6586x57890143/cygnet/internal/modules/perf"
-	"github.com/6586x57890143/cygnet/internal/modules/preen"
-	"github.com/6586x57890143/cygnet/internal/modules/purge"
 	"github.com/6586x57890143/cygnet/internal/modules/status"
-	"github.com/6586x57890143/cygnet/internal/modules/whisper"
 	"github.com/6586x57890143/cygnet/internal/obs"
 )
 
@@ -155,7 +150,7 @@ func TestIndexListsTheRunningModulesWithAPage(t *testing.T) {
 		t.Fatalf("accent %#06x", c.AccentColor)
 	}
 	all := mustJSON(t, m.Components)
-	contains(t, "index", all, "`├` **nest**\\n-# where she sleeps\\n`└` **gull** · `off here`\\n-# loud\"", "2 modules · 3 commands · build `"+core.Revision()+"`", `"help:pick"`, invite, source)
+	contains(t, "index", all, "`├` **nest**\\n-# where she sleeps\\n`└` **gull** · `off here`\\n-# loud\"", "2 modules · 3 commands · build `"+core.Revision()+"`", `"help:pick"`)
 	if strings.Contains(all, "hidden") {
 		t.Error("a module without a page is listed")
 	}
@@ -389,18 +384,9 @@ func TestSwitchesRefuseAnyoneElse(t *testing.T) {
 func TestEveryPageKeepsTheVoice(t *testing.T) {
 	generated := string([]rune{0x2014, 0x2013, 0x2026, 0x2018, 0x2019, 0x201c, 0x201d})
 	oxford := regexp.MustCompile(`, [^,]+, (and|or) `)
-	watcher, err := notify.New(context.Background(), slog.New(slog.DiscardHandler), nil, nil, notify.Config{}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
 	mods := []core.Module{
 		status.New(nil, nil, nil),
-		whisper.New(nil, nil, nil),
-		bird.New(nil, nil, nil, ""),
-		purge.New(nil, nil, slog.New(slog.DiscardHandler), snowflake.ID(0)),
-		preen.New(nil, obs.New(), nil),
 		perf.New(obs.New()),
-		watcher,
 	}
 	for _, mod := range mods {
 		h, ok := mod.(core.Helper)

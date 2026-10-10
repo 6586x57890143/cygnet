@@ -27,22 +27,14 @@ import (
 
 	"github.com/6586x57890143/cygnet/internal/brand"
 	"github.com/6586x57890143/cygnet/internal/core"
-	"github.com/6586x57890143/cygnet/internal/filter"
 	"github.com/6586x57890143/cygnet/internal/guard"
 	"github.com/6586x57890143/cygnet/internal/intents"
-	"github.com/6586x57890143/cygnet/internal/modules/armada"
-	"github.com/6586x57890143/cygnet/internal/modules/bird"
 	"github.com/6586x57890143/cygnet/internal/modules/help"
-	"github.com/6586x57890143/cygnet/internal/modules/notify"
 	"github.com/6586x57890143/cygnet/internal/modules/perf"
-	"github.com/6586x57890143/cygnet/internal/modules/preen"
-	"github.com/6586x57890143/cygnet/internal/modules/purge"
 	"github.com/6586x57890143/cygnet/internal/modules/status"
-	"github.com/6586x57890143/cygnet/internal/modules/whisper"
 	"github.com/6586x57890143/cygnet/internal/obs"
 	"github.com/6586x57890143/cygnet/internal/ratelimit"
 	"github.com/6586x57890143/cygnet/internal/store"
-	"github.com/6586x57890143/cygnet/internal/webhook"
 )
 
 // reprobe is how often cygnet re-reads the portal's intent toggles. A change
@@ -54,12 +46,9 @@ import (
 const reprobe = 10 * time.Minute
 
 // userReset is whether a user-scope 429 is waited out to its bucket's reset
-// rather than its retry_after; tools/reactbench -compare policy decided it.
+// rather than its retry_after; skua's tools/reactbench -compare policy
+// decided it.
 const userReset = true
-
-// drainBy is how long a shutdown waits for preen's owed removals and fills,
-// inside docker-compose.prod.yml's 30s stop_grace_period.
-const drainBy = 25 * time.Second
 
 var errIntentsChanged = errors.New("privileged intents changed in the Developer Portal; restarting to re-identify")
 
@@ -67,8 +56,6 @@ func main() {
 	level := new(slog.LevelVar)
 	_ = level.UnmarshalText([]byte(env("CYGNET_LOG_LEVEL", "info")))
 	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level}))
-	// For a module that logs from deep in a goroutine (preen) without a
-	// logger threaded through.
 	slog.SetDefault(log)
 
 	err := run(log)
@@ -103,7 +90,6 @@ func run(log *slog.Logger) error {
 	}
 
 	var db status.Pinger
-	var purgeDB purge.DB
 	// Modules a guild has turned off; without a database a restart turns
 	// them all back on.
 	toggles := core.NewToggles(nil, nil)
@@ -116,7 +102,7 @@ func run(log *slog.Logger) error {
 		if err := store.Migrate(ctx, pool); err != nil {
 			return err
 		}
-		db, purgeDB = pool, pool
+		db = pool
 		off, err := store.ModulesOff(ctx, pool)
 		if err != nil {
 			return fmt.Errorf("reading module switches: %w", err)
@@ -139,13 +125,6 @@ func run(log *slog.Logger) error {
 	var running []core.Module
 	// One guard for every writer: its breaker is per guild across modules.
 	g := guard.New()
-	// One poster too: whisper and bird share each channel's webhook.
-	hooks := webhook.New(g)
-	// preen asks whisper who wrote a whisper, so its writer gets the flock.
-	whispers := whisper.New(g, hooks, filter.Default())
-	// Shutdown waits on preen, so a self-react's removal is never lost to a
-	// deploy.
-	preener := preen.New(g, obs.Default, whispers)
 	all := []core.Module{
 		status.New(func() status.Probe { return probe }, db, func() time.Duration {
 			if client == nil || client.Gateway == nil {
@@ -153,42 +132,8 @@ func run(log *slog.Logger) error {
 			}
 			return client.Gateway.Latency()
 		}),
-		whispers,
-		bird.New(g, hooks, filter.Default(), os.Getenv("CYGNET_XENO_CANTO_KEY")),
-		purge.New(g, purgeDB, log, bootstrap),
-		preener,
 		perf.New(obs.Default),
 		help.New(func() []core.Module { return running }, func(i discord.Interaction) bool { return router.Admin(i) }, toggles),
-	}
-	// The Armada bridge runs only where it is configured. Its mappings share
-	// the purge pool: nil without a database, and then they live in memory.
-	if cfg := armada.FromEnv(); cfg.Configured() {
-		bridge, err := armada.New(log, g, hooks, filter.Default(), purgeDB, cfg)
-		if err != nil {
-			return err
-		}
-		all = append(all, bridge)
-	}
-
-	// notify keeps its follows in the purge pool too, or in memory without
-	// one. It is optional: if it can't start, cygnet runs without it.
-	notifier, err := notify.New(ctx, log, g, purgeDB, notify.FromEnv(), func(i discord.Interaction) bool { return router.Admin(i) })
-	if err != nil {
-		log.Error("notify is off: it couldn't start", "err", err)
-	} else {
-		all = append(all, notifier)
-	}
-	// Pushes from twitch, kick and youtube, which reach cygnet through the
-	// tunnel; nothing listens unless notify took CYGNET_HOOKS_URL.
-	if notifier != nil && notifier.Pushing() {
-		hooks := &http.Server{Addr: env("CYGNET_HOOKS_ADDR", ":8080"), Handler: notifier.Hooks(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second}
-		go func() {
-			log.Info("hooks listening", "addr", hooks.Addr)
-			if err := hooks.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-				log.Error("hooks stopped", "err", err)
-			}
-		}()
-		defer func() { _ = hooks.Shutdown(context.Background()) }()
 	}
 
 	wants := make(map[string]intents.Want, len(all))
@@ -301,12 +246,6 @@ func run(log *slog.Logger) error {
 	for {
 		select {
 		case <-ctx.Done():
-			// No new events, then the self-reacts already taken are answered
-			// before the REST client closes (docker-compose.prod.yml gives 30s).
-			client.Gateway.Close(context.Background())
-			if !preener.Drain(drainBy) {
-				log.Warn("shutting down with preen work still owed")
-			}
 			return nil
 		case <-tick.C:
 			// The status line rides the re-probe tick: no loop of its own.

@@ -32,57 +32,26 @@ const (
 	MessageDelete
 	ChannelEdit
 	MemberEdit
-	WebhookExecute
-	WebhookCreate
-	// WhisperMember is keyed by member ID, not guild: one member's share of
-	// the guild's WebhookExecute budget.
-	WhisperMember
-	// Purge is one /purge write call, so a bulk delete of 100 counts once.
-	Purge
-	// PurgeMember is keyed by member ID: how often one member can start
-	// /purge now.
-	PurgeMember
-	// Reaction is one reaction added or removed.
-	Reaction
 	// CommandSync is one overwrite of a guild's command list after a module
 	// is turned on or off.
 	CommandSync
 	// EmojiCreate is one application emoji uploaded, keyed by guild 0:
 	// they belong to the app, not a guild.
 	EmojiCreate
-	// AttachmentRefresh is one call to re-sign the Discord attachment links
-	// pasted in a bridged message. Not a write, but the endpoint is
-	// undocumented and the links come from members, so it is capped and
-	// breakered like one.
-	AttachmentRefresh
 	opCount
 )
 
 // caps are per guild per hour: well above a
 // bad afternoon, well below "the bot did something nobody asked for".
 var caps = [opCount]int64{
-	MessageSend:    120,
-	MessageDelete:  300,
-	ChannelEdit:    60,
-	MemberEdit:     120,
-	WebhookExecute: 300,
-	// One per channel, ever, in normal use.
-	WebhookCreate: 20,
-	WhisperMember: 30,
-	// A first sweep of a busy guild is thousands of single deletes of old
-	// messages; Discord's per-channel limit is the real ceiling, this only
-	// stops a runaway loop.
-	Purge:       100000,
-	PurgeMember: 6,
-	// preen spends sixteen per self-react, fifteen birds and the removal:
-	// about seventy-eight a guild an hour. It is a runaway stop, not a pace.
-	Reaction: 1260,
+	MessageSend:   120,
+	MessageDelete: 300,
+	ChannelEdit:   60,
+	MemberEdit:    120,
 	// Discord allows 200 command creates a guild a day.
 	CommandSync: 8,
 	// A boot uploads only what was redrawn: a handful, never hundreds.
 	EmojiCreate: 50,
-	// One per bridged message with a pasted link: WebhookExecute's pace.
-	AttachmentRefresh: 300,
 }
 
 const (

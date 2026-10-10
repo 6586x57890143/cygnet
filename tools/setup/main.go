@@ -39,11 +39,6 @@ import (
 
 const api = "https://discord.com/api/v10"
 
-// inviteURL is web/'s Worker, which redirects to Discord's bare install
-// link. That link asks for the app's Default Install Settings, which cygnet
-// itself writes at every boot from what its running modules declare.
-const inviteURL = "https://cygnet.lol"
-
 type application struct {
 	ID    string `json:"id"`
 	Name  string `json:"name"`
@@ -177,10 +172,9 @@ func run(host, dir, repo, admin string, noProfile, noDeploy bool) error {
 	}
 
 	step("invite")
-	note("%s", inviteURL)
-	note("redirects to https://discord.com/oauth2/authorize?client_id=%s", app.ID)
-	if !app.BotPublic {
-		note("the app is private, so only its owner can add it; the right default for a test bed")
+	note("https://discord.com/oauth2/authorize?client_id=%s", app.ID)
+	if app.BotPublic {
+		note("the app is public: switch Public Bot off in the portal, cygnet answers only to the fleet")
 	}
 
 	step("next")
