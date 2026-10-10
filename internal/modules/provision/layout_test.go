@@ -191,6 +191,29 @@ func (g *guildFake) CreateGuildChannel(_ snowflake.ID, c discord.GuildChannelCre
 	return ch.guildChannel(), nil
 }
 
+func (g *guildFake) UpdateChannel(channel snowflake.ID, u discord.ChannelUpdate, _ ...rest.RequestOpt) (discord.Channel, error) {
+	if err := g.fail["rename"]; err != nil {
+		return nil, err
+	}
+	var name *string
+	switch u := u.(type) {
+	case discord.GuildTextChannelUpdate:
+		name = u.Name
+	case discord.GuildVoiceChannelUpdate:
+		name = u.Name
+	case discord.GuildCategoryChannelUpdate:
+		name = u.Name
+	}
+	for i, c := range g.chans {
+		if c.id == channel {
+			g.chans[i].name = *name
+			g.writes = append(g.writes, "rename "+*name)
+			return c.guildChannel(), nil
+		}
+	}
+	return nil, errors.New("no such channel")
+}
+
 func (g *guildFake) UpdatePermissionOverwrite(channel, role snowflake.ID, u discord.PermissionOverwriteUpdate, _ ...rest.RequestOpt) error {
 	if err := g.fail["overwrite"]; err != nil {
 		return err
@@ -252,10 +275,10 @@ func TestApplyThenNothingLeft(t *testing.T) {
 	p := planOn(t, g, map[string]snowflake.ID{"skua": skuaApp})
 	want := strings.Join([]string{
 		"+ role  mod", "+ role  member",
-		"+ group welcome", "+ text  #rules", "+ text  #announcements",
-		"+ group talk", "+ text  #general", "+ text  #media",
-		"+ group voice", "+ voice lounge",
-		"+ group staff", "+ text  #cygnet",
+		"+ group ╭ welcome", "+ text  #📜│rules", "+ text  #📣│announcements",
+		"+ group ├ chatter", "+ text  #💬│general", "+ text  #📷│media",
+		"+ group ├ song", "+ voice 🔊│lounge",
+		"+ group ╰ nest", "+ text  #🦢│cygnet",
 	}, "\n")
 	if got := lines(p.changes); got != want {
 		t.Fatalf("plan:\n%s", got)
@@ -268,12 +291,13 @@ func TestApplyThenNothingLeft(t *testing.T) {
 	if err != nil || done != 12 || len(seen) != 12 {
 		t.Fatalf("applied %d, %v", done, err)
 	}
-	// #announcements was made with skua's overwrite, by its role's ID.
+	// #announcements and the nest's #cygnet were made with skua's
+	// overwrite, by its role's ID.
 	for _, c := range g.chans {
-		if c.name == "announcements" {
+		if bare(c.name) == "announcements" || bare(c.name) == "cygnet" {
 			found := false
 			for _, o := range c.ows {
-				found = found || (o.RoleID == skuaRole && o.Allow == post)
+				found = found || (o.RoleID == skuaRole && o.Allow&post == post)
 			}
 			if !found {
 				t.Fatalf("announcements overwrites %+v", c.ows)
@@ -295,9 +319,11 @@ func TestBirdWaits(t *testing.T) {
 	if _, err := apply(context.Background(), g, guard.New(), p.s, flock, p.changes, func(int) {}); err != nil {
 		t.Fatal(err)
 	}
-	// Once skua is here, the overwrite it missed is the only change left.
+	// Once skua is here and linked, the overwrites it missed are the only
+	// changes left: posting in #announcements, and the nest every bird
+	// reports in.
 	p = planOn(t, g, map[string]snowflake.ID{"skua": skuaApp})
-	if got := lines(p.changes); got != "! perms #announcements: skua" {
+	if got := lines(p.changes); got != "! perms #announcements: skua\n! perms #cygnet: skua" {
 		t.Fatalf("plan:\n%s", got)
 	}
 	if _, err := apply(context.Background(), g, guard.New(), p.s, flock, p.changes, func(int) {}); err != nil {
@@ -347,7 +373,7 @@ func TestPreview(t *testing.T) {
 	p := planOn(t, g, map[string]snowflake.ID{"skua": skuaApp})
 	card := p.preview("")
 	text := coretest.Text("", []discord.LayoutComponent{card})
-	for _, want := range []string{"**provision** · flock", "▸ 12 changes to make it match", "```diff\n+ role  mod", "+ text  #cygnet\n```",
+	for _, want := range []string{"**provision** · flock", "▸ 12 changes to make it match", "```diff\n+ role  mod", "+ text  #🦢│cygnet\n```",
 		"-# #rules: @everyone can't send messages", "-# #announcements: skua can send messages, embed links, attach files"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("preview lacks %q:\n%s", want, text)
@@ -386,7 +412,7 @@ func TestOverwriteSaid(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i, c := range g.chans {
-		if c.name == "rules" {
+		if bare(c.name) == "rules" {
 			g.chans[i].ows = nil
 		}
 	}
@@ -423,7 +449,7 @@ func TestApplyStops(t *testing.T) {
 	p := planOn(t, g, nil)
 	g.fail["channel"] = &rest.Error{Code: rest.JSONErrorCodeLackPermissionsToPerformAction, Response: &http.Response{StatusCode: 403}}
 	done, err := apply(context.Background(), g, guard.New(), p.s, flock, p.changes, func(int) {})
-	if done != 2 || err == nil || !strings.HasPrefix(err.Error(), "+ group welcome: ") {
+	if done != 2 || err == nil || !strings.HasPrefix(err.Error(), "+ group ╭ welcome: ") {
 		t.Fatalf("done %d, %v", done, err)
 	}
 	r := p.result(done, 10, err)
@@ -631,5 +657,67 @@ func TestRoleOrder(t *testing.T) {
 	g.fail["read"] = errors.New("500")
 	if err := order(guild, g, nil, flock); err == nil {
 		t.Fatal("a failed read should fail")
+	}
+}
+
+// A server laid out before the names were styled is restyled by renames:
+// the same channels, with their history, under the new names.
+func TestRestyle(t *testing.T) {
+	g := newGuild()
+	p := planOn(t, g, map[string]snowflake.ID{"skua": skuaApp})
+	if _, err := apply(context.Background(), g, guard.New(), p.s, flock, p.changes, func(int) {}); err != nil {
+		t.Fatal(err)
+	}
+	ids := map[string]snowflake.ID{}
+	for i, c := range g.chans {
+		g.chans[i].name = bare(c.name)
+		ids[bare(c.name)] = c.id
+	}
+	g.writes = nil
+	p = planOn(t, g, map[string]snowflake.ID{"skua": skuaApp})
+	for _, c := range p.changes {
+		if c.kind != rename {
+			t.Fatalf("restyling made something new: %s", c.line())
+		}
+	}
+	if got := lines(p.changes); !strings.Contains(got, "! name  welcome: ╭ welcome") || !strings.Contains(got, "! name  #rules: 📜│rules") || len(p.changes) != 10 {
+		t.Fatalf("plan:\n%s", got)
+	}
+	if _, err := apply(context.Background(), g, guard.New(), p.s, flock, p.changes, func(int) {}); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range g.chans {
+		if ids[bare(c.name)] != c.id {
+			t.Fatalf("%s is a different channel now", c.name)
+		}
+	}
+	if again := planOn(t, g, map[string]snowflake.ID{"skua": skuaApp}); len(again.changes) != 0 {
+		t.Fatalf("left:\n%s", lines(again.changes))
+	}
+
+	g.chans[0].name = "welcome"
+	g.fail["rename"] = errors.New("429")
+	p = planOn(t, g, nil)
+	if _, err := apply(context.Background(), g, guard.New(), p.s, flock, p.changes, func(int) {}); err == nil {
+		t.Fatal("a refused rename should stop the apply")
+	}
+}
+
+func TestNames(t *testing.T) {
+	for _, c := range []struct {
+		i, n int
+		want string
+	}{{0, 1, "─ a"}, {0, 3, "╭ a"}, {1, 3, "├ a"}, {2, 3, "╰ a"}} {
+		if got := categoryName("a", c.i, c.n); got != c.want {
+			t.Errorf("%d of %d: %q", c.i, c.n, got)
+		}
+	}
+	for in, want := range map[string]string{"📜│rules": "rules", "╰ nest": "nest", "general": "general", "": ""} {
+		if bare(in) != want {
+			t.Errorf("bare(%q) = %q", in, bare(in))
+		}
+	}
+	if (Channel{Name: "x"}).full() != "x" {
+		t.Error("a channel with no emoji is its name")
 	}
 }

@@ -55,7 +55,7 @@ func mustChannels(t *testing.T, g *guildFake) []discord.GuildChannel {
 // drift takes #rules' overwrites away, as an admin might.
 func drift(g *guildFake) {
 	for i, c := range g.chans {
-		if c.name == "rules" {
+		if bare(c.name) == "rules" {
 			g.chans[i].ows = nil
 		}
 	}
@@ -92,7 +92,7 @@ func TestDriftProposed(t *testing.T) {
 		t.Fatal("the same drift was reported twice")
 	}
 	for i, c := range g.chans {
-		if c.name == "media" {
+		if bare(c.name) == "media" {
 			g.chans[i].ows = []discord.RolePermissionOverwrite{}
 		}
 	}
@@ -180,7 +180,7 @@ func TestDriftQuietCases(t *testing.T) {
 	m.posted.Delete(guild)
 	var kept []fakeChan
 	for _, c := range g.chans {
-		if c.name != "cygnet" {
+		if bare(c.name) != "cygnet" {
 			kept = append(kept, c)
 		}
 	}

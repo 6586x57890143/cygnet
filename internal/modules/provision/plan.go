@@ -3,6 +3,7 @@ package provision
 import (
 	"fmt"
 	"hash/fnv"
+	"slices"
 	"strings"
 
 	"github.com/disgoorg/disgo/discord"
@@ -19,6 +20,9 @@ const (
 	roleOrder
 	categoryCreate
 	channelCreate
+	// rename restyles a category or channel that's already here, keeping
+	// its history.
+	rename
 	overwriteSet
 )
 
@@ -35,7 +39,11 @@ type change struct {
 	// goes in.
 	category string
 	channel  Channel
-	ow       Overwrite
+	// name is what a create or a rename calls it on Discord, and typ what
+	// a rename renames.
+	name string
+	typ  discord.ChannelType
+	ow   Overwrite
 	// fields are what a roleUpdate changes.
 	fields []string
 	// blocked is why cygnet can't make this change, or "".
@@ -77,12 +85,17 @@ func plan(l Layout, s state) (changes []change, waiting []string) {
 		changes = append(changes, c)
 	}
 	var later []change
-	for _, cat := range l.Categories {
+	for i, cat := range l.Categories {
+		name := categoryName(cat.Name, i, len(l.Categories))
 		parent, ok := s.channel(cat.Name, discord.ChannelTypeGuildCategory, 0)
-		if !ok {
-			changes = append(changes, change{kind: categoryCreate, category: cat.Name})
+		switch {
+		case !ok:
+			changes = append(changes, change{kind: categoryCreate, category: cat.Name, name: name})
+		case parent.Name() != name:
+			changes = append(changes, change{kind: rename, id: parent.ID(), category: cat.Name, name: name, typ: discord.ChannelTypeGuildCategory})
 		}
 		for _, ch := range cat.Channels {
+			ch.Overwrites = s.expand(ch.Overwrites)
 			var have discord.GuildChannel
 			found := false
 			if ok {
@@ -98,8 +111,11 @@ func plan(l Layout, s state) (changes []change, waiting []string) {
 					}
 					kept.Overwrites = append(kept.Overwrites, o)
 				}
-				changes = append(changes, change{kind: channelCreate, category: cat.Name, channel: kept})
+				changes = append(changes, change{kind: channelCreate, category: cat.Name, channel: kept, name: ch.full()})
 				continue
+			}
+			if have.Name() != ch.full() {
+				changes = append(changes, change{kind: rename, id: have.ID(), channel: ch, name: ch.full(), typ: ch.typ()})
 			}
 			for _, o := range ch.Overwrites {
 				if s.waits(o, roles) {
@@ -192,11 +208,33 @@ func (s state) channel(name string, typ discord.ChannelType, parent snowflake.ID
 		if c.ParentID() != nil {
 			p = *c.ParentID()
 		}
-		if c.Type() == typ && p == parent && strings.EqualFold(c.Name(), name) {
+		if c.Type() == typ && p == parent && strings.EqualFold(bare(c.Name()), bare(name)) {
 			return c, true
 		}
 	}
 	return nil, false
+}
+
+// expand puts each linked bird in place of Birds, in name order.
+func (s state) expand(ows []Overwrite) []Overwrite {
+	var out []Overwrite
+	for _, o := range ows {
+		if o.Role != Birds {
+			out = append(out, o)
+			continue
+		}
+		var names []string
+		for name := range s.birds {
+			if name != Self {
+				names = append(names, name)
+			}
+		}
+		slices.Sort(names)
+		for _, name := range names {
+			out = append(out, Overwrite{Role: name, Allow: o.Allow, Deny: o.Deny})
+		}
+	}
+	return out
 }
 
 func (c Channel) typ() discord.ChannelType {
@@ -236,12 +274,17 @@ func (c change) line() string {
 	case roleOrder:
 		return "! order roles as the layout lists them"
 	case categoryCreate:
-		return "+ group " + c.category
+		return "+ group " + c.name
 	case channelCreate:
 		if c.channel.Voice {
-			return "+ voice " + c.channel.Name
+			return "+ voice " + c.name
 		}
-		return "+ text  #" + c.channel.Name
+		return "+ text  #" + c.name
+	case rename:
+		if c.typ == discord.ChannelTypeGuildCategory {
+			return "! name  " + c.category + ": " + c.name
+		}
+		return "! name  #" + c.channel.Name + ": " + c.name
 	}
 	return "! perms #" + c.channel.Name + ": " + c.ow.Role
 }
