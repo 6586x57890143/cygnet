@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strconv"
 	"strings"
@@ -51,10 +52,19 @@ type Module struct {
 	applying sync.Map
 	// running is the applies in flight, for a test to wait on.
 	running sync.WaitGroup
+
+	// kept is each provisioned guild's Kept; save keeps one past a restart.
+	kept sync.Map
+	save func(context.Context, snowflake.ID, Kept) error
+	log  *slog.Logger
+	// timers is each guild's pending drift check, posted the digest of the
+	// drift last reported there, so one drift is reported once.
+	timers, posted sync.Map
+	settle         time.Duration
 }
 
 func New(fleet Fleet, want func() discord.Permissions, admin func(discord.Interaction) bool, g *guard.Guard) *Module {
-	return &Module{fleet: fleet, want: want, admin: admin, guard: g}
+	return &Module{fleet: fleet, want: want, admin: admin, guard: g, settle: settle}
 }
 
 func (*Module) Name() string { return "provision" }
@@ -76,7 +86,7 @@ func (*Module) Help() core.Help {
 	return core.Help{
 		Color: brand.ColorPrimary,
 		Line:  "sets this server up for the flock",
-		About: "/provision fleet shows every bird linked to her, whether it's in this server and whether it holds what it asks for. each one that isn't in yet or is missing something gets a button that adds it or grants the rest. what a bird asks for comes from the bird itself, so the card follows each one as it changes. /provision layout shows what a layout would change here before anything happens: roles, channels and who may post where, birds included. apply makes exactly those changes and nothing else, and leaves whatever the layout doesn't name alone",
+		About: "/provision fleet shows every bird linked to her, whether it's in this server and whether it holds what it asks for. each one that isn't in yet or is missing something gets a button that adds it or grants the rest. what a bird asks for comes from the bird itself, so the card follows each one as it changes. /provision layout shows what a layout would change here before anything happens: roles, channels and who may post where, birds included. apply makes exactly those changes and nothing else, and leaves whatever the layout doesn't name alone. once a layout is applied she keeps an eye on it, and when the server drifts from it she says so in the layout's staff channel. /provision mode sets how far she goes: watch only says so, propose adds a button to put it back, and act puts it back and then says what she did",
 	}
 }
 
@@ -90,6 +100,9 @@ func (m *Module) Commands() []core.Command {
 				discord.ApplicationCommandOptionSubCommand{Name: "fleet", Description: "every bird, in this server or not, and what it's missing"},
 				discord.ApplicationCommandOptionSubCommand{Name: "layout", Description: "what a layout would change here, then apply it", Options: []discord.ApplicationCommandOption{
 					discord.ApplicationCommandOptionString{Name: "name", Description: "which layout", Choices: choices()},
+				}},
+				discord.ApplicationCommandOptionSubCommand{Name: "mode", Description: "how far she goes on her own when this server drifts", Options: []discord.ApplicationCommandOption{
+					discord.ApplicationCommandOptionString{Name: "level", Description: "watch, propose or act", Required: true, Choices: modeChoices()},
 				}},
 			},
 		},
@@ -110,9 +123,22 @@ func choices() []discord.ApplicationCommandOptionChoiceString {
 	return out
 }
 
+func modeChoices() []discord.ApplicationCommandOptionChoiceString {
+	out := make([]discord.ApplicationCommandOptionChoiceString, len(modes))
+	for i, md := range modes {
+		out[i] = discord.ApplicationCommandOptionChoiceString{Name: md, Value: md}
+	}
+	return out
+}
+
 func (m *Module) run(ctx context.Context, e *events.ApplicationCommandInteractionCreate) error {
-	if sub := e.SlashCommandInteractionData().SubCommandName; sub != nil && *sub == "layout" {
-		return m.layoutCmd(ctx, e)
+	if sub := e.SlashCommandInteractionData().SubCommandName; sub != nil {
+		switch *sub {
+		case "layout":
+			return m.layoutCmd(ctx, e)
+		case "mode":
+			return m.modeCmd(ctx, e)
+		}
 	}
 	card := m.card(ctx, e.Client().Rest, *e.GuildID(), e.ApplicationID())
 	return e.CreateMessage(discord.MessageCreate{
