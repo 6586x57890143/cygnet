@@ -39,13 +39,14 @@ services:
         max-file: "5"
 
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     env_file:
       - .env
     environment:
       POSTGRES_DB: cygnet
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # 18+ keeps its data in a versioned directory under this mount.
+      - pgdata:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 5s
