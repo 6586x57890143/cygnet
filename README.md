@@ -1,3 +1,5 @@
+<img src="internal/brand/assets/cygnet_avatar.png" width="128" align="right" alt="cygnet">
+
 # cygnet
 
 The coordinator of a small Discord bot fleet, in Go. The other bots connect to it to

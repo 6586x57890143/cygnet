@@ -6,7 +6,7 @@ Written 2026-10-10. Read this with `CLAUDE.md` and `SPEC.md`.
 
 | Branch | State |
 |---|---|
-| `main` | Milestone 0. Local only, no remote. |
+| `main` | Milestone 0 and the swan art. Public at `6586x57890143/cygnet`. |
 
 ## What M0 did
 
@@ -31,10 +31,8 @@ Decisions worth keeping:
 
 ## Not done yet, deliberately
 
-- No remote and no GitHub secrets, so CI and deploy have not run. A remote, private
-  or public, is the owner's call. Milestone 1 needs one anyway, since the other bots
-  import the `link` package.
-- The art is skua's bird, recoloured and renamed. cygnet needs its own source drawing
-  (a young swan) and voice lines in `internal/brand/voice.go`.
+- No GitHub secrets or variables yet, so the deploy skips (`DEPLOY_ENABLED` unset)
+  until `go run ./tools/setup` is run with cygnet's token.
+- The voice lines in `internal/brand/voice.go` are still skua's; cygnet needs her own.
 - The hub, provisioner, invite codes and signups: milestones 1-5 in `SPEC.md`.
 - Not run against Discord: needs cygnet's own application and token (`tools/setup`).

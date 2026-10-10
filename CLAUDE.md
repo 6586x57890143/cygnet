@@ -13,8 +13,8 @@ sees follows [`UX.md`](./UX.md).
 - `internal/core`, `guard`, `intents`, `obs`, `ratelimit`, `store`, `brand`: copied from
   skua and owned here now. A fix that applies to both goes to each repo on its own.
 - `internal/modules/*`: `status` (the reference), `perf`, `help`.
-- `tools/sprites`: the art. The bird is still skua's, recoloured; cygnet's own drawing
-  replaces `art/source/cygnet_avatar_source.png` when it exists.
+- `tools/sprites`: the art. `art/source/cygnet_avatar_source.png` is the drawing; the
+  generator keeps its disc, quantises it to its own palette and computes the banner.
 
 Adding a module is as in skua: implement `core.Module`, declare intents honestly in
 `Want`, channel permissions in `Perms`, a `/help` page, a glyph in
@@ -50,8 +50,9 @@ scripts/deploy.sh                                   # manual deploy of HEAD to f
   branch gets a worktree: `git worktree add -b <branch> ../cygnet.worktrees/<name> main`.
   Use absolute paths in shell commands: a relative one can resolve against the main
   checkout and hit the deny rule.
-- No remote yet, deliberately. Until there is one, a finished branch is merged into
-  `main` with `git merge --ff-only` from the main checkout, then the worktree removed.
+- Public repo `6586x57890143/cygnet`: privacy by design, not obscurity. Keep docs sparse
+  and free of personal details. `main` takes changes through PRs, squash merged, one
+  change per PR, PR title reads as the commit (`feat(hub): ...`).
 - One bot per token: check no other session runs cygnet before starting it live. Give
   each local Postgres its own port with `CYGNET_PG_PORT`.
 - Stage paths explicitly, never `git add -A`.

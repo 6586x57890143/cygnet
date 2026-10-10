@@ -99,9 +99,11 @@ taken from the environment, is said out loud before it is used.
   size: the avatar is 128 cells, so the profile picture is 8 px cells (1024) and the
   mood icons 2 px cells (256). The banner is 320 by 110 at 4 px (1280 by 440).
   `internal/brand` fails if an icon has a cell that is not flat.
-- Resample by majority per cell (`cells`), never one sample per cell.
-- Centre on the grid: the halo disc leaves 11 cells on every side, and the bird is
-  centred in its icon to the nearest cell.
+- Resample by majority per cell (`cells`), never one sample per cell, then reduce to
+  the drawing's own 40 colours (`quantise`). Every colour in the brand comes from the
+  avatar: navy field, dusk sky and water, cream down, slate bill, reeds.
+- Centre on the grid: the disc (the cygnet in its water and reeds) is
+  centred in its icon to the nearest cell, on the flat navy field in the profile picture.
 - A badge glyph is 6 by 6 with equal margins on opposite sides, so it sits one 8 px cell
   inside the badge's interior on every side. `tools/sprites` refuses a glyph that is
   not.

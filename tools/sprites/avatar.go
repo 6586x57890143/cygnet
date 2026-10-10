@@ -6,92 +6,27 @@ import (
 	"image/png"
 	"math"
 	"os"
+	"sort"
 )
 
 // The avatar is drawn, not computed: art/source/cygnet_avatar_source.png is the
-// original, on a navy field with a lavender halo. This lifts the bird out
-// and recolours it into cygnet's scheme, so the source stays the one thing a
-// person edits and the palette stays the one thing this file owns:
-//
-//   - the frame (anything clearly blue-shifted) is dropped; the profile
-//     picture redraws it as a flat field and a computed halo disc, centred
-//     on the grid, which the source's hand-stepped halo is not quite;
-//   - the bird's warm-neutral feathers map by brightness onto the umber
-//     ramp, topping out in the golden hackle tone;
-//   - cool greys (the bill, the darker wing feathers) map onto slate;
-//   - the near-black outline and the eye's glint snap to the outline ink
-//     and bone.
+// original, a cygnet in a disc of dusk water and reeds on a flat navy field.
+// This keeps the whole disc, drops the field (the profile picture redraws it
+// flat), resamples onto the grid and reduces the disc to its own few dozen
+// colours, so the source stays the one thing a person edits and the palette
+// is the drawing's.
 
 const avatarSource = "art/source/cygnet_avatar_source.png"
 
-// lumStep is the brightness quantum the recolour snaps to.
-const lumStep = 12.0
+// tones is how many colours the disc keeps. Enough for the down's soft
+// shading, few enough that a 256px icon stays under brand's 10 KB budget.
+const tones = 40
 
-// frameAt reports whether a source pixel is the navy field or the lavender
-// halo rather than the bird: the frame is blue-shifted by about 35, the bird
-// and its outline by under 15.
-func frameAt(c color.NRGBA) bool {
-	return int(c.B)-int(c.R) >= 22 && c.B >= 80
-}
-
-func lum(c color.NRGBA) float64 {
-	return 0.299*float64(c.R) + 0.587*float64(c.G) + 0.114*float64(c.B)
-}
-
-// stop is one point on a brightness-to-colour gradient.
-type stop struct {
-	at float64
-	c  color.NRGBA
-}
-
-func gradient(stops []stop, l float64) color.NRGBA {
-	if l <= stops[0].at {
-		return stops[0].c
-	}
-	for i := 1; i < len(stops); i++ {
-		if l <= stops[i].at {
-			a, b := stops[i-1], stops[i]
-			return mix(a.c, b.c, (l-a.at)/(b.at-a.at))
-		}
-	}
-	return stops[len(stops)-1].c
-}
-
-func mix(a, b color.NRGBA, t float64) color.NRGBA {
-	t = math.Max(0, math.Min(1, t))
-	f := func(x, y uint8) uint8 { return uint8(math.Round(float64(x) + (float64(y)-float64(x))*t)) }
-	return color.NRGBA{f(a.R, b.R), f(a.G, b.G), f(a.B, b.B), 0xFF}
-}
-
-var (
-	featherStops = []stop{
-		{8, lineInk}, {32, umberRamp[0]}, {52, umberRamp[1]}, {76, umberRamp[2]},
-		{102, umberRamp[3]}, {130, umberRamp[4]}, {165, gold[1]},
-	}
-	slateStops = []stop{
-		{8, lineInk}, {35, slate[0]}, {60, slate[1]}, {95, slate[2]}, {150, slate[3]},
-	}
-)
-
-// recolor maps one source pixel into cygnet's scheme, or reports it as frame.
-func recolor(c color.NRGBA) (color.NRGBA, bool) {
-	l := lum(c)
-	// Brightness is snapped to steps before any mapping, so each ramp yields
-	// a few dozen fixed tones rather than a smooth gradient: that is what
-	// keeps the result pixel art, and keeps it under 256 colours.
-	q := math.Round(l/lumStep) * lumStep
-	switch {
-	case frameAt(c):
-		return color.NRGBA{}, true
-	case l < 14:
-		return lineInk, false // outline
-	case l > 190:
-		return bone[1], false // the eye's glint
-	case int(c.B)-int(c.R) > 1:
-		return gradient(slateStops, q), false
-	default:
-		return gradient(featherStops, q), false
-	}
+// fieldAt reports whether a source pixel is the navy field: within a hair of
+// fieldInk, which the disc's darkest water never comes near.
+func fieldAt(c color.NRGBA) bool {
+	d := func(a, b uint8) int { return max(int(a), int(b)) - min(int(a), int(b)) }
+	return d(c.R, fieldInk.R)+d(c.G, fieldInk.G)+d(c.B, fieldInk.B) < 12
 }
 
 // grid is the avatar's logical resolution, in cells across. Every avatar
@@ -99,12 +34,7 @@ func recolor(c color.NRGBA) (color.NRGBA, bool) {
 // the mood icons 128x2 = 256, so a cell is always a hard square of one size.
 const grid = 128
 
-// haloR is the halo disc's radius in cells, the source halo's 1041px across
-// 1254 at 128 cells. Centred on the grid, it leaves 11 cells of field on
-// every side.
-const haloR = 53
-
-// bird returns the source's bird, recoloured, on transparency at grid
+// bird returns the source's disc, quantised, on transparency at grid
 // resolution.
 func bird() (*image.NRGBA, error) {
 	f, err := os.Open(avatarSource)
@@ -121,19 +51,80 @@ func bird() (*image.NRGBA, error) {
 	for y := range b.Dy() {
 		for x := range b.Dx() {
 			c := color.NRGBAModel.Convert(src.At(b.Min.X+x, b.Min.Y+y)).(color.NRGBA)
-			if c, frame := recolor(c); !frame {
+			if !fieldAt(c) {
 				out.SetNRGBA(x, y, c)
 			}
 		}
 	}
-	return cells(out, grid), nil
+	return quantise(cells(out, grid), tones), nil
+}
+
+// quantise maps every opaque pixel to the nearest of k colours found by
+// k-means over the image itself. The seeds are spread evenly by brightness
+// and the iteration count is fixed, so every run picks the same colours.
+func quantise(img *image.NRGBA, k int) *image.NRGBA {
+	var px []color.NRGBA
+	b := img.Bounds()
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			if c := img.NRGBAAt(x, y); c.A != 0 {
+				px = append(px, c)
+			}
+		}
+	}
+	sorted := append([]color.NRGBA(nil), px...)
+	sort.SliceStable(sorted, func(i, j int) bool { return lum(sorted[i]) < lum(sorted[j]) })
+	centres := make([][3]float64, k)
+	for i := range centres {
+		c := sorted[(2*i+1)*len(sorted)/(2*k)]
+		centres[i] = [3]float64{float64(c.R), float64(c.G), float64(c.B)}
+	}
+	nearest := func(c color.NRGBA) int {
+		best, bd := 0, math.MaxFloat64
+		for i, m := range centres {
+			dr, dg, db := float64(c.R)-m[0], float64(c.G)-m[1], float64(c.B)-m[2]
+			if d := dr*dr + dg*dg + db*db; d < bd {
+				best, bd = i, d
+			}
+		}
+		return best
+	}
+	for range 20 {
+		sum := make([][4]float64, k)
+		for _, c := range px {
+			i := nearest(c)
+			sum[i][0] += float64(c.R)
+			sum[i][1] += float64(c.G)
+			sum[i][2] += float64(c.B)
+			sum[i][3]++
+		}
+		for i, s := range sum {
+			if s[3] > 0 {
+				centres[i] = [3]float64{s[0] / s[3], s[1] / s[3], s[2] / s[3]}
+			}
+		}
+	}
+	out := image.NewNRGBA(b)
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			if c := img.NRGBAAt(x, y); c.A != 0 {
+				m := centres[nearest(c)]
+				out.SetNRGBA(x, y, color.NRGBA{uint8(math.Round(m[0])), uint8(math.Round(m[1])), uint8(math.Round(m[2])), 0xFF})
+			}
+		}
+	}
+	return out
+}
+
+func lum(c color.NRGBA) float64 {
+	return 0.299*float64(c.R) + 0.587*float64(c.G) + 0.114*float64(c.B)
 }
 
 // cells resamples src onto an n by n grid. A cell is opaque when most of its
 // source pixels are, and then takes the colour most of those have. Nearest
 // neighbour would sample one pixel per cell, and the source's own cells are
-// about 13.5px, not a whole number, so its output mixed cells 1px to 5px
-// wide. This keeps every cell the same size and adds no colour.
+// about 9.8px, not a whole number, so its output mixed cells of two widths.
+// This keeps every cell the same size and adds no colour.
 func cells(src *image.NRGBA, n int) *image.NRGBA {
 	b := src.Bounds()
 	dst := image.NewNRGBA(image.Rect(0, 0, n, n))
@@ -164,17 +155,15 @@ func cells(src *image.NRGBA, n int) *image.NRGBA {
 	return dst
 }
 
-// pfp is the profile picture at grid resolution: the bird over a halo disc
-// centred on the field.
+// pfp is the profile picture at grid resolution: the disc on the flat field.
 func pfp(b *image.NRGBA) *image.NRGBA {
 	img := image.NewNRGBA(b.Bounds())
 	flat(img, fieldInk)
-	fill(img, func(x, y float64) bool { return math.Hypot(x-grid/2, y-grid/2) <= haloR }, solid(haloInk))
 	over(img, b)
 	return img
 }
 
-// centred moves the bird so its bounding box sits in the middle of the grid,
+// centred moves the disc so its bounding box sits in the middle of the grid,
 // to the nearest whole cell.
 func centred(b *image.NRGBA) *image.NRGBA {
 	box := image.Rectangle{}

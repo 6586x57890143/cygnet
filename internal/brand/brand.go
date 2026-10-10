@@ -13,16 +13,16 @@ import (
 	"github.com/disgoorg/disgo/discord"
 )
 
-// The palette: slate night, steel, and
+// The palette is the avatar's: its navy field, dusk sky and the down, and
 // muted signal colours that match the badge on each icon.
 const (
-	ColorPrimary = 0x1E2228
-	ColorInfo    = 0x8A9CB2
-	ColorOK      = 0x6E9A6A
-	ColorWarn    = 0xD89B45
-	ColorError   = 0xC04A3E
-	ColorNotice  = 0x4F7C86
-	ColorIdle    = 0x6A707A
+	ColorPrimary = 0x38425F
+	ColorInfo    = 0x7C889E
+	ColorOK      = 0x7FA08C
+	ColorWarn    = 0xD1A06A
+	ColorError   = 0xC0626A
+	ColorNotice  = 0x8F96B8
+	ColorIdle    = 0x928688
 )
 
 //go:embed assets/*.png
