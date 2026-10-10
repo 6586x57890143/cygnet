@@ -109,3 +109,38 @@ func TestModuleSwitchesRoundTrip(t *testing.T) {
 		t.Fatal("turned on, still off")
 	}
 }
+
+func TestProvisioned(t *testing.T) {
+	ctx := context.Background()
+	pool, err := Open(ctx, dsn(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if err := Migrate(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, "delete from provision where guild_id in (91, 92)"); err != nil {
+		t.Fatal(err)
+	}
+	save := SaveProvisioned(pool)
+	for _, p := range []Provisioned{{91, "flock", "propose"}, {92, "flock", "watch"}, {91, "flock", "act"}} {
+		if err := save(ctx, p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if save(ctx, Provisioned{93, "flock", "loud"}) == nil {
+		t.Fatal("a mode that isn't one was kept")
+	}
+	all, err := AllProvisioned(ctx, pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[int64]string{}
+	for _, p := range all {
+		got[int64(p.Guild)] = p.Layout + "/" + p.Mode
+	}
+	if got[91] != "flock/act" || got[92] != "flock/watch" {
+		t.Fatalf("got %v", got)
+	}
+}

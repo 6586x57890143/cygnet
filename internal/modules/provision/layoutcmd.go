@@ -57,6 +57,7 @@ func (m *Module) read(ctx context.Context, r rest.Rest, guild, self snowflake.ID
 		return planned{}, err
 	}
 	s := state{guild: guild, roles: roles, channels: channels, birds: m.birds(ctx)}
+	s.birds[Self] = self
 	for _, role := range roles {
 		if role.ID == guild {
 			continue
@@ -166,6 +167,9 @@ func (m *Module) applyPressed(ctx context.Context, e *events.ComponentInteractio
 				edit(p.progress(done, total))
 			}
 		})
+		if err == nil {
+			m.keep(work, guild, l.Name)
+		}
 		edit(p.result(done, total, err))
 	})
 	return nil
@@ -201,6 +205,12 @@ func (p planned) todo() int {
 // preview is the plan as a card: a diff block of what changes, the
 // overwrites spelled out below it, what's blocked or waiting, and apply.
 func (p planned) preview(note string) discord.ContainerComponent {
+	return p.card(note, true)
+}
+
+// card is the plan below note: with the buttons that grant cygnet what
+// she's short of, apply it and check again, or as a report alone.
+func (p planned) card(note string, act bool) discord.ContainerComponent {
 	color := brand.ColorInfo
 	var b strings.Builder
 	if note != "" {
@@ -212,25 +222,8 @@ func (p planned) preview(note string) discord.ContainerComponent {
 		color = brand.ColorOK
 		b.WriteString("✓ this server already matches **" + p.l.Name + "**")
 	} else {
-		fmt.Fprintf(&b, "▸ %s to make it match\n```diff\n", count(todo, "change"))
-		for _, c := range p.changes {
-			if c.blocked == "" {
-				b.WriteString(c.line() + "\n")
-			}
-		}
-		b.WriteString("```")
-		// Who may post where, spelled out: new channels' overwrites and
-		// the ones changed on channels already here.
-		for _, c := range p.changes {
-			switch c.kind {
-			case channelCreate:
-				for _, o := range c.channel.Overwrites {
-					b.WriteString("\n-# #" + c.channel.Name + ": " + o.says())
-				}
-			case overwriteSet:
-				b.WriteString("\n-# #" + c.channel.Name + ": " + c.ow.says())
-			}
-		}
+		fmt.Fprintf(&b, "▸ %s to make it match\n", count(todo, "change"))
+		b.WriteString(p.diff())
 		for _, c := range p.changes {
 			if c.blocked != "" {
 				color = brand.ColorWarn
@@ -251,6 +244,9 @@ func (p planned) preview(note string) discord.ContainerComponent {
 		b.WriteString("\n! cygnet needs " + names(p.short) + " first")
 		buttons = append(buttons, discord.NewLinkButton("grant cygnet", install(p.self, needs(p.l), p.s.guild)))
 	}
+	if !act {
+		return brand.Card(color, "provision", p.l.Name, b.String())
+	}
 	applyBtn := discord.NewSuccessButton("apply "+count(todo, "change"), applyID+":"+p.l.Name+":"+digest(p.changes))
 	if todo == 0 || p.short != 0 {
 		applyBtn = applyBtn.AsDisabled()
@@ -258,6 +254,31 @@ func (p planned) preview(note string) discord.ContainerComponent {
 	buttons = append(buttons, applyBtn, discord.NewSecondaryButton("check again", previewID+":"+p.l.Name))
 	return brand.Card(color, "provision", p.l.Name, b.String(),
 		discord.NewSeparator(discord.SeparatorSpacingSizeSmall), discord.NewActionRow(buttons...))
+}
+
+// diff is the changes as a diff block, then who may post where spelled
+// out: new channels' overwrites and the ones changed on channels already
+// here.
+func (p planned) diff() string {
+	var b strings.Builder
+	b.WriteString("```diff\n")
+	for _, c := range p.changes {
+		if c.blocked == "" {
+			b.WriteString(c.line() + "\n")
+		}
+	}
+	b.WriteString("```")
+	for _, c := range p.changes {
+		switch c.kind {
+		case channelCreate:
+			for _, o := range c.channel.Overwrites {
+				b.WriteString("\n-# #" + c.channel.Name + ": " + o.says())
+			}
+		case overwriteSet:
+			b.WriteString("\n-# #" + c.channel.Name + ": " + c.ow.says())
+		}
+	}
+	return b.String()
 }
 
 // progress is the card while a layout applies.

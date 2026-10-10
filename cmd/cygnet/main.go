@@ -95,6 +95,11 @@ func run(log *slog.Logger) error {
 	// Modules a guild has turned off; without a database a restart turns
 	// them all back on.
 	toggles := core.NewToggles(nil, nil)
+	// The servers provision keeps to a layout; without a database a restart
+	// forgets them, and their drift goes unreported until a layout is
+	// applied again.
+	kept := map[snowflake.ID]provision.Kept{}
+	var saveKept func(context.Context, snowflake.ID, provision.Kept) error
 	if dsn := os.Getenv("CYGNET_DATABASE_URL"); dsn != "" {
 		pool, err := store.Open(ctx, dsn)
 		if err != nil {
@@ -110,6 +115,17 @@ func run(log *slog.Logger) error {
 			return fmt.Errorf("reading module switches: %w", err)
 		}
 		toggles = core.NewToggles(off, store.SaveModule(pool))
+		all, err := store.AllProvisioned(ctx, pool)
+		if err != nil {
+			return fmt.Errorf("reading provisioned servers: %w", err)
+		}
+		for _, p := range all {
+			kept[p.Guild] = provision.Kept{Layout: p.Layout, Mode: p.Mode}
+		}
+		save := store.SaveProvisioned(pool)
+		saveKept = func(ctx context.Context, g snowflake.ID, k provision.Kept) error {
+			return save(ctx, store.Provisioned{Guild: g, Layout: k.Layout, Mode: k.Mode})
+		}
 	}
 
 	// Ask the portal what is granted before choosing what to identify with.
@@ -159,7 +175,7 @@ func run(log *slog.Logger) error {
 	all := []core.Module{
 		st,
 		perf.New(obs.Default),
-		provision.New(fleet, func() discord.Permissions { return core.Install(running).Permissions }, func(i discord.Interaction) bool { return router.Admin(i) }, g),
+		provision.New(fleet, func() discord.Permissions { return core.Install(running).Permissions }, func(i discord.Interaction) bool { return router.Admin(i) }, g).Keep(kept, saveKept, log),
 		help.New(func() []core.Module { return running }, func(i discord.Interaction) bool { return router.Admin(i) }, toggles),
 	}
 

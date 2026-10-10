@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/disgoorg/disgo/discord"
@@ -47,6 +48,30 @@ type guildFake struct {
 	// "overwrite"), or the read ("read").
 	fail  map[string]error
 	edits []discord.MessageUpdate
+	// sent is each message posted, by channel; a drift check posts from a
+	// timer, so it's read under mu.
+	mu   sync.Mutex
+	sent map[snowflake.ID][]discord.MessageCreate
+}
+
+func (g *guildFake) CreateMessage(channel snowflake.ID, m discord.MessageCreate, _ ...rest.RequestOpt) (*discord.Message, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if err := g.fail["send"]; err != nil {
+		return nil, err
+	}
+	if g.sent == nil {
+		g.sent = map[snowflake.ID][]discord.MessageCreate{}
+	}
+	g.sent[channel] = append(g.sent[channel], m)
+	return &discord.Message{}, nil
+}
+
+// posts is every message posted to channel so far.
+func (g *guildFake) posts(channel snowflake.ID) []discord.MessageCreate {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return append([]discord.MessageCreate(nil), g.sent[channel]...)
 }
 
 func newGuild() *guildFake {
@@ -230,6 +255,7 @@ func TestApplyThenNothingLeft(t *testing.T) {
 		"+ group welcome", "+ text  #rules", "+ text  #announcements",
 		"+ group talk", "+ text  #general", "+ text  #media",
 		"+ group voice", "+ voice lounge",
+		"+ group staff", "+ text  #cygnet",
 	}, "\n")
 	if got := lines(p.changes); got != want {
 		t.Fatalf("plan:\n%s", got)
@@ -239,7 +265,7 @@ func TestApplyThenNothingLeft(t *testing.T) {
 	}
 	var seen []int
 	done, err := apply(context.Background(), g, guard.New(), p.s, flock, p.changes, func(n int) { seen = append(seen, n) })
-	if err != nil || done != 10 || len(seen) != 10 {
+	if err != nil || done != 12 || len(seen) != 12 {
 		t.Fatalf("applied %d, %v", done, err)
 	}
 	// #announcements was made with skua's overwrite, by its role's ID.
@@ -321,14 +347,14 @@ func TestPreview(t *testing.T) {
 	p := planOn(t, g, map[string]snowflake.ID{"skua": skuaApp})
 	card := p.preview("")
 	text := coretest.Text("", []discord.LayoutComponent{card})
-	for _, want := range []string{"**provision** · flock", "▸ 10 changes to make it match", "```diff\n+ role  mod", "+ voice lounge\n```",
+	for _, want := range []string{"**provision** · flock", "▸ 12 changes to make it match", "```diff\n+ role  mod", "+ text  #cygnet\n```",
 		"-# #rules: @everyone can't send messages", "-# #announcements: skua can send messages, embed links, attach files"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("preview lacks %q:\n%s", want, text)
 		}
 	}
 	apply := buttons(card)[0]
-	if apply.Label != "apply 10 changes" || apply.Disabled || apply.CustomID != applyID+":flock:"+digest(p.changes) {
+	if apply.Label != "apply 12 changes" || apply.Disabled || apply.CustomID != applyID+":flock:"+digest(p.changes) {
 		t.Fatalf("apply button %+v", apply)
 	}
 
@@ -506,11 +532,11 @@ func TestApplyButton(t *testing.T) {
 	}
 
 	got, err = press(t, g, id, "5")
-	if err != nil || (*got)[0] != nil || len(g.writes) != 10 {
+	if err != nil || (*got)[0] != nil || len(g.writes) != 12 {
 		t.Fatalf("%v, %v, writes %v", err, *got, g.writes)
 	}
 	last := g.edits[len(g.edits)-1]
-	if text := coretest.Text("", *last.Components); !strings.Contains(text, "✓ applied 10 changes; this server matches **flock**") {
+	if text := coretest.Text("", *last.Components); !strings.Contains(text, "✓ applied 12 changes; this server matches **flock**") {
 		t.Fatal(text)
 	}
 

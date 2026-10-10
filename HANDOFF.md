@@ -8,7 +8,8 @@ Written 2026-10-11. Read this with `CLAUDE.md` and `SPEC.md`.
 |---|---|
 | `main` | M0, M1 and the rewritten spec. Deployed to foundry; skua is linked in production |
 | `feat/provision` | `/provision fleet`, `Hub.Call` and `Manifest.App` (PR #8) |
-| `feat/provision-layout` | `/provision layout` on top of it |
+| `feat/provision-layout` | `/provision layout` on top of it (PR #9) |
+| `feat/provision-drift` | drift reports and `/provision mode` on top of that |
 
 ## What M2 has so far
 
@@ -30,6 +31,12 @@ Written 2026-10-11. Read this with `CLAUDE.md` and `SPEC.md`.
   redrawing a progress bar at most once a second, and stops at the first refusal.
   Role order is one change: the layout's roles swap the positions they already hold,
   so they never climb past the server's other roles.
+- Drift (`drift.go`): a server is kept to its layout once one is applied there
+  (`provision` table, migration 002). Role and channel updates and deletes, which come
+  with `GUILDS`, start a check once the server has been quiet for 5s; drift is
+  reported in the layout's `Reports` channel (`#cygnet`, staff only), once per distinct
+  drift. `/provision mode`: `watch` reports, `propose` (the default) adds the apply
+  button, `act` puts it back first and then says what it did.
 
 Decisions worth keeping:
 
@@ -48,6 +55,9 @@ Decisions worth keeping:
 - **A bird's overwrite waits for the bird.** It is named by the bird and resolved to the
   role Discord made for it (`Tags.BotID`), so skua's overwrite in `#announcements`
   lands once skua is in, on the next apply.
+- **Drift reports go to a channel the layout makes.** `#cygnet` is hidden from
+  everyone but mods and cygnet, whose own overwrite (`Self`) lets her post there. A
+  server whose report channel is gone gets nothing but a log line.
 - **The glyph is drawn here**, three sliders on pixelarticons' grid, not traced from a
   pixelarticons icon like the others.
 
@@ -55,7 +65,6 @@ Decisions worth keeping:
 
 - Onboarding in layouts.
 - More layouts than `flock`, and a way to choose channel positions.
-- Drift cards at `watch`, `propose` or `act`, and the intents they need.
 - The live install card: needs `GUILD_MEMBERS`.
 - M3 to M5 in `SPEC.md`.
 

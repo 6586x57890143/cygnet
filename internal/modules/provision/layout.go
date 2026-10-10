@@ -9,6 +9,9 @@ type Layout struct {
 	Name, About string
 	Roles       []Role
 	Categories  []Category
+	// Reports is the text channel, one the layout makes, where cygnet posts
+	// when the server drifts from it.
+	Reports string
 }
 
 // Role is one role the layout keeps. Perms are its server-wide permissions.
@@ -40,10 +43,14 @@ type Overwrite struct {
 // Everyone is the @everyone role in an Overwrite.
 const Everyone = "@everyone"
 
+// Self is cygnet's own role in an Overwrite.
+const Self = "cygnet"
+
 const (
 	send     = discord.PermissionSendMessages | discord.PermissionSendMessagesInThreads | discord.PermissionCreatePublicThreads
 	post     = discord.PermissionSendMessages | discord.PermissionEmbedLinks | discord.PermissionAttachFiles
 	moderate = discord.PermissionManageMessages | discord.PermissionManageThreads | discord.PermissionModerateMembers
+	see      = discord.PermissionViewChannel
 )
 
 // layouts are compiled in, by name.
@@ -51,10 +58,11 @@ var layouts = []Layout{flock}
 
 // flock is a small community server the birds work in together: read-only
 // announcements skua's notify can still post to, a place to talk, a room to
-// hang out in.
+// hang out in, and a staff channel where cygnet reports drift.
 var flock = Layout{
-	Name:  "flock",
-	About: "a small community: announcements, a place to talk, a voice room",
+	Name:    "flock",
+	About:   "a small community: announcements, a place to talk, a voice room, a staff channel",
+	Reports: "cygnet",
 	Roles: []Role{
 		{Name: "mod", Color: 0xD1A06A, Perms: moderate, Hoist: true},
 		{Name: "member", Color: 0x7FA08C},
@@ -77,6 +85,13 @@ var flock = Layout{
 		}},
 		{Name: "voice", Channels: []Channel{
 			{Name: "lounge", Voice: true},
+		}},
+		{Name: "staff", Channels: []Channel{
+			{Name: "cygnet", Topic: "where cygnet says when this server drifts from its layout", Overwrites: []Overwrite{
+				{Role: Everyone, Deny: see},
+				{Role: "mod", Allow: see},
+				{Role: Self, Allow: see | post},
+			}},
 		}},
 	},
 }
