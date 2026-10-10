@@ -1,7 +1,8 @@
-// Package provision is how cygnet sets a server up for the flock. This first
-// part is /provision fleet: every linked bird, read from its own manifest,
-// checked against what it holds in this server, with the one button that
-// fixes it.
+// Package provision is how cygnet sets a server up for the flock.
+// /provision fleet is every linked bird, read from its own manifest, checked
+// against what it holds in this server, with the one button that fixes it.
+// /provision layout is a compiled-in layout previewed as a diff against the
+// server and applied by it.
 package provision
 
 import (
@@ -22,6 +23,7 @@ import (
 
 	"github.com/6586x57890143/cygnet/internal/brand"
 	"github.com/6586x57890143/cygnet/internal/core"
+	"github.com/6586x57890143/cygnet/internal/guard"
 	"github.com/6586x57890143/cygnet/internal/hub"
 	"github.com/6586x57890143/cygnet/internal/intents"
 	"github.com/6586x57890143/cygnet/link"
@@ -44,25 +46,37 @@ type Module struct {
 	// want is what cygnet's own running modules declare, read on each card.
 	want  func() discord.Permissions
 	admin func(discord.Interaction) bool
+	guard *guard.Guard
+	// applying is each guild with a layout being applied, one at a time.
+	applying sync.Map
+	// running is the applies in flight, for a test to wait on.
+	running sync.WaitGroup
 }
 
-func New(fleet Fleet, want func() discord.Permissions, admin func(discord.Interaction) bool) *Module {
-	return &Module{fleet: fleet, want: want, admin: admin}
+func New(fleet Fleet, want func() discord.Permissions, admin func(discord.Interaction) bool, g *guard.Guard) *Module {
+	return &Module{fleet: fleet, want: want, admin: admin, guard: g}
 }
 
 func (*Module) Name() string { return "provision" }
 
 func (*Module) Want() intents.Want { return intents.Want{Required: gateway.IntentGuilds} }
 
-// Perms is none yet: the card reads roles and members, which needs no
-// channel permission.
-func (*Module) Perms() discord.Permissions { return 0 }
+// Perms is what applying every compiled-in layout takes: roles, channels
+// and each permission a layout hands out, which Discord lets cygnet grant
+// only if she holds it.
+func (*Module) Perms() discord.Permissions {
+	var p discord.Permissions
+	for _, l := range layouts {
+		p |= needs(l)
+	}
+	return p
+}
 
 func (*Module) Help() core.Help {
 	return core.Help{
 		Color: brand.ColorPrimary,
 		Line:  "sets this server up for the flock",
-		About: "/provision fleet shows every bird linked to her, whether it's in this server and whether it holds what it asks for. each one that isn't in yet or is missing something gets a button that adds it or grants the rest, and check again reads it all fresh. what a bird asks for comes from the bird itself, so the card follows each one as it changes",
+		About: "/provision fleet shows every bird linked to her, whether it's in this server and whether it holds what it asks for. each one that isn't in yet or is missing something gets a button that adds it or grants the rest. what a bird asks for comes from the bird itself, so the card follows each one as it changes. /provision layout shows what a layout would change here before anything happens: roles, channels and who may post where, birds included. apply makes exactly those changes and nothing else, and leaves whatever the layout doesn't name alone",
 	}
 }
 
@@ -74,6 +88,9 @@ func (m *Module) Commands() []core.Command {
 			Contexts:    []discord.InteractionContextType{discord.InteractionContextTypeGuild},
 			Options: []discord.ApplicationCommandOption{
 				discord.ApplicationCommandOptionSubCommand{Name: "fleet", Description: "every bird, in this server or not, and what it's missing"},
+				discord.ApplicationCommandOptionSubCommand{Name: "layout", Description: "what a layout would change here, then apply it", Options: []discord.ApplicationCommandOption{
+					discord.ApplicationCommandOptionString{Name: "name", Description: "which layout", Choices: choices()},
+				}},
 			},
 		},
 		Tier: core.Admin,
@@ -82,10 +99,21 @@ func (m *Module) Commands() []core.Command {
 }
 
 func (m *Module) Components() []core.Component {
-	return []core.Component{{ID: refresh, Run: m.again}}
+	return []core.Component{{ID: refresh, Run: m.again}, {ID: previewID, Run: m.previewAgain}, {ID: applyID, Run: m.applyPressed}}
+}
+
+func choices() []discord.ApplicationCommandOptionChoiceString {
+	out := make([]discord.ApplicationCommandOptionChoiceString, len(layouts))
+	for i, l := range layouts {
+		out[i] = discord.ApplicationCommandOptionChoiceString{Name: l.Name, Value: l.Name}
+	}
+	return out
 }
 
 func (m *Module) run(ctx context.Context, e *events.ApplicationCommandInteractionCreate) error {
+	if sub := e.SlashCommandInteractionData().SubCommandName; sub != nil && *sub == "layout" {
+		return m.layoutCmd(ctx, e)
+	}
 	card := m.card(ctx, e.Client().Rest, *e.GuildID(), e.ApplicationID())
 	return e.CreateMessage(discord.MessageCreate{
 		Components:      []discord.LayoutComponent{card},

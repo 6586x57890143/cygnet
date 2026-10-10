@@ -38,6 +38,9 @@ const (
 	// EmojiCreate is one application emoji uploaded, keyed by guild 0:
 	// they belong to the app, not a guild.
 	EmojiCreate
+	// RoleEdit is one role created or changed, as /provision applies a
+	// layout.
+	RoleEdit
 	opCount
 )
 
@@ -52,6 +55,8 @@ var caps = [opCount]int64{
 	CommandSync: 8,
 	// A boot uploads only what was redrawn: a handful, never hundreds.
 	EmojiCreate: 50,
+	// A layout is a handful of roles; a few applies an hour is plenty.
+	RoleEdit: 60,
 }
 
 const (

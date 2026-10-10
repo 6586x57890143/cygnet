@@ -7,7 +7,8 @@ Written 2026-10-11. Read this with `CLAUDE.md` and `SPEC.md`.
 | Branch | State |
 |---|---|
 | `main` | M0, M1 and the rewritten spec. Deployed to foundry; skua is linked in production |
-| `feat/provision` | `/provision fleet`, `Hub.Call` and `Manifest.App` |
+| `feat/provision` | `/provision fleet`, `Hub.Call` and `Manifest.App` (PR #8) |
+| `feat/provision-layout` | `/provision layout` on top of it |
 
 ## What M2 has so far
 
@@ -21,6 +22,12 @@ Written 2026-10-11. Read this with `CLAUDE.md` and `SPEC.md`.
   its own install link for this server (`guild_id`, `disable_guild_select`), which for
   a bird already in updates its role. `check again` redraws the card in place.
   Roles are read once and every bird is asked at once, inside the response window.
+- `/provision layout`: the compiled-in `flock` layout (`layout.go`) planned against the
+  server (`plan.go`, pure) as a diff card, every overwrite spelled out, and an apply
+  button that carries the plan's digest: if the server changed since the preview, apply
+  shows the new plan instead of running. `apply.go` runs the writes in order off the
+  gateway goroutine, one apply per server, each through `guard` (`RoleEdit` is new),
+  redrawing a progress bar at most once a second, and stops at the first refusal.
 
 Decisions worth keeping:
 
@@ -30,13 +37,22 @@ Decisions worth keeping:
 - **Server wide only.** A channel's overwrites can still take a permission away. The
   per-channel check comes with layouts, which know the channels (`ponytail:` in
   `permsOf`).
+- **Only what a layout names.** A plan adds and changes; it never deletes, and leaves
+  every role, channel and overwrite the layout doesn't name alone. A role above
+  cygnet's is shown as blocked, not attempted.
+- **cygnet's install follows the layouts.** Discord lets a bot grant only what it holds,
+  so `Perms` is roles, channels and every permission a layout hands out, and the
+  fleet card offers to grant cygnet exactly that.
+- **A bird's overwrite waits for the bird.** It is named by the bird and resolved to the
+  role Discord made for it (`Tags.BotID`), so skua's overwrite in `#announcements`
+  lands once skua is in, on the next apply.
 - **The glyph is drawn here**, three sliders on pixelarticons' grid, not traced from a
   pixelarticons icon like the others.
 
 ## Not done yet, deliberately
 
-- Layouts: compiled in, a diff preview, apply by diff with new guard ops, role order,
-  onboarding.
+- Role order (positions) and onboarding in layouts.
+- More layouts than `flock`, and a way to choose channel positions.
 - Drift cards at `watch`, `propose` or `act`, and the intents they need.
 - The live install card: needs `GUILD_MEMBERS`.
 - M3 to M5 in `SPEC.md`.

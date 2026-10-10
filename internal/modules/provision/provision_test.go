@@ -14,6 +14,7 @@ import (
 	"github.com/6586x57890143/cygnet/internal/brand"
 	"github.com/6586x57890143/cygnet/internal/core"
 	"github.com/6586x57890143/cygnet/internal/core/coretest"
+	"github.com/6586x57890143/cygnet/internal/guard"
 	"github.com/6586x57890143/cygnet/internal/hub"
 	"github.com/6586x57890143/cygnet/link"
 )
@@ -180,7 +181,7 @@ func TestReason(t *testing.T) {
 func module(f Fleet) *Module {
 	return New(f, func() discord.Permissions { return 0 }, func(i discord.Interaction) bool {
 		return i.User().ID == 5
-	})
+	}, guard.New())
 }
 
 func TestFleetCommand(t *testing.T) {
@@ -284,7 +285,7 @@ func TestCheckAgain(t *testing.T) {
 
 func TestModule(t *testing.T) {
 	m := module(nil)
-	if m.Name() != "provision" || m.Perms() != 0 || len(m.Commands()) != 1 || m.Components()[0].ID != refresh {
+	if m.Name() != "provision" || m.Perms() != needs(flock) || len(m.Commands()) != 1 || m.Components()[0].ID != refresh {
 		t.Fatal("contract")
 	}
 	if m.Commands()[0].Tier != core.Admin || m.Want().Required == 0 || m.Help().About == "" {
