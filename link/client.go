@@ -95,12 +95,15 @@ func (c *Client) Handle(verb string, h Handler) { c.handlers[verb] = h }
 // On receives the event "<bot>.<event>". Register before Run.
 func (c *Client) On(event string, fn func(Event)) { c.on[event] = fn }
 
-// Name is the name cygnet knows this bot by, once connected.
+// Name is the name cygnet knows this bot by while linked, and empty while not.
 func (c *Client) Name() string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.name
 }
+
+// Linked is whether the link is up right now.
+func (c *Client) Linked() bool { return c.Name() != "" }
 
 // Run keeps the link up until ctx ends, reconnecting with backoff. On the
 // way out it says goaway, so cygnet stops sending calls before it closes.
@@ -209,6 +212,7 @@ func (c *Client) drop(conn *websocket.Conn) {
 		return
 	}
 	c.conn = nil
+	c.name = ""
 	for id, ch := range c.pending {
 		ch <- Frame{ID: id, Kind: KindReply, Err: Err(Offline, "link lost")}
 		delete(c.pending, id)
