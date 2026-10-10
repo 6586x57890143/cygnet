@@ -201,8 +201,8 @@ about activity.
 | # | Milestone | State |
 |---|---|---|
 | 0 | Scaffold from skua: core, guard, intents, obs, ratelimit, store, brand, `/status` `/perf` `/help`, CI, deploy, setup | done |
-| 1 | `internal/hub` and the public `link` module: hello, calls, events, deadlines, backpressure, goaway, manifests; the fleet on `/status`; skua linked | done; skua speaks it, linked once its token is set on foundry |
-| 2 | `/provision`: compiled-in layouts applied by diff with a preview, the live install card from each bird's manifest, role order, onboarding; drift cards at `watch`, `propose` or `act` | open |
+| 1 | `internal/hub` and the public `link` module: hello, calls, events, deadlines, backpressure, goaway, manifests; the fleet on `/status`; skua linked | done; skua linked in production |
+| 2 | `/provision`: compiled-in layouts applied by diff with a preview, the live install card from each bird's manifest, role order, onboarding; drift cards at `watch`, `propose` or `act` | in progress: `/provision fleet`, the install card |
 | 3 | Codes: `/invite` (in the server and user-installed), the Worker's redemption page, direct add with the one-use invite fallback, attribution, the tree | open |
 | 4 | Launches: interest pages, places in line, sealed tokens, the valve and its waves | open |
 | 5 | Earning: rules in the layout, `skua.check` for activity, progress on `/invite`, sponsor standing | open |

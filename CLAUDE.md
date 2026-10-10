@@ -16,7 +16,7 @@ sees follows [`UX.md`](./UX.md).
   the frame types, a module of its own (`github.com/6586x57890143/cygnet/link`) so a bird
   imports it without cygnet's dependencies; cygnet uses it through a `replace`. A change
   to the protocol changes both, and is tagged `link/vX.Y.Z` for the birds.
-- `internal/modules/*`: `status` (the reference), `perf`, `help`.
+- `internal/modules/*`: `status` (the reference), `perf`, `help`, `provision`.
 - `tools/sprites`: the art. `art/source/cygnet_avatar_source.png` is the drawing; the
   generator keeps its disc, quantises it to its own palette and computes the banner.
 

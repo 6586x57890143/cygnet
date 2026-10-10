@@ -5,6 +5,9 @@ package link
 // rather than from a copy that drifts.
 type Manifest struct {
 	Build string `json:"build,omitempty"`
+	// App is the bird's Discord application ID, which is also its bot
+	// user's: cygnet builds its install link and finds it in a server by it.
+	App string `json:"app,omitempty"`
 	// Perms is the union of the channel permissions its running modules use,
 	// as Discord's permission bitfield in decimal, the way Discord writes it.
 	Perms string `json:"perms"`
