@@ -32,7 +32,7 @@ measurable. It adds one more: **nothing leaves that we did not choose to send.**
 |---|---|
 | Discord | `disgoorg/disgo` v0.19, zstd-stream gateway, every cache off except guilds |
 | Database | Postgres 16 via `pgx/v5`, optional; migrations compiled in |
-| Hub | WebSocket on the private `fleet` Docker network. An off-host bot comes in through a Cloudflare Tunnel behind an Access service token; the hub has no public DNS name and foundry opens no port |
+| Hub | WebSocket on the private `fleet` Docker network. An off-host bot comes in through a Cloudflare Tunnel whose hostname answers only to an Access service token; foundry opens no port |
 | Edge | `cygnet.lol`: a Cloudflare Worker + D1 + Turnstile for invite codes and signups (milestones 4-5), the only public surface. Worker to cygnet goes through the same tunnel and Access, never the open internet |
 | Build | Go 1.27, `CGO_ENABLED=0 -trimpath -s -w`, distroless nonroot, PGO when present |
 | Deploy | as skua: CI image to GHCR, foundry pulls by SHA; `scripts/deploy.sh` by hand |
