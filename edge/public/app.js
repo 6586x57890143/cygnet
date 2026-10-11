@@ -129,6 +129,21 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
     lean += (aim - lean) * 0.04;
     const f = frame(pts, cols, rows, -0.55 + Math.sin(s * 0.23) * 0.22 + lean, 0.13 + Math.sin(s * 0.41) * 0.025, cw / ch);
     x.clearRect(0, 0, w, h);
+    // The water's surface across the whole page: rows of ripples moving
+    // with the wave, brightest at the waterline and fading with depth, a
+    // few faint rows above it for the far water behind the bird. Drawn
+    // first, so the swan and its reflection sit in it.
+    for (let r = -3; r <= 9; r++) {
+      const gap = r < 0 ? ch * 0.55 : ch * (0.7 + r * 0.12);
+      const ry = cy + Math.sign(r) * Math.abs(r) * gap;
+      const fade = r < 0 ? 0.1 + 0.03 * (3 + r) : 0.32 * (1 - r / 10);
+      for (let gx = (r * 13) % 11; gx < w; gx += cw * 1.25) {
+        const v = Math.sin(gx * 0.021 + r * 1.7 + s * 0.9) + Math.sin(gx * 0.053 - s * 1.3 + r * 2.3) * 0.7;
+        if (v < 0.55) continue;
+        x.fillStyle = `rgba(${ink},${(fade * Math.min(1, v - 0.4)).toFixed(3)})`;
+        x.fillText(v > 1.25 ? "~" : "-", gx, ry + wave(gx, s) * (0.6 - Math.min(0.4, Math.abs(r) * 0.05)) - ch * 0.5);
+      }
+    }
     const bands = 10;
     const lanes = Array.from({ length: bands }, () => []);
     const rims = [];
