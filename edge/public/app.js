@@ -100,6 +100,7 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
   // dark is how far the swan's ink has gone dark (1) from light (0), wdark
   // the water's; page is the page's own colour under the sky.
   let dark = 0, wdark = 0, page = [10, 13, 20];
+  let pale = [236, 234, 228], deep = [20, 24, 34], lit = [250, 250, 250];
   let mx = 0, my = 0, sunX = 0, sunY = 0, moonX = 0, moonY = 0, sunUp = 0, moonUp = 0;
   let lean = 0, aim = 0, float = 0, span = 400;
   function place() {
@@ -341,7 +342,12 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
     };
     dark += ((lum(mixed(sc.top, sc.low, 0.8)) > 0.42 ? 1 : 0) - dark) * 0.08;
     wdark += ((lum(sc.deep) > 0.42 ? 1 : 0) - wdark) * 0.08;
-    const pale = mixed(sc.hue, [255, 255, 255], 0.8), deep = mixed(sc.hue, [0, 0, 0], 0.62);
+    pale = mixed(sc.hue, [255, 255, 255], 0.8);
+    deep = mixed(sc.hue, [0, 0, 0], 0.62);
+    // By day the swan is drawn in tones, its shadows in the deep ink and
+    // its sunlit planes nearly white: both stand off a bright sky, so the
+    // whole form reads, as it does at night in light ink on the dark.
+    lit = mixed(sc.hue, [255, 255, 255], 0.93);
     ink = rgb(mixed(pale, deep, dark));
     wink = rgb(mixed(pale, deep, wdark));
     [sunX, sunY, sunUp] = arc(sc.at);
@@ -406,10 +412,9 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
         const v = f.shade[q];
         if (v >= 0 && f.water[q]) ripples.push(i, j, v);
         else if (v >= 0 && f.edge[q]) rims.push(i, j, v);
-        // Drawn in light ink at night and dark ink by day: by day the side in
-        // the sun takes the least ink, so the light still falls where it's
-        // lit.
-        else if (v >= 0) lanes[Math.min(bands - 1, Math.floor((v + (0.38 + (1 - v) * 0.6 - v) * dark) * bands))].push(i, j);
+        // The brighter a cell, the denser its glyph, night or day: what
+        // changes with the light is the colour each tone is drawn in.
+        else if (v >= 0) lanes[Math.min(bands - 1, Math.floor(v * bands))].push(i, j);
         else if (f.refl[q] > 0.03) glints.push(i, j, f.refl[q]);
       }
     }
@@ -418,7 +423,12 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
     const ride = wave(bx + (cols * cw) / 2, s) * 0.6;
     const lift = by + f.horizon * ch - cy - ride; // so the bird's water is the card's
     for (let b = 0; b < bands; b++) {
-      x.fillStyle = `rgba(${ink},${0.3 + (b / (bands - 1)) * 0.7})`;
+      const k = b / (bands - 1);
+      // At night a tone is the light ink, fainter in shadow; by day it's a
+      // colour between the deep ink in shadow and near white in the sun.
+      const col = mixed(pale, mixed(deep, lit, k), dark);
+      const a = 0.3 + 0.7 * k + (0.9 - (0.3 + 0.7 * k)) * dark;
+      x.fillStyle = `rgba(${rgb(col)},${a.toFixed(3)})`;
       const g = ramp[1 + Math.round((b / (bands - 1)) * (ramp.length - 2))];
       const lane = lanes[b];
       for (let n = 0; n < lane.length; n += 2) x.fillText(g, bx + lane[n] * cw, by - lift + lane[n + 1] * ch);
