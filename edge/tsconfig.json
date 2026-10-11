@@ -6,6 +6,7 @@
     "lib": ["es2024"],
     "types": ["./worker-configuration.d.ts"],
     "allowImportingTsExtensions": true,
+    "allowJs": true,
     "verbatimModuleSyntax": true,
     "strict": true,
     "noEmit": true,

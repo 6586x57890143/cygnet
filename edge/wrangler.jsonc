@@ -24,7 +24,9 @@
     // public. The secrets are DISCORD_CLIENT_SECRET, TURNSTILE_SECRET,
     // HMAC_KEY and ADMIN_TOKEN, set with `wrangler secret put`.
     "DISCORD_CLIENT_ID": "",
-    "TURNSTILE_SITEKEY": ""
+    "TURNSTILE_SITEKEY": "",
+    // The silcord server's picture: https://cdn.discordapp.com/icons/<guild>/<hash>.webp
+    "ICON": ""
   },
   // Off: a request's URL can hold an invite code, and logs keep URLs.
   "observability": { "enabled": false }

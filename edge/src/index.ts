@@ -35,6 +35,8 @@ interface Env {
   DISCORD_CLIENT_SECRET: string;
   TURNSTILE_SITEKEY: string;
   TURNSTILE_SECRET: string;
+  // ICON is the launch server's picture, a cdn.discordapp.com URL, or "".
+  ICON: string;
   HMAC_KEY: string;
   ADMIN_TOKEN: string;
 }
@@ -289,6 +291,9 @@ async function wait(req: Request, env: Env, l: Launch, url: URL): Promise<Respon
   const s = store(env);
   const id = t ? await digest(t) : "";
   const w = id ? await s.waiting(id, now) : null;
+  // ?check is app.js asking quietly: 204 while it waits, 200 once the
+  // link is clicked, 410 once it can't be. The page itself does the rest.
+  if (url.searchParams.has("check")) return new Response(null, { status: !w || w.launch !== l.name ? 410 : w.verified ? 200 : 204, headers: secure({ "cache-control": "no-store" }) });
   if (!w || w.launch !== l.name) return html(env, l, { kind: "error", why: say.linkGone }, 410);
   const what = w.purpose === "issue" ? "make your invite" : "take your invite";
   if (!w.verified) return html(env, l, { kind: "sent", to: atob(to ?? ""), expires: w.expires, now, what });
@@ -356,19 +361,20 @@ function withCookie(res: Response, c: string): Response {
 }
 
 async function html(env: Env, l: Launch, view: View, status = 200): Promise<Response> {
-  return new Response(page(l, await store(env).total(l), view, env.TURNSTILE_SITEKEY), {
+  return new Response(page(l, await store(env).total(l), view, env.TURNSTILE_SITEKEY, env.ICON), {
     status,
     headers: secure({ "content-type": "text/html; charset=utf-8", "cache-control": "no-store" }),
   });
 }
 
 // secure adds the headers every response carries: nothing framed, nothing
-// referred, and scripts only from this site and Turnstile.
+// referred, scripts only from this site and Turnstile, and pictures only
+// from here and Discord's CDN.
 function secure(h: Record<string, string>): Headers {
   return new Headers({
     ...h,
     "content-security-policy":
-      "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; connect-src https://challenges.cloudflare.com; form-action 'self' https://discord.com; base-uri 'none'; frame-ancestors 'none'",
+      "default-src 'none'; img-src 'self' https://cdn.discordapp.com; style-src 'self' 'unsafe-inline'; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; connect-src 'self' https://challenges.cloudflare.com; form-action 'self' https://discord.com; base-uri 'none'; frame-ancestors 'none'",
     "referrer-policy": "no-referrer",
     "x-content-type-options": "nosniff",
     "strict-transport-security": "max-age=31536000",

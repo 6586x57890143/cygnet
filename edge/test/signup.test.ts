@@ -231,11 +231,11 @@ test("the email budget can't be overspent, in any window", async () => {
   assert.ok(budget.emails <= 3000 && budget.days >= 31, "inside what the plan includes in any billing month");
 });
 
-// visible is what a person reads on a page: no markup, styles or scripts,
-// and nothing in bold, which is an address or a number.
+// visible is what a person reads on a page: no markup, styles, scripts or
+// the swan's ASCII, and nothing in bold, which is an address or a number.
 const visible = (html: string) =>
   html
-    .replace(/<(style|script|title)[\s\S]*?<\/\1>/g, "")
+    .replace(/<(style|script|title|pre)[\s\S]*?<\/\1>/g, "")
     .replace(/<meta[^>]*>/g, "")
     .replace(/<b>[\s\S]*?<\/b>/g, "")
     .replace(/<[^>]+>/g, " ")
@@ -259,10 +259,11 @@ test("every page, in the voice", () => {
     assert.doesNotMatch(words, /[.,;:!?'"\u2014\u2026]/, `${name} has punctuation: ${words.match(/.{0,30}[.,;:!?'"].{0,30}/)?.[0]}`);
     assert.doesNotMatch(words, /[A-Z]/, `${name} has capitals`);
   }
-  assert.match(views.open, /<b>1204<\/b> people on the list/);
+  assert.match(views.open, /<b data-count="1204">1204<\/b> people on the list/);
   assert.match(views.open, /data-sitekey="key"/);
   assert.match(views.mine, /#7/);
-  assert.match(views.mine, /▰▰▱<\/span>  2 of 3 left/);
+  assert.match(views.mine, /aria-label="2 of 3 left"/);
+  assert.equal(views.mine.match(/<i class="on">/g)?.length, 2);
   assert.match(views.mine, /open for 2h 0m/);
   assert.match(views.mine, />used</);
   assert.match(views.mine, /taken back/);
@@ -270,12 +271,20 @@ test("every page, in the voice", () => {
   assert.match(views.mine, /make an invite/);
   assert.match(views.invitee, /youre in through a friend/);
   assert.doesNotMatch(views.held, /turnstile\/v0|make an invite/);
-  assert.match(views.sent, /http-equiv="refresh"[\s\S]*<b>st\*\*\*@gm\*\*\*\.com<\/b>/);
-  assert.match(views.confirm, /src="\/confirm\.js"[\s\S]*/);
-  assert.match(views.confirm, /action="\/v\/t"/);
+  assert.match(views.sent, /<b>st\*\*\*@gm\*\*\*\.com<\/b>/);
+  assert.match(views.confirm, /action="\/v\/t" class="auto"/);
+  assert.match(views.confirm, /src="\/app\.js"/);
+  assert.match(views.open, /<canvas class="swan" aria-hidden="true" data-t="0">/, "a cygnet on arrival");
+  assert.match(views.mine, /data-t="1"/, "a swan with invites to give");
+  assert.match(views.sent, /data-t="0\.55"/, "half grown on the way in");
+  assert.match(views.mine, /<pre class="ascii" aria-hidden="true">[\s\S]*@[\s\S]*~/, "the still frame, swan and water");
+  assert.match(views.mine, /<script type="module" src="\/app\.js">/);
+  assert.match(views.sent, /<noscript><meta http-equiv="refresh"/);
   assert.match(views.error, /ran out or was already used<br>start again/);
   assert.match(page(l, 1, { kind: "in", rank: 2, held: "a <b>", released: 3, left: 3, now, invites: [] }, "key"), /a &#60;b&#62;/);
-  assert.match(page(l, 1, { kind: "minted", link: "https://cygnet.lol/i/x", expires: now + inviteLife, now }, "k"), /class="link"[^>]*>https:\/\/cygnet\.lol\/i\/x</);
+  assert.match(page(l, 1, { kind: "minted", link: "https://cygnet.lol/i/x", expires: now + inviteLife, now }, "k"), /<code>https:\/\/cygnet\.lol\/i\/x<\/code><button type="button" class="copy" data-copy="https:\/\/cygnet\.lol\/i\/x"/);
+  assert.match(page(l, 1, { kind: "open" }, "k", "https://cdn.discordapp.com/icons/1/a.webp"), /<img class="icon" src="https:\/\/cdn\.discordapp\.com\/icons\/1\/a\.webp"/);
+  assert.match(page(l, 1, { kind: "open" }, "k"), /<span class="icon none" aria-hidden="true">s<\/span>/);
   assert.equal(span(45_000), "45s");
   assert.equal(span(3 * 3600_000 + 12 * 60_000 + 5_000), "3h 12m");
   assert.equal(span(2 * 86400_000 + 4 * 3600_000), "2d 4h");
@@ -283,4 +292,20 @@ test("every page, in the voice", () => {
   assert.equal(span(12 * 60_000), "12m 0s");
   assert.equal(span(0), "0s");
   assert.equal(esc(`"'&`), "&#34;&#39;&#38;");
+});
+
+test("the swan model grows, and draws inside its frame", async () => {
+  const { model, frame, text } = await import("../public/swan.js");
+  const cygnet = model(0);
+  const swan = model(1);
+  assert.ok(swan.length / 7 > 15_000, "dense enough to read as a surface");
+  const top = (p: Float32Array) => Math.max(...p.filter((_, i) => i % 7 === 1));
+  assert.ok(top(swan) > top(cygnet) * 1.8, "the swan stands taller than the cygnet");
+  for (let i = 3; i < swan.length; i += 7) assert.ok(Math.abs(Math.hypot(swan[i], swan[i + 1], swan[i + 2]) - 1) < 1e-3, "unit normals");
+  const f = frame(swan, 96, 40, -0.55, 0.14);
+  const rows = text(f, 96, 40).split("\n");
+  assert.equal(rows.length, 40);
+  assert.ok(rows.every((r: string) => r.length <= 96));
+  assert.ok(!rows[0].trim(), "the head clears the top of the frame");
+  assert.match(rows[f.horizon], /^[~-]{10}/, "the water line");
 });
