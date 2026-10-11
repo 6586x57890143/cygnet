@@ -75,7 +75,7 @@ CREATE TABLE sends (
 );
 
 -- ledger is every release, invite, redemption, revocation, hold and leave,
--- in order. Each entry's mac is keyed over the one before it, so an entry
+-- in order. Each entry's mac is keyed over the one before it in its launch, so an entry
 -- changed, dropped or slipped in breaks every mac after it. Nothing here
 -- is ever updated or deleted. actor and subject are keyed hashes of
 -- Discord IDs.
@@ -89,8 +89,18 @@ CREATE TABLE ledger (
   at      INTEGER NOT NULL,
   mac     TEXT    NOT NULL
 );
+-- Each launch's entries chain on their own, so a launch's whole ledger can
+-- go when its list does (gone, below) without breaking another's.
 CREATE TRIGGER ledger_no_update BEFORE UPDATE ON ledger BEGIN SELECT RAISE(ABORT, 'the ledger is append only'); END;
-CREATE TRIGGER ledger_no_delete BEFORE DELETE ON ledger BEGIN SELECT RAISE(ABORT, 'the ledger is append only'); END;
+CREATE TRIGGER ledger_no_delete BEFORE DELETE ON ledger WHEN NOT EXISTS (SELECT 1 FROM gone WHERE launch = old.launch)
+  BEGIN SELECT RAISE(ABORT, 'the ledger is append only'); END;
+
+-- gone is each launch whose list was deleted when its time ran out
+-- (src/signup.ts, keepList): the one way its ledger can be deleted.
+CREATE TABLE gone (
+  launch TEXT    PRIMARY KEY,
+  at     INTEGER NOT NULL
+);
 
 -- launch is a launch cygnet registered from its server, by name: the
 -- server's id, name and picture, as cygnet read them with its own token.

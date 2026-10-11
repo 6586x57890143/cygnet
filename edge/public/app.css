@@ -192,3 +192,13 @@ header { flex-direction: column; gap: 10px; }
 /* The privacy notes hang from the water line as the card's reflection,
    turning about the card's bottom edge (their top, less the gap). */
 .privacy { transform-origin: 50% -30px; will-change: transform; }
+
+/* The privacy notice: one term a row, label then text, greyed like the
+   compact one but readable at length. */
+.notice { text-align: left; font: 12.5px/1.6 var(--mono); color: var(--muted); }
+.notice .term { padding: 10px 0; border-bottom: 1px dashed var(--edge); }
+.notice .term p { margin: 4px 0 0; color: var(--text); opacity: .82; }
+.notice b { color: var(--text); font-weight: 600; text-transform: none; }
+.leave { display: flex; justify-content: center; gap: 18px; flex-wrap: wrap; }
+.leave a.quiet { color: var(--muted); font: 13px var(--mono); text-decoration: underline 1px dotted; text-underline-offset: 3px; padding: 4px 0; }
+.privacy a { color: inherit; text-decoration: underline 1px dotted; text-underline-offset: 3px; }

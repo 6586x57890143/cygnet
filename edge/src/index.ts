@@ -14,6 +14,7 @@ import {
   held,
   inviteLife,
   keepEmail,
+  keepList,
   keepNetwork,
   keyed,
   launches,
@@ -40,6 +41,10 @@ interface Env {
   TURNSTILE_SECRET: string;
   HMAC_KEY: string;
   ADMIN_TOKEN: string;
+  // CONTROLLER is who's responsible for the data, and CONTACT how to reach
+  // them, as the privacy notice names them. Set at deploy, not in the code.
+  CONTROLLER?: string;
+  CONTACT?: string;
 }
 
 type Purpose = "join" | "issue" | "redeem";
@@ -87,9 +92,11 @@ export default {
       if (first === "i" && second) return await invited(req, env, url, second);
       if (first === "v" && second) return await confirm(req, env, second);
       if (first === "admin") return await admin(req, env, second, third);
+      if (first === "privacy" && !second) return await privacy(env);
       if (!l) return new Response("nothing here", { status: 404, headers: secure(text) });
       if (second === undefined && req.method === "GET") return await landing(req, env, l);
       if (second === "wait" && req.method === "GET") return await wait(req, env, l, url);
+      if (second === "mine" && req.method === "GET") return await mine(req, env, l);
       if (req.method === "POST") {
         if (second === "join") return await human(req, env, l, () => oauth(env, url, "join", l));
         if (second === "issue") return await issueStart(req, env, l, url);
@@ -107,7 +114,7 @@ export default {
   // job, links nobody clicked, and old send counts.
   async scheduled(_event, env): Promise<void> {
     const s = store(env);
-    await s.forget(Date.now(), keepNetwork, await s.launches(), keepEmail);
+    await s.forget(Date.now(), keepNetwork, await s.launches(), keepEmail, keepList);
   },
 } satisfies ExportedHandler<Env>;
 
@@ -320,6 +327,23 @@ async function wait(req: Request, env: Env, l: Launch, url: URL): Promise<Respon
   if (r === "taken") return withCookie(await html(env, l, { kind: "error", why: say.gotInMeanwhile }, 409), done);
   if (r === "gone") return withCookie(await html(env, l, { kind: "error", why: say.inviteGoneLate }, 410), done);
   return withCookie(await signedIn(env, l, c.user), done);
+}
+
+// mine is everything kept about the person signed in, as a file to keep:
+// their right to see it and take it with them.
+async function mine(req: Request, env: Env, l: Launch): Promise<Response> {
+  const user = await who(req, env, l);
+  const data = user ? await store(env).mine(l, user) : null;
+  if (!data) return back(l);
+  return new Response(JSON.stringify(data, null, 2), {
+    headers: secure({ "content-type": "application/json", "content-disposition": `attachment; filename="${l.name}-my-data.json"`, "cache-control": "no-store" }),
+  });
+}
+
+// privacy is the full privacy notice, for every launch.
+async function privacy(env: Env): Promise<Response> {
+  const l = launches.silcord;
+  return html(env, { ...l, title: "privacy" }, { kind: "privacy", controller: env.CONTROLLER || "the people running cygnet.lol", contact: env.CONTACT || "privacy@cygnet.lol" });
 }
 
 async function revoke(req: Request, env: Env, l: Launch): Promise<Response> {

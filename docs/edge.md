@@ -59,6 +59,28 @@ than 2,900 go out in any 31 days, so the worst month costs about €0.65 whateve
 tries. Past it the page says so and nothing is sent. Everything else (Workers, D1,
 Turnstile, static assets) runs on Cloudflare's free plan.
 
+## GDPR, by design
+
+- **Notice:** a compact one under every card, and the full one at `/privacy`: who's
+  responsible, what's kept and why (taking part in the list, and the legitimate interest
+  in stopping double sign ups), who processes it (Cloudflare, Discord, Scaleway), for how
+  long, the rights, and that nothing is decided by profiling. The voice test holds it to
+  the page's voice.
+- **Access and portability:** `/<launch>/mine` downloads everything kept about the person
+  signed in, as JSON, ledger entries included.
+- **Erasure:** leaving deletes their row at once, and wherever their Discord ID stood in
+  someone else's record (an invite, a sponsor) it becomes the keyed hash the ledger knows
+  them by, `h:`. The ledger keeps that hash, for the tree's tamper evidence, until the
+  launch's data goes.
+- **Storage limitation:** network and area hashes go after 30 days, email hashes 30 days
+  after launch, and a launch's whole list, invites and ledger 12 months after it opens
+  (`keepList`); each launch's ledger chains on its own so it can go alone.
+- **Cookies:** only the ones a sign in and a step in progress need, and local storage for
+  the theme and the swan: nothing to consent to, so no banner.
+- **Who:** `CONTROLLER` and `CONTACT` are set as secrets at deploy, so no name is in the
+  code; unset, the notice names the people running cygnet.lol and
+  `privacy@cygnet.lol`, which Email Routing can forward to a real inbox for free.
+
 ## The ledger
 
 Every join, release, lift, issue, revoke, redeem and leave is appended to `ledger`, in
@@ -112,7 +134,8 @@ On the Cloudflare account that holds `cygnet.lol` (the free plan is enough):
    `DISCORD_CLIENT_ID`.
 5. The secrets, each typed in, never in a file: `npx wrangler secret put` for
    `DISCORD_CLIENT_SECRET`, `TURNSTILE_SECRET`, `SCW_SECRET_KEY`, `HMAC_KEY` and `ADMIN_TOKEN` (the last two
-   `openssl rand -base64 32`). Changing `HMAC_KEY` later makes every stored hash and the
+   `openssl rand -base64 32`). Optionally `CONTROLLER` (who's responsible, as the privacy notice names
+   them) and `CONTACT` (their address). Changing `HMAC_KEY` later makes every stored hash and the
    ledger's chain unverifiable, so set it once.
 6. `npm run deploy` applies the migrations and deploys to the `cygnet.lol` custom
    domain.

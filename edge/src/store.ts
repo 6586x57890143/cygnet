@@ -84,10 +84,12 @@ export class Store {
   // commit runs build's statements as one batch, built against the ledger's
   // head as it is, and builds them again if another write took the next
   // place in the ledger first.
-  private async commit(build: (append: (e: Entry, when: string, ...args: unknown[]) => Promise<Stmt>) => Promise<Stmt[]>): Promise<void> {
+  private async commit(launch: string, build: (append: (e: Entry, when: string, ...args: unknown[]) => Promise<Stmt>) => Promise<Stmt[]>): Promise<void> {
     for (let attempt = 0; ; attempt++) {
-      const head = await this.db.prepare("SELECT seq, mac FROM ledger ORDER BY seq DESC LIMIT 1").first<{ seq: number; mac: string }>();
-      let seq = head?.seq ?? 0;
+      // seq orders the whole ledger; the chain is the launch's own.
+      const top = await this.db.prepare("SELECT MAX(seq) AS seq FROM ledger").first<{ seq: number | null }>();
+      const head = await this.db.prepare("SELECT mac FROM ledger WHERE launch = ?1 ORDER BY seq DESC LIMIT 1").bind(launch).first<{ mac: string }>();
+      let seq = top?.seq ?? 0;
       let prev = head?.mac ?? "";
       const append = async (e: Entry, when: string, ...args: unknown[]) => {
         seq++;
@@ -110,7 +112,7 @@ export class Store {
   // or email is already on the list.
   async join(l: Launch, user: string, h: Hashes, held: string | null, now: number): Promise<boolean> {
     const actor = await this.who(user);
-    await this.commit(async (append) => [
+    await this.commit(l.name, async (append) => [
       this.db
         .prepare(
           `INSERT INTO member (launch, user, place, email, ip, net, geo, held, at)
@@ -178,7 +180,7 @@ export class Store {
       .all<{ user: string }>();
     if (!results.length) return 0;
     const subjects = await Promise.all(results.map((r) => this.who(r.user)));
-    await this.commit(async (append) => {
+    await this.commit(l.name, async (append) => {
       const out: Stmt[] = [];
       for (const [i, r] of results.entries()) {
         out.push(this.db.prepare("UPDATE member SET released = ?3 WHERE launch = ?1 AND user = ?2 AND released = 0").bind(l.name, r.user, invites));
@@ -193,7 +195,7 @@ export class Store {
   async lift(l: Launch, user: string, now: number): Promise<boolean> {
     const subject = await this.who(user);
     let lifted = false;
-    await this.commit(async (append) => [
+    await this.commit(l.name, async (append) => [
       await append({ launch: l.name, kind: "lift", actor: "admin", subject, ref: "", at: now }, "EXISTS (SELECT 1 FROM member WHERE launch = ?2 AND user = ?9 AND held IS NOT NULL)", user),
       this.db.prepare("UPDATE member SET held = NULL WHERE launch = ?1 AND user = ?2 AND held IS NOT NULL").bind(l.name, user),
     ]);
@@ -207,7 +209,7 @@ export class Store {
     const code = inviteCode();
     const hash = await digest(code);
     const actor = await this.who(user);
-    await this.commit(async (append) => [
+    await this.commit(l.name, async (append) => [
       this.db
         .prepare(
           `INSERT INTO invite (hash, launch, issuer, made, expires)
@@ -232,7 +234,7 @@ export class Store {
   // revoke takes back an invite of user's that nobody has used.
   async revoke(l: Launch, user: string, hash: string, now: number): Promise<boolean> {
     const actor = await this.who(user);
-    await this.commit(async (append) => [
+    await this.commit(l.name, async (append) => [
       this.db.prepare("UPDATE invite SET revoked = ?4 WHERE hash = ?1 AND launch = ?2 AND issuer = ?3 AND spent_by IS NULL AND revoked IS NULL").bind(hash, l.name, user, now),
       await append({ launch: l.name, kind: "revoke", actor, subject: "", ref: hash, at: now }, "EXISTS (SELECT 1 FROM invite WHERE hash = ?9 AND revoked = ?7)", hash),
     ]);
@@ -248,7 +250,7 @@ export class Store {
     const sponsor = await this.db.prepare("SELECT issuer FROM invite WHERE hash = ?1").bind(hash).first<{ issuer: string }>();
     const subject = sponsor ? await this.who(sponsor.issuer) : "";
     try {
-      await this.commit(async (append) => [
+      await this.commit(l.name, async (append) => [
         this.db
           .prepare(
             `UPDATE invite SET spent_by = ?3, spent_at = ?4
@@ -272,16 +274,51 @@ export class Store {
     return (await this.db.prepare("SELECT 1 FROM member WHERE launch = ?1 AND user = ?2 AND at = ?3").bind(l.name, user, now).first()) ? "in" : "gone";
   }
 
-  // leave takes user off the list, and back every invite of theirs nobody
-  // has used. Whoever they brought in stays, still under them: the tree is
-  // the record of who vouched for whom.
+  // leave takes user off the list and back every invite of theirs nobody
+  // has used, and leaves nothing that names them: where their Discord ID
+  // stood in the record of who vouched for whom (their invites, and the
+  // members they brought in) it's replaced with the keyed hash the ledger
+  // knows them by. Whoever they brought in stays, under that.
   async leave(l: Launch, user: string, now: number): Promise<void> {
     const actor = await this.who(user);
-    await this.commit(async (append) => [
+    const pseudo = "h:" + actor;
+    await this.commit(l.name, async (append) => [
       await append({ launch: l.name, kind: "leave", actor, subject: actor, ref: "", at: now }, "EXISTS (SELECT 1 FROM member WHERE launch = ?2 AND user = ?9)", user),
       this.db.prepare("UPDATE invite SET revoked = ?3 WHERE launch = ?1 AND issuer = ?2 AND spent_by IS NULL AND revoked IS NULL").bind(l.name, user, now),
+      this.db.prepare("UPDATE invite SET issuer = ?3 WHERE launch = ?1 AND issuer = ?2").bind(l.name, user, pseudo),
+      this.db.prepare("UPDATE invite SET spent_by = ?3 WHERE launch = ?1 AND spent_by = ?2").bind(l.name, user, pseudo),
+      this.db.prepare("UPDATE member SET sponsor = ?3 WHERE launch = ?1 AND sponsor = ?2").bind(l.name, user, pseudo),
+      this.db.prepare("DELETE FROM challenge WHERE launch = ?1 AND user = ?2").bind(l.name, user),
       this.db.prepare("DELETE FROM member WHERE launch = ?1 AND user = ?2").bind(l.name, user),
     ]);
+  }
+
+  // mine is everything kept about user for l, for them to download: what's
+  // stored as is, whether each hash is, every invite they made, and every
+  // ledger entry about them.
+  async mine(l: Launch, user: string) {
+    const m = await this.db.prepare("SELECT * FROM member WHERE launch = ?1 AND user = ?2").bind(l.name, user).first<Record<string, string | number | null>>();
+    if (!m) return null;
+    const { results: invites } = await this.db.prepare("SELECT made, expires, spent_at, revoked FROM invite WHERE launch = ?1 AND issuer = ?2 ORDER BY made").bind(l.name, user).all<Record<string, number | null>>();
+    const h = await this.who(user);
+    const { results: ledger } = await this.db
+      .prepare("SELECT kind, at, actor = ?2 AS by_you FROM ledger WHERE launch = ?1 AND (actor = ?2 OR subject = ?2) ORDER BY seq")
+      .bind(l.name, h)
+      .all<{ kind: string; at: number; by_you: number }>();
+    const when = (v: unknown) => (typeof v === "number" ? new Date(v).toISOString() : null);
+    return {
+      launch: l.name,
+      discord_id: user,
+      joined: when(m.at),
+      place: m.place,
+      invited_by_someone: m.sponsor !== null,
+      invites_released: m.released,
+      on_hold_because: m.held,
+      stored_as_keyed_hashes: { email: m.email !== null, connection: m.ip !== null, network: m.net !== null, area: m.geo !== null },
+      invites_made: invites.map((i) => ({ made: when(i.made), expires: when(i.expires), used: when(i.spent_at), taken_back: when(i.revoked) })),
+      ledger: ledger.map((e) => ({ what: e.kind, by_you: !!e.by_you, at: when(e.at) })),
+      ledger_id: h,
+    };
   }
 
   // tree is every member with who brought them in, for an admin.
@@ -343,9 +380,10 @@ export class Store {
       .first<{ launch: string; user: string; purpose: "issue" | "redeem"; invite: string | null; email: string; ip: string; net: string; geo: string | null; held: string | null }>();
   }
 
-  // forget drops what was kept only to stop double sign ups, and codes
-  // nobody typed in.
-  async forget(now: number, keepNetwork: number, launches: Launch[], keepEmail: number): Promise<void> {
+  // forget drops what was kept only to stop double sign ups, links nobody
+  // clicked, and a launch's whole list, invites and ledger once keepList
+  // has passed since it opened.
+  async forget(now: number, keepNetwork: number, launches: Launch[], keepEmail: number, keepList = Infinity): Promise<void> {
     const out = [
       this.db.prepare("UPDATE member SET ip = NULL, net = NULL, geo = NULL WHERE at < ?1 AND (ip IS NOT NULL OR net IS NOT NULL OR geo IS NOT NULL)").bind(now - keepNetwork),
       this.db.prepare("DELETE FROM challenge WHERE expires < ?1").bind(now),
@@ -353,6 +391,15 @@ export class Store {
     ];
     for (const l of launches) {
       if (l.opens && now > l.opens + keepEmail) out.push(this.db.prepare("UPDATE member SET email = NULL WHERE launch = ?1 AND email IS NOT NULL").bind(l.name));
+      if (l.opens && now > l.opens + keepList) {
+        out.push(
+          this.db.prepare("INSERT INTO gone (launch, at) VALUES (?1, ?2) ON CONFLICT DO NOTHING").bind(l.name, now),
+          this.db.prepare("DELETE FROM member WHERE launch = ?1").bind(l.name),
+          this.db.prepare("DELETE FROM invite WHERE launch = ?1").bind(l.name),
+          this.db.prepare("DELETE FROM challenge WHERE launch = ?1").bind(l.name),
+          this.db.prepare("DELETE FROM ledger WHERE launch = ?1").bind(l.name),
+        );
+      }
     }
     await this.db.batch(out);
   }
@@ -363,20 +410,20 @@ export class Store {
   // or added outside this code shows up as a broken seq or a mismatch.
   async verify(): Promise<{ entries: number; broken: number | null; mismatches: string[] }> {
     const { results } = await this.db.prepare("SELECT * FROM ledger ORDER BY seq").all<Entry & { seq: number; mac: string }>();
-    let prev = "";
-    let expect = 1;
+    // Each launch's chain is checked on its own: every mac over the one
+    // before it in the same launch.
+    const prev = new Map<string, string>();
     let broken: number | null = null;
     const released = new Map<string, number>();
     const issued = new Map<string, number>();
     for (const e of results) {
-      if (e.seq !== expect || e.mac !== (await keyed(this.key, "ledger", line(prev, e.seq, e)))) {
+      if (e.mac !== (await keyed(this.key, "ledger", line(prev.get(e.launch) ?? "", e.seq, e)))) {
         broken = e.seq;
         break;
       }
       if (e.kind === "release") released.set(e.subject, Number(e.ref));
       if (e.kind === "issue") issued.set(e.actor, (issued.get(e.actor) ?? 0) + 1);
-      prev = e.mac;
-      expect++;
+      prev.set(e.launch, e.mac);
     }
     const mismatches: string[] = [];
     const { results: members } = await this.db.prepare("SELECT launch, user, released FROM member").all<{ launch: string; user: string; released: number }>();
@@ -387,7 +434,8 @@ export class Store {
     const { results: issuers } = await this.db.prepare("SELECT issuer, COUNT(*) AS n FROM invite GROUP BY issuer").all<{ issuer: string; n: number }>();
     const seen = new Set<string>();
     for (const i of issuers) {
-      const h = await this.who(i.issuer);
+      // Someone who left is already their keyed hash.
+      const h = i.issuer.startsWith("h:") ? i.issuer.slice(2) : await this.who(i.issuer);
       seen.add(h);
       if ((issued.get(h) ?? 0) !== i.n) mismatches.push(`invites for ${h}`);
     }

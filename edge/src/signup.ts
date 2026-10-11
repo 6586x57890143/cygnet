@@ -49,6 +49,9 @@ export const budget = { emails: 2_900, days: 31 };
 // how long after a launch opens its email hashes are.
 export const keepNetwork = 30 * day;
 export const keepEmail = 30 * day;
+// keepList is how long after a launch opens its whole list, invites and
+// ledger are kept before they're deleted.
+export const keepList = 365 * day;
 
 // discordEpoch is the first ms of 2015, where Discord's IDs count from.
 const discordEpoch = 1_420_070_400_000n;

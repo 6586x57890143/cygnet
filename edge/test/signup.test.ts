@@ -162,11 +162,13 @@ test("invites: issued, taken back, spent once, and a tree", async () => {
   // An issuer can't take their own.
   assert.equal(await s.redeem(l, hd, "1", h("11"), null, t0 + inviteLife + 12), "gone");
 
-  // Leaving takes back what's unspent and keeps the tree.
+  // Leaving takes back what's unspent, keeps the tree, and leaves nothing
+  // that names them: their ID is the ledger's keyed hash wherever it stood.
   await s.leave(l, "1", t0 + inviteLife + 13);
   assert.equal(await s.member(l, "1"), null);
   assert.equal(await s.open(l, hd, t0 + inviteLife + 14), null);
-  assert.equal((await s.member(l, "7"))?.sponsor, "1");
+  const pseudo = "h:" + (await s.who("1"));
+  assert.equal((await s.member(l, "7"))?.sponsor, pseudo);
   assert.deepEqual((await s.verify()).broken, null);
   assert.deepEqual((await s.verify()).mismatches, []);
   const tree = await s.tree(l);
@@ -174,9 +176,54 @@ test("invites: issued, taken back, spent once, and a tree", async () => {
     tree.map((r) => [r.user, r.sponsor]),
     [
       ["2", null],
-      ["7", "1"],
+      ["7", pseudo],
     ],
   );
+});
+
+test("gdpr: everything about you to download, nothing left after you go, all of it gone in time", async () => {
+  const { sql, s } = fresh();
+  await s.join(l, "1", h("1"), null, t0);
+  await s.release(l, 1, 2, t0);
+  const code = await s.issue(l, "1", t0 + 1);
+  await s.redeem(l, await digest(code!), "2", h("2"), null, t0 + 2);
+
+  const mine = await s.mine(l, "1");
+  assert.equal(mine?.discord_id, "1");
+  assert.equal(mine?.invites_released, 2);
+  assert.equal(mine?.invites_made.length, 1);
+  assert.deepEqual(mine?.stored_as_keyed_hashes, { email: true, connection: true, network: true, area: true });
+  assert.deepEqual(
+    mine?.ledger.map((e) => [e.what, e.by_you]),
+    [
+      ["join", true],
+      ["release", false],
+      ["issue", true],
+      ["redeem", false],
+    ],
+  );
+  assert.equal(await s.mine(l, "9"), null);
+
+  // After leaving, the raw ID is in no table.
+  await s.leave(l, "1", t0 + 3);
+  for (const table of ["member", "invite", "challenge"]) {
+    const hit = sql.prepare(`SELECT * FROM ${table}`).all().some((r) => Object.values(r as object).includes("1"));
+    assert.ok(!hit, `${table} still names them`);
+  }
+
+  // A launch's list, invites and ledger go once its time is up, and only
+  // then; another launch's ledger still verifies.
+  const other = { ...l, name: "wren" };
+  await s.join(other, "5", h("5"), null, t0);
+  await s.forget(t0 + 10, 1e15, [{ ...l, opens: t0 }], 1e15, 100);
+  assert.ok(sql.prepare("SELECT 1 FROM ledger WHERE launch = 'silcord'").get(), "not yet");
+  assert.throws(() => sql.exec("DELETE FROM ledger WHERE launch = 'silcord'"), /append only/);
+  await s.forget(t0 + 200, 1e15, [{ ...l, opens: t0 }], 1e15, 100);
+  for (const table of ["member", "invite", "ledger"]) {
+    assert.equal(sql.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE launch = 'silcord'`).get()?.n, 0, table);
+  }
+  assert.equal((await s.member(other, "5"))?.user, "5");
+  assert.deepEqual(await s.verify(), { entries: 1, broken: null, mismatches: [] });
 });
 
 test("the ledger can't be rewritten, and a rewrite shows", async () => {
@@ -253,6 +300,7 @@ test("every page, in the voice", () => {
     confirm: page(l, 1, { kind: "confirm", token: "t" }, "k"),
     confirmed: page(l, 1, { kind: "confirmed" }, "k"),
     error: page(l, 1, { kind: "error", why: "that link ran out or was already used\nstart again from your page" }, "k"),
+    privacy: page(l, 1, { kind: "privacy", controller: "the people running cygnet lol", contact: "privacy@cygnet.lol" }, "k"),
   };
   for (const [name, html] of Object.entries(views)) {
     const words = visible(html);
@@ -270,6 +318,9 @@ test("every page, in the voice", () => {
   assert.match(views.mine, /ran out and came back to you/);
   assert.match(views.mine, /make an invite/);
   assert.match(views.invitee, /youre in through a friend/);
+  for (const right of ["download", "delete", "complain", "cloudflare", "scaleway", "12 months"]) assert.match(views.privacy, new RegExp(right));
+  assert.match(views.mine, /href="\/silcord\/mine">download my data/);
+  assert.match(views.open, /href="\/privacy">full privacy notice/);
   assert.doesNotMatch(views.held, /turnstile\/v0|make an invite/);
   assert.match(views.sent, /<b>st\*\*\*@gm\*\*\*\.com<\/b>/);
   assert.match(views.confirm, /action="\/v\/t" class="auto"/);
