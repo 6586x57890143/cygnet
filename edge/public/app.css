@@ -21,6 +21,11 @@
   --ink: 243, 237, 225;
   --deep: 2, 4, 7;
   --deep-a: .62;
+  --scene: night;
+  --sky-top: 6, 10, 24, .55;
+  --sky-low: 30, 44, 72, .32;
+  --orb: 226, 232, 242;
+  --glint: 236, 241, 252;
   --sea: 74, 92, 120;
   --mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -45,6 +50,11 @@
     --ink: 26, 31, 39;
     --deep: 38, 52, 78;
     --deep-a: .14;
+    --scene: day;
+    --sky-top: 150, 192, 232, .55;
+    --sky-low: 255, 241, 214, .4;
+    --orb: 255, 196, 92;
+    --glint: 196, 128, 30;
     --sea: 150, 160, 178;
     color-scheme: light;
   }
@@ -84,7 +94,7 @@ main {
 
 /* The card. */
 .card {
-  grid-area: card; align-self: end;
+  grid-area: card; align-self: end; transform-origin: 50% 100%; will-change: transform;
   background: var(--glass); border: 1px solid var(--edge); border-radius: 18px;
   padding: clamp(20px, 4vw, 30px);
   -webkit-backdrop-filter: blur(14px) saturate(120%); backdrop-filter: blur(14px) saturate(120%);

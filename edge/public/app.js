@@ -91,7 +91,9 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
   if (still) t = to;
   const from = t;
   let w = 0, h = 0, cy = 0, bx = 0, by = 0, cw = 6, ch = 10, cols = 0, rows = 0, ink = "236,230,218", deep = "3,5,8", depth = 0.55;
-  let lean = 0, aim = 0;
+  // The sky's: night or day, its colours, and where the moon or sun is.
+  let night = true, skyTop = "8,12,26,0.5", skyLow = "26,38,62,0.35", glow = "226,232,240", glint = "235,240,250", mx = 0, my = 0, orb = 40;
+  let lean = 0, aim = 0, float = 0;
   function place() {
     const dpr = Math.min(devicePixelRatio || 1, 2);
     w = innerWidth;
@@ -100,7 +102,12 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
     c.height = h * dpr;
     x.setTransform(dpr, 0, 0, dpr, 0, 0);
     const r = hero.getBoundingClientRect();
+    // Measured without its bob, or the water would chase the card.
+    const held = card.style.transform;
+    card.style.transform = "none";
     const k = card.getBoundingClientRect();
+    card.style.transform = held;
+    float = k.left + k.width / 2;
     const wide = w >= 900;
     cy = wide ? k.bottom : k.top - 10;
     ch = wide ? 8 : 6;
@@ -119,6 +126,16 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
     ink = css.getPropertyValue("--ink").trim() || ink;
     deep = css.getPropertyValue("--deep").trim() || deep;
     depth = Number(css.getPropertyValue("--deep-a").trim()) || depth;
+    night = css.getPropertyValue("--scene").trim() !== "day";
+    skyTop = css.getPropertyValue("--sky-top").trim() || skyTop;
+    skyLow = css.getPropertyValue("--sky-low").trim() || skyLow;
+    glow = css.getPropertyValue("--orb").trim() || glow;
+    glint = css.getPropertyValue("--glint").trim() || glint;
+    // Above the swan's side of the page on a wide screen, the top right
+    // on a phone.
+    orb = Math.max(30, Math.min(72, w * 0.03));
+    mx = wide ? r.left + r.width * 0.24 : w * 0.8;
+    my = wide ? Math.max(orb * 2.4, cy * 0.24) : Math.max(orb * 1.6, cy * 0.2);
   }
   // wave is the water's height at a point along it.
   const wave = (gx, s) => Math.sin(gx * 0.012 + s * 1.1) * 4 + Math.sin(gx * 0.041 - s * 0.7) * 1.4;
@@ -127,11 +144,120 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
     const v = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453;
     return v - Math.floor(v);
   };
+  // The sky behind it all: a moonlit night in dark mode, a sunny day in
+  // light, both in the same glyphs as everything else. A gradient from the
+  // top of the page to the water, then the stars or the clouds, then the
+  // moon or the sun with its glow, and its light glittering on the water
+  // below. See-through, so the field still shows.
+  function sky(s) {
+    const g = x.createLinearGradient(0, 0, 0, cy);
+    g.addColorStop(0, `rgba(${skyTop})`);
+    g.addColorStop(1, `rgba(${skyLow})`);
+    x.fillStyle = g;
+    x.fillRect(0, 0, w, cy);
+    if (night) {
+      // Stars: fixed places, each twinkling in its own time.
+      for (let i = 0; i < 160; i++) {
+        const sx = hash(i, 3) * w, sy = Math.pow(hash(i, 4), 1.4) * (cy - 30);
+        if (Math.hypot(sx - mx, sy - my) < orb * 2.2) continue;
+        const tw = 0.5 + 0.5 * Math.sin(s * (0.6 + hash(i, 5) * 1.6) + i);
+        const big = hash(i, 6) > 0.93;
+        x.fillStyle = `rgba(${glow},${((big ? 0.5 : 0.22) * (0.35 + 0.65 * tw)).toFixed(3)})`;
+        x.fillText(big ? (tw > 0.8 ? "+" : "*") : tw > 0.7 ? "." : "·", sx, sy);
+      }
+    } else {
+      // Clouds: soft clusters of glyphs drifting slowly across.
+      for (let k = 0; k < 4; k++) {
+        const span = w + 600;
+        const cx0 = ((hash(k, 7) * span + s * (6 + k * 2.5)) % span) - 300;
+        const cy0 = 40 + hash(k, 8) * (cy * 0.42);
+        const cwid = 140 + hash(k, 9) * 160;
+        for (let j = -3; j <= 3; j++) {
+          for (let i = -Math.ceil(cwid / cw / 2); i <= Math.ceil(cwid / cw / 2); i++) {
+            const dx = (i * cw) / (cwid / 2), dy = j / 3.2;
+            const lump = 0.62 + 0.38 * Math.sin(i * 0.5 + k) * Math.cos(j * 0.9 + k * 2);
+            const d = dx * dx + dy * dy * 2.2;
+            if (d > lump) continue;
+            const v = 1 - d / lump;
+            x.fillStyle = `rgba(255,255,255,${(0.18 + v * 0.42).toFixed(3)})`;
+            x.fillText(v > 0.6 ? "@" : v > 0.35 ? "%" : v > 0.15 ? "=" : ":", cx0 + i * cw, cy0 + j * ch);
+          }
+        }
+      }
+    }
+    // The glow round the moon or the sun.
+    const halo = x.createRadialGradient(mx, my, orb * 0.6, mx, my, orb * (night ? 5 : 7));
+    halo.addColorStop(0, `rgba(${glow},${night ? 0.16 : 0.35})`);
+    halo.addColorStop(1, `rgba(${glow},0)`);
+    x.fillStyle = halo;
+    x.fillRect(mx - orb * 7, my - orb * 7, orb * 14, orb * 14);
+    // The disc, shaded glyph by glyph: the moon lit from the side with its
+    // seas and craters dark, the sun bright to its edge with turning rays.
+    const rc = Math.ceil(orb / cw), rr = Math.ceil(orb / ch);
+    for (let j = -rr; j <= rr; j++) {
+      for (let i = -rc; i <= rc; i++) {
+        const dx = (i * cw) / orb, dy = (j * ch) / orb;
+        const d2 = dx * dx + dy * dy;
+        if (d2 > 1) continue;
+        const nz = Math.sqrt(1 - d2);
+        let v;
+        if (night) {
+          v = 0.25 + 0.75 * Math.max(0, -dx * 0.35 - dy * 0.25 + nz * 0.9);
+          const sea = Math.sin(dx * 5.1 + 1.3) * Math.cos(dy * 4.3 - 0.7) + Math.sin((dx + dy) * 7.7);
+          if (sea > 0.85) v *= 0.62;
+          if (hash(i + 99, j + 77) > 0.94) v *= 0.7;
+        } else {
+          v = 0.7 + 0.3 * nz;
+        }
+        x.fillStyle = `rgba(${glow},${Math.min(1, 0.35 + v * 0.65).toFixed(3)})`;
+        x.fillText(ramp[Math.min(ramp.length - 1, 3 + Math.round(v * (ramp.length - 4)))], mx + i * cw - cw / 2, my + j * ch - ch / 2);
+      }
+    }
+    if (!night) {
+      // Rays, turning slowly.
+      for (let k = 0; k < 16; k++) {
+        const a = (k / 16) * Math.PI * 2 + s * 0.05;
+        const glyph = "|/-\\"[Math.round(((a % Math.PI) + Math.PI) % Math.PI / (Math.PI / 4)) % 4];
+        for (let q = 0; q < 4; q++) {
+          const rad = orb * (1.35 + q * 0.32 + (k % 2) * 0.25);
+          x.fillStyle = `rgba(${glow},${(0.55 - q * 0.12).toFixed(3)})`;
+          x.fillText(glyph, mx + Math.cos(a) * rad - cw / 2, my + Math.sin(a) * rad - ch / 2);
+        }
+      }
+    }
+  }
+
+  // The light on the water under the moon or the sun: a column of glints
+  // widening toward the viewer, flickering with the ripples.
+  function glitter(s) {
+    for (let r = 0; r <= 10; r++) {
+      const ry = cy + r * ch * (0.7 + r * 0.12);
+      const half = orb * (0.5 + r * 0.32);
+      for (let gx = mx - half; gx < mx + half; gx += cw * 0.85) {
+        const f = Math.sin(gx * 0.11 + s * 2.6 + r * 1.9) + Math.sin(gx * 0.047 - s * 1.7 + r) + Math.sin(gx * 0.31 + s * 4.1 - r);
+        if (f < 0.1) continue;
+        const edge = 1 - Math.abs(gx - mx) / half;
+        x.fillStyle = `rgba(${glint},${Math.min(1, 0.95 * Math.sqrt(edge) * (1 - r / 14) * Math.min(1, f * 0.7 + 0.15)).toFixed(3)})`;
+        x.fillText(f > 1.5 ? "=" : f > 0.8 ? "~" : "-", gx, ry + wave(gx, s) * 0.5 - ch * 0.5);
+      }
+    }
+  }
+
   function draw(now, pts) {
     const s = now / 1000;
     lean += (aim - lean) * 0.04;
     const f = frame(pts, cols, rows, -0.55 + Math.sin(s * 0.23) * 0.22 + lean, 0.13 + Math.sin(s * 0.41) * 0.025, cw / ch);
     x.clearRect(0, 0, w, h);
+    // The card floats: it rides the wave where it is, as far as the line of
+    // the water there moves, and tips with the wave's slope, from its
+    // bottom edge.
+    if (now) {
+      const lift = wave(float, s) * 0.6 + Math.sin(s * 0.8) * 1.2;
+      const slope = ((wave(float + 80, s) - wave(float - 80, s)) * 0.6) / 160;
+      const tip = Math.max(-0.8, Math.min(0.8, ((Math.atan(slope) * 180) / Math.PI) * 0.9));
+      card.style.transform = `translateY(${lift.toFixed(2)}px) rotate(${tip.toFixed(3)}deg)`;
+    }
+    sky(s);
     // Below the surface the water is darker than the night above it, and
     // deeper toward the bottom of the page, so it reads as a body of water.
     const g = x.createLinearGradient(0, cy - 8, 0, h);
@@ -155,6 +281,7 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
         x.fillText(v > 1.25 ? "~" : "-", gx, ry + wave(gx, s) * (0.6 - Math.min(0.4, Math.abs(r) * 0.05)) - ch * 0.5);
       }
     }
+    glitter(s);
     const bands = 10;
     const lanes = Array.from({ length: bands }, () => []);
     const rims = [];
