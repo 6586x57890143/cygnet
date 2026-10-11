@@ -93,7 +93,7 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
   let w = 0, h = 0, cy = 0, bx = 0, by = 0, cw = 6, ch = 10, cols = 0, rows = 0, ink = "236,230,218", deep = "3,5,8", depth = 0.55;
   // The sky's: night or day, its colours, and where the moon or sun is.
   let night = true, skyTop = "8,12,26,0.5", skyLow = "26,38,62,0.35", glow = "226,232,240", glint = "235,240,250", mx = 0, my = 0, orb = 40;
-  let lean = 0, aim = 0, float = 0;
+  let lean = 0, aim = 0, float = 0, span = 400;
   function place() {
     const dpr = Math.min(devicePixelRatio || 1, 2);
     w = innerWidth;
@@ -108,6 +108,7 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
     const k = card.getBoundingClientRect();
     card.style.transform = held;
     float = k.left + k.width / 2;
+    span = k.width;
     const wide = w >= 900;
     cy = wide ? k.bottom : k.top - 10;
     ch = wide ? 8 : 6;
@@ -248,13 +249,13 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
     lean += (aim - lean) * 0.04;
     const f = frame(pts, cols, rows, -0.55 + Math.sin(s * 0.23) * 0.22 + lean, 0.13 + Math.sin(s * 0.41) * 0.025, cw / ch);
     x.clearRect(0, 0, w, h);
-    // The card floats: it rides the wave where it is, as far as the line of
-    // the water there moves, and tips with the wave's slope, from its
-    // bottom edge.
+    // The card floats on the water line itself: its bottom corners sit on
+    // the line where they are, so it rises by the water's height under its
+    // middle and tips by the line between its corners.
     if (now) {
-      const lift = wave(float, s) * 0.6 + Math.sin(s * 0.8) * 1.2;
-      const slope = ((wave(float + 80, s) - wave(float - 80, s)) * 0.6) / 160;
-      const tip = Math.max(-0.8, Math.min(0.8, ((Math.atan(slope) * 180) / Math.PI) * 0.9));
+      const left = wave(float - span / 2, s) * 0.6, right = wave(float + span / 2, s) * 0.6;
+      const lift = (left + right) / 2;
+      const tip = (Math.atan2(right - left, span) * 180) / Math.PI;
       card.style.transform = `translateY(${lift.toFixed(2)}px) rotate(${tip.toFixed(3)}deg)`;
     }
     sky(s);
