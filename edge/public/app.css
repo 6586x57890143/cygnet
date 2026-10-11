@@ -216,5 +216,6 @@ header { flex-direction: column; gap: 10px; }
 }
 .theme:hover { transform: none; box-shadow: 0 0 0 4px var(--edge); filter: none; }
 
-/* The privacy notes hang from the water line as the card's reflection. */
-.privacy { transform-origin: 50% 0; will-change: transform; }
+/* The privacy notes hang from the water line as the card's reflection,
+   turning about the card's bottom edge (their top, less the gap). */
+.privacy { transform-origin: 50% -30px; will-change: transform; }

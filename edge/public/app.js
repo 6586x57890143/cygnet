@@ -268,9 +268,11 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
       const lift = (left + right) / 2;
       const tip = (Math.atan2(right - left, span) * 180) / Math.PI;
       card.style.transform = `translateY(${lift.toFixed(2)}px) rotate(${tip.toFixed(3)}deg)`;
-      // The privacy notes are its reflection: mirrored at the water line,
-      // they sink as it rises and tip the other way, with a slight shimmer.
-      if (notes) notes.style.transform = `translateY(${(-lift).toFixed(2)}px) rotate(${(-tip).toFixed(3)}deg) skewX(${(Math.sin(s * 1.3) * 0.6).toFixed(3)}deg)`;
+      // The privacy notes are its reflection, held to it on one line through
+      // both that pivots at the water: they turn by the same angle about the
+      // card's bottom edge, so they swing the other way beneath it, and they
+      // sink as it rises.
+      if (notes) notes.style.transform = `translateY(${(-lift).toFixed(2)}px) rotate(${tip.toFixed(3)}deg)`;
     }
     sky(s);
     // Below the surface the water is darker than the night above it, and
