@@ -3,7 +3,7 @@
 // transaction, and each statement after the first is guarded on the first
 // having done what it should, so nothing changes without its entry.
 
-import { digest, fallback, inviteCode, inviteLife, keyed, launches, type Launch } from "./signup.ts";
+import { digest, fallback, inviteCode, inviteLife, keyed, launches, type Launch, type Stage } from "./signup.ts";
 
 // DB is what this needs of D1, so a test can hand it SQLite.
 export interface DB {
@@ -52,8 +52,64 @@ export class Store {
   async launch(name: string): Promise<Launch | undefined> {
     const row = await this.db.prepare("SELECT guild, title, icon FROM launch WHERE name = ?1").bind(name).first<{ guild: string; title: string; icon: string }>();
     const known = launches[name];
-    if (!row) return known;
-    return { ...fallback, ...known, name, guild: row.guild, title: row.title, icon: row.icon };
+    if (!row && !known) return undefined;
+    const c = await this.db.prepare("SELECT stage, opens FROM campaign WHERE name = ?1").bind(name).first<{ stage: Stage; opens: number | null }>();
+    const base = row ? { ...fallback, ...known, name, guild: row.guild, title: row.title, icon: row.icon } : known!;
+    return { ...base, stage: c?.stage ?? "gathering", opens: c?.opens ?? base.opens };
+  }
+
+  // byGuild is the launch a server has, if it has one.
+  async byGuild(guild: string): Promise<Launch | undefined> {
+    const row = await this.db.prepare("SELECT name FROM launch WHERE guild = ?1").bind(guild).first<{ name: string }>();
+    const name = row?.name ?? Object.values(launches).find((l) => l.guild === guild)?.name;
+    return name ? this.launch(name) : undefined;
+  }
+
+  // stage moves a launch's campaign on, or back. The first time it opens is
+  // kept: it starts the clock on deleting the launch's data.
+  async stage(name: string, stage: Stage, now: number): Promise<void> {
+    await this.db
+      .prepare(
+        `INSERT INTO campaign (name, stage, opens, at) VALUES (?1, ?2, CASE WHEN ?2 = 'open' THEN ?3 END, ?3)
+        ON CONFLICT (name) DO UPDATE SET stage = ?2, at = ?3, opens = COALESCE(opens, CASE WHEN ?2 = 'open' THEN ?3 END)`,
+      )
+      .bind(name, stage, now)
+      .run();
+  }
+
+  // stats is a launch's campaign in numbers, for whoever runs it.
+  async stats(l: Launch, now: number) {
+    const m = await this.db
+      .prepare(
+        `SELECT COUNT(*) AS total,
+          SUM(sponsor IS NULL) AS in_line,
+          SUM(sponsor IS NOT NULL) AS through_invites,
+          SUM(held IS NOT NULL) AS held,
+          SUM(released > 0) AS released_to,
+          SUM(sponsor IS NULL AND held IS NULL AND released = 0) AS waiting
+        FROM member WHERE launch = ?1`,
+      )
+      .bind(l.name)
+      .first<Record<string, number | null>>();
+    const i = await this.db
+      .prepare("SELECT COUNT(*) AS made, SUM(spent_by IS NOT NULL) AS used, SUM(spent_by IS NULL AND revoked IS NULL AND expires > ?2) AS open FROM invite WHERE launch = ?1")
+      .bind(l.name, now)
+      .first<Record<string, number | null>>();
+    const n = (v: number | null | undefined) => v ?? 0;
+    return {
+      launch: l.name,
+      stage: l.stage ?? "gathering",
+      opened: l.opens ? new Date(l.opens).toISOString() : null,
+      total: n(m?.total),
+      in_line: n(m?.in_line),
+      through_invites: n(m?.through_invites),
+      held: n(m?.held),
+      released_to: n(m?.released_to),
+      waiting: n(m?.waiting),
+      invites_made: n(i?.made),
+      invites_used: n(i?.used),
+      invites_open: n(i?.open),
+    };
   }
 
   async launches(): Promise<Launch[]> {

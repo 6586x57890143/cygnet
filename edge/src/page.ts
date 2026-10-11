@@ -21,6 +21,8 @@ export interface Invite {
 
 export type View =
   | { kind: "open" }
+  | { kind: "closed" }
+  | { kind: "opened" }
   | { kind: "in"; rank: number | null; held: string | null; released: number; left: number; invites: Invite[]; now: number }
   | { kind: "invited"; code: string; expires: number; now: number }
   | { kind: "sent"; to: string; expires: number; now: number; what: string }
@@ -134,6 +136,14 @@ export function page(l: Launch, total: number, view: View, sitekey: string, icon
       }
       <div class="leave"><a class="quiet" href="/${esc(l.name)}/mine">download my data</a><form method="post" action="/${esc(l.name)}/leave"><button type="submit" class="quiet">leave the list and delete my data</button></form></div>`;
       break;
+    case "closed":
+      body = `
+      <p class="note">the list is closed for now<br>if someone on it invites you that still works</p>`;
+      break;
+    case "opened":
+      body = `
+      <p class="note ok">${esc(l.title ?? l.name)} is open<br>the way in now is an invite from someone already there</p>`;
+      break;
     case "invited":
       turnstile = true;
       body = `
@@ -207,7 +217,7 @@ ${refresh}
   <section class="card">
     <header>
       <span class="ring">${mark}</span>
-      <span><span class="kicker">${view.kind === "privacy" ? "cygnet lol" : "coming soon"}</span><h1>${esc(l.title ?? l.name)}</h1></span>
+      <span><span class="kicker">${view.kind === "privacy" ? "cygnet lol" : l.stage === "open" ? "open now" : "coming soon"}</span><h1>${esc(l.title ?? l.name)}</h1></span>
     </header>
     ${
       view.kind === "privacy"

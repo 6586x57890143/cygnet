@@ -6,6 +6,7 @@
 
 import { page, type View } from "./page.ts";
 import {
+  stages,
   area,
   budget,
   created,
@@ -80,6 +81,7 @@ const say = {
   linkGone: "that link ran out or was already used\nstart again from your page",
   gotInMeanwhile: "this email or account got on the list another way in the meantime",
   inviteGoneLate: "this invite got used or taken back or ran out before you finished\nask for a new one",
+  closed: "the list is closed for now",
 };
 
 export default {
@@ -98,7 +100,10 @@ export default {
       if (second === "wait" && req.method === "GET") return await wait(req, env, l, url);
       if (second === "mine" && req.method === "GET") return await mine(req, env, l);
       if (req.method === "POST") {
-        if (second === "join") return await human(req, env, l, () => oauth(env, url, "join", l));
+        if (second === "join") {
+          if ((l.stage ?? "gathering") !== "gathering") return html(env, l, { kind: "error", why: say.closed }, 403);
+          return await human(req, env, l, () => oauth(env, url, "join", l));
+        }
         if (second === "issue") return await issueStart(req, env, l, url);
         if (second === "revoke") return await revoke(req, env, l);
         if (second === "leave") return await leave(req, env, l);
@@ -123,7 +128,9 @@ async function landing(req: Request, env: Env, l: Launch): Promise<Response> {
   const now = Date.now();
   const v = user ? await store(env).view(l, user, now) : null;
   if (v) return html(env, l, { kind: "in", rank: v.rank, held: v.held, released: v.released, left: v.left, invites: v.invites, now });
-  return html(env, l, { kind: "open" });
+  // Signing in again still works when the list isn't taking anyone new.
+  const stage = l.stage ?? "gathering";
+  return html(env, l, { kind: stage === "gathering" ? "open" : stage === "open" ? "opened" : "closed" });
 }
 
 // human runs next once Turnstile says a person sent the form.
@@ -172,6 +179,7 @@ async function invited(req: Request, env: Env, url: URL, code: string): Promise<
   const now = Date.now();
   const open = await store(env).open(l, hash, now);
   if (!open) return html(env, l, { kind: "error", why: say.inviteGone }, 410);
+  if (l.stage === "closed") return html(env, l, { kind: "error", why: say.closed }, 403);
   if (req.method === "POST") return human(req, env, l, () => oauth(env, url, "redeem", l, hash));
   return html(env, l, { kind: "invited", code, expires: open.expires, now });
 }
@@ -236,6 +244,7 @@ async function callback(req: Request, env: Env, ctx: ExecutionContext, url: URL)
   const why = held(seen.ip, seen.area);
 
   if (purpose === "join") {
+    if ((l.stage ?? "gathering") !== "gathering") return html(env, l, { kind: "error", why: say.closed }, 403);
     if (await s.join(l, user.id, h, why, now)) return signedIn(env, l, user.id);
     return html(env, l, { kind: "error", why: say.emailTaken }, 409);
   }
@@ -370,6 +379,11 @@ async function admin(req: Request, env: Env, launch?: string, action?: string): 
   const s = store(env);
   const json = (v: unknown) => new Response(JSON.stringify(v, null, 2), { headers: secure({ "content-type": "application/json", "cache-control": "no-store" }) });
   if (launch === "verify" && req.method === "GET") return json(await s.verify());
+  // Which launch a server has, for cygnet in that server.
+  if (launch === "guild" && action && req.method === "GET") {
+    const g = await s.byGuild(action);
+    return g ? json({ launch: g.name }) : new Response("no launch here", { status: 404, headers: secure(text) });
+  }
   // cygnet registers a launch, or refreshes it, with its server's id, name
   // and picture.
   if (launch && !action && req.method === "PUT") {
@@ -386,10 +400,15 @@ async function admin(req: Request, env: Env, launch?: string, action?: string): 
   const l = launch ? await s.launch(launch) : undefined;
   if (!l) return new Response("no such launch", { status: 404, headers: secure(text) });
   if (action === "tree" && req.method === "GET") return json(await s.tree(l));
+  if (!action && req.method === "GET") return json(await s.stats(l, Date.now()));
   if (req.method === "POST") {
-    const body = await req.json<{ count?: number; invites?: number; user?: string }>();
+    const body = await req.json<{ count?: number; invites?: number; user?: string; stage?: string }>();
     if (action === "release" && Number.isInteger(body.count) && Number.isInteger(body.invites) && body.count! > 0 && body.invites! > 0 && body.invites! <= 10) {
       return json({ released: await s.release(l, body.count!, body.invites!, Date.now()) });
+    }
+    if (action === "stage" && stages.includes(body.stage as never)) {
+      await s.stage(l.name, body.stage as never, Date.now());
+      return json(await s.stats((await s.launch(l.name))!, Date.now()));
     }
     if (action === "lift" && body.user && /^\d{17,20}$/.test(body.user)) return json({ lifted: await s.lift(l, body.user, Date.now()) });
   }

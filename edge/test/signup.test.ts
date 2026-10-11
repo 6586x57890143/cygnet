@@ -377,3 +377,32 @@ test("cygnet registers a launch from its server, and can't take another's name",
   assert.ok(!(await s.register("wren", "175928847299117064", "other", "", t0)));
   assert.deepEqual((await s.launches()).map((l) => l.name).sort(), ["silcord", "wren"]);
 });
+
+test("a campaign moves through its stages, and counts itself", async () => {
+  const { s } = fresh();
+  assert.equal((await s.launch("silcord"))?.stage, "gathering");
+  assert.equal((await s.byGuild("1558585698712293378"))?.name, "silcord");
+  assert.equal(await s.byGuild("1"), undefined);
+  await s.join(l, "1", h("1"), null, t0);
+  await s.join(l, "2", h("2"), "held", t0);
+  await s.release(l, 1, 3, t0);
+  const code = await s.issue(l, "1", t0);
+  await s.redeem(l, await digest(code!), "3", h("3"), null, t0 + 1);
+  const st = await s.stats((await s.launch("silcord"))!, t0 + 2);
+  assert.deepEqual(
+    { total: st.total, in_line: st.in_line, through: st.through_invites, held: st.held, released: st.released_to, made: st.invites_made, used: st.invites_used },
+    { total: 3, in_line: 2, through: 1, held: 1, released: 1, made: 1, used: 1 },
+  );
+  await s.stage("silcord", "closed", t0 + 3);
+  assert.equal((await s.launch("silcord"))?.stage, "closed");
+  assert.equal((await s.launch("silcord"))?.opens, undefined, "closing starts no clock");
+  await s.stage("silcord", "open", t0 + 4);
+  await s.stage("silcord", "gathering", t0 + 5);
+  await s.stage("silcord", "open", t0 + 6);
+  assert.equal((await s.launch("silcord"))?.opens, t0 + 4, "the first opening is kept");
+  const p1 = page({ ...l, stage: "closed" }, 1, { kind: "closed" }, "k");
+  const p2 = page({ ...l, stage: "open" }, 1, { kind: "opened" }, "k");
+  assert.match(p1, /the list is closed/);
+  assert.match(p2, /open now[\s\S]*is open/);
+  for (const html of [p1, p2]) assert.doesNotMatch(visible(html), /[.,;:!?'"A-Z]/);
+});

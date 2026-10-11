@@ -59,6 +59,24 @@ than 2,900 go out in any 31 days, so the worst month costs about €0.65 whateve
 tries. Past it the page says so and nothing is sent. Everything else (Workers, D1,
 Turnstile, static assets) runs on Cloudflare's free plan.
 
+## Running a campaign
+
+In the launch's server, an admin runs `/provision campaign`. cygnet asks the Worker which
+launch the server has and shows its card: how many are on the list and held, in line and
+waiting, how many have invites and how many invites were made, used and still open.
+
+- **Stages**, one button each: **gathering** (anyone can get on the list), **closed** (no
+  new sign ups; invites already out still work) and **open** (the server is open; the
+  page says so and invites still bring friends in). The first time it opens starts the
+  12 month clock on deleting the launch's data.
+- **Releases**: *release to next 10* and *next 50* give 3 invites each to the next people
+  in line who have none and aren't held.
+
+The same lives on the Worker's admin API, with `ADMIN_TOKEN` as a bearer:
+`GET /admin/<launch>` (the numbers), `POST /admin/<launch>/stage {"stage": "closed"}`,
+`POST /admin/<launch>/release {"count": 10, "invites": 3}`, `POST /admin/<launch>/lift
+{"user": "<discord id>"}`, `GET /admin/<launch>/tree` and `GET /admin/verify`.
+
 ## GDPR, by design
 
 - **Notice:** a compact one under every card, and the full one at `/privacy`: who's
@@ -129,6 +147,10 @@ On the Cloudflare account that holds `cygnet.lol` (the free plan is enough):
    out. Its project ID goes in `wrangler.jsonc` as `SCW_PROJECT_ID`; an IAM API key whose
    policy allows only Transactional Email in that project is `SCW_SECRET_KEY`.
    Do this well before invites go out: a new domain sends slowly at first.
+   **The key expires a year after it's made** (the first one, made 2026-10-11, runs out
+   around 2027-10-11). Before then, generate a new one on the same IAM application and
+   `npx wrangler secret put SCW_SECRET_KEY` again; until it's replaced, link emails fail
+   and the page says it couldn't send.
 4. In the Discord developer portal, cygnet's app, OAuth2: add the redirect
    `https://cygnet.lol/auth/discord`. Its application ID goes in `wrangler.jsonc` as
    `DISCORD_CLIENT_ID`.

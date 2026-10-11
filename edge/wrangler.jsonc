@@ -20,11 +20,11 @@
     // cygnet's application ID and the Turnstile widget's site key, both
     // public. The secrets are DISCORD_CLIENT_SECRET, TURNSTILE_SECRET,
     // HMAC_KEY, ADMIN_TOKEN and SCW_SECRET_KEY, set with `wrangler secret put`.
-    "DISCORD_CLIENT_ID": "",
-    "TURNSTILE_SITEKEY": "",
+    "DISCORD_CLIENT_ID": "1558558264885776516",
+    "TURNSTILE_SITEKEY": "0x4AAAAAAFTug37RCCpuOI3k",
     // The Scaleway project Transactional Email bills; its secret key is
     // SCW_SECRET_KEY, a secret.
-    "SCW_PROJECT_ID": ""
+    "SCW_PROJECT_ID": "64f0e035-b3dd-41ac-a0c9-2d066bac57e6"
   },
   // Off: a request's URL can hold an invite code, and logs keep URLs.
   "observability": { "enabled": false }

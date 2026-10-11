@@ -112,3 +112,14 @@ CREATE TABLE launch (
   icon  TEXT    NOT NULL,
   at    INTEGER NOT NULL
 );
+
+-- campaign is where a launch's campaign stands: gathering (people can get
+-- on the list), closed (nobody new), or open (the server is open; invites
+-- still bring friends in). opens is when it first opened, which starts the
+-- clock on deleting the launch's data.
+CREATE TABLE campaign (
+  name  TEXT    PRIMARY KEY,
+  stage TEXT    NOT NULL CHECK (stage IN ('gathering', 'closed', 'open')),
+  opens INTEGER,
+  at    INTEGER NOT NULL
+);

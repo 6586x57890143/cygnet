@@ -13,10 +13,16 @@ export interface Launch {
   guild?: string;
   title?: string;
   icon?: string;
-  // opens is when the server opens, in ms, once it's set. Email hashes are
-  // kept until keepEmail after it.
+  // opens is when the server opened, in ms, once it has. Email hashes are
+  // kept until keepEmail after it, and everything until keepList.
   opens?: number;
+  // stage is where its campaign stands (store.ts, campaign): gathering
+  // when unset.
+  stage?: Stage;
 }
+
+export type Stage = "gathering" | "closed" | "open";
+export const stages: Stage[] = ["gathering", "closed", "open"];
 
 export const launches: Record<string, Launch> = {
   silcord: {
