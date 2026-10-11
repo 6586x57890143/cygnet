@@ -6,11 +6,8 @@ Written 2026-10-11. Read this with `CLAUDE.md` and `SPEC.md`.
 
 | Branch | State |
 |---|---|
-| `main` | M0, M1 and the rewritten spec. Deployed to foundry; skua is linked in production |
-| `feat/provision` | `/provision fleet`, `Hub.Call` and `Manifest.App` (PR #8) |
-| `feat/provision-layout` | `/provision layout` on top of it (PR #9) |
-| `feat/provision-drift` | drift reports and `/provision mode` on top of that (PR #10) |
-| `feat/flock-names` | styled names and birds in the nest on top of that |
+| `main` | M0, M1, the rewritten spec and M2 so far (#8 to #12). Deployed to foundry; skua is linked in production |
+| `feat/provision-fresh` | role colours and the fresh start |
 
 ## What M2 has so far
 
@@ -47,9 +44,22 @@ Decisions worth keeping:
 - **Server wide only.** A channel's overwrites can still take a permission away. The
   per-channel check comes with layouts, which know the channels (`ponytail:` in
   `permsOf`).
-- **Only what a layout names.** A plan adds and changes; it never deletes, and leaves
-  every role, channel and overwrite the layout doesn't name alone. A role above
-  cygnet's is shown as blocked, not attempted.
+- **Only what a layout names, unless asked.** A plan adds and changes; it never deletes,
+  and leaves every role, channel and overwrite the layout doesn't name alone. A role
+  above cygnet's is shown as blocked, not attempted.
+- **A fresh start asks twice.** `/provision layout fresh:true` plans the removal of
+  every channel, category and role the layout doesn't name, after its own changes.
+  The preview offers `archive old` (the old channels move into `┄ archive`, hidden from
+  @everyone, in one `lock_permissions` move; categories and roles are deleted) or
+  `replace` (all deleted). Either opens a confirmation that counts what goes before
+  the button that does it. It keeps the archive and what's in it, bots' roles, roles
+  holding Administrator (whoever runs it may be an admin by that role alone), and a
+  community server's required channels. If the card's channel went with the old
+  layout, the result is posted in the nest.
+- **Every role is coloured.** The layout's roles carry their colours, and every bot's
+  role takes `BotColor`, linked bird or not, except cygnet's own at her top, which she
+  can't reach. A bot joining (`RoleCreate`) starts a drift check, so in `act` it is
+  coloured and let into the nest on its own.
 - **cygnet's install follows the layouts.** Discord lets a bot grant only what it holds,
   so `Perms` is roles, channels and every permission a layout hands out, and the
   fleet card offers to grant cygnet exactly that.

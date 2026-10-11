@@ -24,11 +24,21 @@ const (
 	// its history.
 	rename
 	overwriteSet
+	// roleColor gives a bot's role the layout's bot colour, and nothing
+	// else: the rest of that role is the bot's own.
+	roleColor
+	// remove deletes what a fresh start doesn't keep: the role called
+	// role.Name, or else the channel or category id.
+	remove
+	// archive moves ids, the channels a fresh start removes, into the
+	// archive, where they're hidden and kept.
+	archive
 )
 
 // change is one write a layout needs, in the order it has to happen: roles,
 // then categories, then channels, then overwrites on channels that exist,
-// so whatever a change names already exists when it runs.
+// so whatever a change names already exists when it runs, and in a fresh
+// start what goes, last.
 type change struct {
 	kind kind
 	role Role
@@ -46,6 +56,8 @@ type change struct {
 	ow   Overwrite
 	// fields are what a roleUpdate changes.
 	fields []string
+	// ids are the channels an archive moves.
+	ids []snowflake.ID
 	// blocked is why cygnet can't make this change, or "".
 	blocked string
 }
@@ -60,6 +72,9 @@ type state struct {
 	// top is the position of cygnet's highest role: she can change only
 	// roles below it.
 	top int
+	// required is the channels a community server can't be without, which
+	// Discord won't let anyone delete.
+	required map[snowflake.ID]bool
 }
 
 // plan is what l needs done to s, and the overwrites that wait for a bird
@@ -81,6 +96,7 @@ func plan(l Layout, s state) (changes []change, waiting []string) {
 			changes = append(changes, c)
 		}
 	}
+	changes = append(changes, s.colors(l)...)
 	if c, ok := s.order(l); ok {
 		changes = append(changes, c)
 	}
@@ -143,6 +159,97 @@ func (s state) role(name string) (discord.Role, bool) {
 		}
 	}
 	return discord.Role{}, false
+}
+
+// colors gives every bot's role here the layout's bot colour, the birds'
+// and cygnet's own included, as far as she reaches: her own sits at her
+// top, where only an admin can recolour it, so that one is left to them.
+func (s state) colors(l Layout) []change {
+	var out []change
+	for _, r := range s.roles {
+		if !r.Managed || r.Tags == nil || r.Tags.BotID == nil || r.Color == l.BotColor || r.Position >= s.top {
+			continue
+		}
+		out = append(out, change{kind: roleColor, id: r.ID, role: Role{Name: r.Name, Color: l.BotColor}})
+	}
+	return out
+}
+
+// sweep is what a fresh start removes: every channel, category and role l
+// doesn't name, but the archive and what's in it, bots' own roles, and what
+// Discord or safety won't let go. Channels go first, then the categories
+// they were in, then roles.
+func sweep(l Layout, s state) []change {
+	keep := map[snowflake.ID]bool{}
+	for _, cat := range l.Categories {
+		parent, ok := s.channel(cat.Name, discord.ChannelTypeGuildCategory, 0)
+		if !ok {
+			continue
+		}
+		keep[parent.ID()] = true
+		for _, ch := range cat.Channels {
+			if c, ok := s.channel(ch.Name, ch.typ(), parent.ID()); ok {
+				keep[c.ID()] = true
+			}
+		}
+	}
+	var attic snowflake.ID
+	if a, ok := s.channel(archived, discord.ChannelTypeGuildCategory, 0); ok {
+		attic = a.ID()
+		keep[attic] = true
+	}
+	var chans, cats, roles []change
+	for _, c := range s.channels {
+		if keep[c.ID()] || (attic != 0 && c.ParentID() != nil && *c.ParentID() == attic) {
+			continue
+		}
+		rm := change{kind: remove, id: c.ID(), name: c.Name(), typ: c.Type()}
+		if s.required[c.ID()] {
+			rm.blocked = "discord keeps it while this is a community server"
+		}
+		if c.Type() == discord.ChannelTypeGuildCategory {
+			cats = append(cats, rm)
+		} else {
+			chans = append(chans, rm)
+		}
+	}
+	for _, r := range s.roles {
+		if r.ID == s.guild || r.Managed || slices.ContainsFunc(l.Roles, func(w Role) bool { return strings.EqualFold(w.Name, r.Name) }) {
+			continue
+		}
+		rm := change{kind: remove, id: r.ID, role: Role{Name: r.Name}}
+		switch {
+		case r.Permissions.Has(discord.PermissionAdministrator):
+			// Whoever runs this may be an admin by this role alone.
+			rm.blocked = "it holds administrator; delete it yourself if you mean to"
+		case r.Position >= s.top:
+			rm.blocked = "its role is above cygnet's; drag cygnet's role above it"
+		}
+		roles = append(roles, rm)
+	}
+	return slices.Concat(chans, cats, roles)
+}
+
+// archivedTo is changes with the channels they remove moved into the
+// archive instead, in one move where the first removal was.
+func archivedTo(changes []change) []change {
+	var out []change
+	mv := change{kind: archive}
+	at := -1
+	for _, c := range changes {
+		if c.kind == remove && c.role.Name == "" && c.typ != discord.ChannelTypeGuildCategory && c.blocked == "" {
+			if at == -1 {
+				at = len(out)
+			}
+			mv.ids = append(mv.ids, c.id)
+			continue
+		}
+		out = append(out, c)
+	}
+	if at == -1 {
+		return out
+	}
+	return slices.Insert(out, at, mv)
 }
 
 // order is the change that puts l's roles in order, if they exist and
@@ -271,6 +378,20 @@ func (c change) line() string {
 		return "+ role  " + c.role.Name
 	case roleUpdate:
 		return "! role  " + c.role.Name + ": " + strings.Join(c.fields, ", ")
+	case roleColor:
+		return "! role  " + c.role.Name + ": colour"
+	case remove:
+		switch {
+		case c.role.Name != "":
+			return "- role  " + c.role.Name
+		case c.typ == discord.ChannelTypeGuildCategory:
+			return "- group " + c.name
+		case c.typ == discord.ChannelTypeGuildVoice || c.typ == discord.ChannelTypeGuildStageVoice:
+			return "- voice " + c.name
+		}
+		return "- text  #" + c.name
+	case archive:
+		return "! move  " + count(len(c.ids), "channel") + " into " + archiveName
 	case roleOrder:
 		return "! order roles as the layout lists them"
 	case categoryCreate:

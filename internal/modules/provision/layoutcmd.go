@@ -1,6 +1,7 @@
 package provision
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -20,6 +21,11 @@ import (
 const (
 	previewID = "provision-preview"
 	applyID   = "provision-apply"
+	confirmID = "provision-confirm"
+	// How a fresh start treats the channels it removes: deletes them, or
+	// keeps them in the archive.
+	replace = "replace"
+	keepOld = "archive"
 	// tick is how often the card is redrawn while a layout applies.
 	tick = time.Second
 )
@@ -39,10 +45,13 @@ type planned struct {
 	// short is what cygnet still needs before she can apply it.
 	short discord.Permissions
 	self  snowflake.ID
+	// fresh is a fresh start: what l doesn't name goes, once confirmed.
+	fresh bool
 }
 
-// read reads guild as l is planned against it, and plans it.
-func (m *Module) read(ctx context.Context, r rest.Rest, guild, self snowflake.ID, l Layout) (planned, error) {
+// read reads guild as l is planned against it, and plans it; fresh, with
+// whatever l doesn't name removed after.
+func (m *Module) read(ctx context.Context, r rest.Rest, guild, self snowflake.ID, l Layout, fresh bool) (planned, error) {
 	opts := rest.WithCtx(ctx)
 	roles, err := r.GetRoles(guild, opts)
 	if err != nil {
@@ -68,8 +77,23 @@ func (m *Module) read(ctx context.Context, r rest.Rest, guild, self snowflake.ID
 			}
 		}
 	}
-	p := planned{l: l, s: s, self: self, short: needs(l) &^ permsOf(guild, roles, me.RoleIDs)}
+	if fresh {
+		g, err := r.GetGuild(guild, false, opts)
+		if err != nil {
+			return planned{}, err
+		}
+		s.required = map[snowflake.ID]bool{}
+		for _, id := range []*snowflake.ID{g.RulesChannelID, g.PublicUpdatesChannelID, g.SafetyAlertsChannelID} {
+			if id != nil {
+				s.required[*id] = true
+			}
+		}
+	}
+	p := planned{l: l, s: s, self: self, fresh: fresh, short: needs(l) &^ permsOf(guild, roles, me.RoleIDs)}
 	p.changes, p.waiting = plan(l, s)
+	if fresh {
+		p.changes = append(p.changes, sweep(l, s)...)
+	}
 	return p, nil
 }
 
@@ -102,7 +126,7 @@ func (m *Module) layoutCmd(ctx context.Context, e *events.ApplicationCommandInte
 	if !ok {
 		l = layouts[0]
 	}
-	p, err := m.read(ctx, e.Client().Rest, *e.GuildID(), e.ApplicationID(), l)
+	p, err := m.read(ctx, e.Client().Rest, *e.GuildID(), e.ApplicationID(), l, e.SlashCommandInteractionData().Bool("fresh"))
 	if err != nil {
 		return fmt.Errorf("%w: %w", core.Tell("couldn't read this server; try again in a moment"), err)
 	}
@@ -119,28 +143,63 @@ func (m *Module) previewAgain(ctx context.Context, e *events.ComponentInteractio
 	if err != nil {
 		return err
 	}
-	p, err := m.read(ctx, e.Client().Rest, *e.GuildID(), e.ApplicationID(), l)
+	parts := strings.Split(e.Data.CustomID(), ":")
+	p, err := m.read(ctx, e.Client().Rest, *e.GuildID(), e.ApplicationID(), l, len(parts) > 2 && parts[2] == "fresh")
 	if err != nil {
 		return fmt.Errorf("%w: %w", core.Tell("couldn't read this server; try again in a moment"), err)
 	}
 	return e.UpdateMessage(discord.NewMessageUpdateV2(p.preview("")).WithAllowedMentions(core.NoPings()))
 }
 
-// applyPressed applies the plan the card showed, and only that one: if the
-// server has changed since, it shows the new plan instead.
-func (m *Module) applyPressed(ctx context.Context, e *events.ComponentInteractionCreate) error {
+// shown re-reads the server for the plan a button carries
+// (id:layout:digest, and :replace or :archive in a fresh start), and says
+// whether the server still matches it.
+func (m *Module) shown(ctx context.Context, e *events.ComponentInteractionCreate) (p planned, how string, same bool, err error) {
 	l, err := m.pressed(e)
+	if err != nil {
+		return p, "", false, err
+	}
+	parts := strings.Split(e.Data.CustomID(), ":")
+	if len(parts) == 4 {
+		how = parts[3]
+	}
+	p, err = m.read(ctx, e.Client().Rest, *e.GuildID(), e.ApplicationID(), l, how != "")
+	if err != nil {
+		return p, "", false, fmt.Errorf("%w: %w", core.Tell("couldn't read this server; try again in a moment"), err)
+	}
+	return p, how, (len(parts) == 3 || len(parts) == 4) && parts[2] == digest(p.changes) && p.short == 0, nil
+}
+
+func (m *Module) changed(e *events.ComponentInteractionCreate, p planned) error {
+	return e.UpdateMessage(discord.NewMessageUpdateV2(p.preview("the server changed since that preview, so here's what it would do now")).WithAllowedMentions(core.NoPings()))
+}
+
+// confirmPressed asks before a fresh start deletes anything.
+func (m *Module) confirmPressed(ctx context.Context, e *events.ComponentInteractionCreate) error {
+	p, how, same, err := m.shown(ctx, e)
 	if err != nil {
 		return err
 	}
-	parts := strings.Split(e.Data.CustomID(), ":")
-	p, err := m.read(ctx, e.Client().Rest, *e.GuildID(), e.ApplicationID(), l)
+	if !same || (how != replace && how != keepOld) {
+		return m.changed(e, p)
+	}
+	return e.UpdateMessage(discord.NewMessageUpdateV2(p.confirm(how)).WithAllowedMentions(core.NoPings()))
+}
+
+// applyPressed applies the plan the card showed, and only that one: if the
+// server has changed since, it shows the new plan instead.
+func (m *Module) applyPressed(ctx context.Context, e *events.ComponentInteractionCreate) error {
+	p, how, same, err := m.shown(ctx, e)
 	if err != nil {
-		return fmt.Errorf("%w: %w", core.Tell("couldn't read this server; try again in a moment"), err)
+		return err
 	}
-	if len(parts) != 3 || parts[2] != digest(p.changes) || p.short != 0 {
-		return e.UpdateMessage(discord.NewMessageUpdateV2(p.preview("the server changed since that preview, so here's what it would do now")).WithAllowedMentions(core.NoPings()))
+	if !same {
+		return m.changed(e, p)
 	}
+	if how == keepOld {
+		p.changes = archivedTo(p.changes)
+	}
+	l := p.l
 	guild := *e.GuildID()
 	if _, busy := m.applying.LoadOrStore(guild, true); busy {
 		return core.Tell("a layout is already being applied here; check again once it's done")
@@ -154,8 +213,9 @@ func (m *Module) applyPressed(ctx context.Context, e *events.ComponentInteractio
 	// any layout.
 	work := context.WithoutCancel(ctx)
 	client, app, token := e.Client().Rest, e.ApplicationID(), e.Token()
-	edit := func(card discord.ContainerComponent) {
-		_, _ = client.UpdateInteractionResponse(app, token, discord.NewMessageUpdateV2(card).WithAllowedMentions(core.NoPings()), rest.WithCtx(work))
+	edit := func(card discord.ContainerComponent) error {
+		_, err := client.UpdateInteractionResponse(app, token, discord.NewMessageUpdateV2(card).WithAllowedMentions(core.NoPings()), rest.WithCtx(work))
+		return err
 	}
 	m.running.Go(func() {
 		defer m.applying.Delete(guild)
@@ -164,13 +224,18 @@ func (m *Module) applyPressed(ctx context.Context, e *events.ComponentInteractio
 		done, err := apply(work, client, m.guard, p.s, l, p.changes, func(done int) {
 			if time.Since(last) >= tick && done < total {
 				last = time.Now()
-				edit(p.progress(done, total))
+				_ = edit(p.progress(done, total))
 			}
 		})
 		if err == nil {
 			m.keep(work, guild, l.Name)
 		}
-		edit(p.result(done, total, err))
+		card := p.result(done, total, err)
+		if edit(card) != nil && p.fresh {
+			// A fresh start can take the channel the card was in with it,
+			// so the result goes where staff will look.
+			m.report(work, client, guild, l, card)
+		}
 	})
 	return nil
 }
@@ -228,8 +293,11 @@ func (p planned) card(note string, act bool) discord.ContainerComponent {
 			if c.blocked != "" {
 				color = brand.ColorWarn
 				what := "change **" + c.role.Name + "**"
-				if c.kind == roleOrder {
+				switch c.kind {
+				case roleOrder:
 					what = "reorder the roles"
+				case remove:
+					what = "remove **" + cmp.Or(c.role.Name, c.name) + "**"
 				}
 				b.WriteString("\n! can't " + what + ": " + c.blocked)
 			}
@@ -247,13 +315,94 @@ func (p planned) card(note string, act bool) discord.ContainerComponent {
 	if !act {
 		return brand.Card(color, "provision", p.l.Name, b.String())
 	}
-	applyBtn := discord.NewSuccessButton("apply "+count(todo, "change"), applyID+":"+p.l.Name+":"+digest(p.changes))
-	if todo == 0 || p.short != 0 {
-		applyBtn = applyBtn.AsDisabled()
+	id, again := applyID+":"+p.l.Name+":"+digest(p.changes), previewID+":"+p.l.Name
+	if p.fresh {
+		id, again = id+":"+replace, again+":fresh"
 	}
-	buttons = append(buttons, applyBtn, discord.NewSecondaryButton("check again", previewID+":"+p.l.Name))
+	chans, cats, roles := p.removals()
+	switch {
+	case chans+cats+roles > 0:
+		// Nothing goes before the admin has said how, and then confirmed.
+		b.WriteString("\n-# what's marked - goes. replace deletes it, messages and all; archive moves those channels into " + archiveName + ", hidden from everyone but admins, and deletes the rest")
+		ask := confirmID + strings.TrimPrefix(id, applyID)
+		archiveBtn := discord.NewPrimaryButton("archive old", strings.TrimSuffix(ask, replace)+keepOld)
+		replaceBtn := discord.NewDangerButton("replace", ask)
+		if p.short != 0 {
+			archiveBtn, replaceBtn = archiveBtn.AsDisabled(), replaceBtn.AsDisabled()
+		}
+		if chans == 0 {
+			// Nothing to archive: both would do the same.
+			buttons = append(buttons, replaceBtn)
+		} else {
+			buttons = append(buttons, archiveBtn, replaceBtn)
+		}
+	default:
+		applyBtn := discord.NewSuccessButton("apply "+count(todo, "change"), id)
+		if todo == 0 || p.short != 0 {
+			applyBtn = applyBtn.AsDisabled()
+		}
+		buttons = append(buttons, applyBtn)
+	}
+	buttons = append(buttons, discord.NewSecondaryButton("check again", again))
 	return brand.Card(color, "provision", p.l.Name, b.String(),
 		discord.NewSeparator(discord.SeparatorSpacingSizeSmall), discord.NewActionRow(buttons...))
+}
+
+// removals is how many channels, categories and roles a fresh start
+// removes.
+func (p planned) removals() (chans, cats, roles int) {
+	for _, c := range p.changes {
+		switch {
+		case c.kind != remove || c.blocked != "":
+		case c.role.Name != "":
+			roles++
+		case c.typ == discord.ChannelTypeGuildCategory:
+			cats++
+		default:
+			chans++
+		}
+	}
+	return chans, cats, roles
+}
+
+// confirm asks once more before a fresh start deletes anything, saying
+// what goes for good, with the one button that does it.
+func (p planned) confirm(how string) discord.ContainerComponent {
+	chans, cats, roles := p.removals()
+	others := p.todo() - chans - cats - roles
+	var b strings.Builder
+	b.WriteString("! this can't be undone\n")
+	if how == keepOld {
+		fmt.Fprintf(&b, "▸ cygnet moves %s into %s, hidden from everyone but admins\n", count(chans, "channel"), archiveName)
+		chans = 0
+	}
+	var gone []string
+	if chans > 0 {
+		gone = append(gone, count(chans, "channel")+" with every message in them")
+	}
+	if cats == 1 {
+		gone = append(gone, "1 category")
+	} else if cats > 1 {
+		gone = append(gone, fmt.Sprintf("%d categories", cats))
+	}
+	if roles > 0 {
+		gone = append(gone, count(roles, "role"))
+	}
+	if len(gone) > 0 {
+		b.WriteString("▸ cygnet deletes " + strings.Join(gone, ", ") + "\n")
+	}
+	if others > 0 {
+		fmt.Fprintf(&b, "-# and makes the other %s the preview showed", count(others, "change"))
+	}
+	label := "delete and replace"
+	if how == keepOld {
+		label = "archive and replace"
+	}
+	return brand.Card(brand.ColorError, "provision", p.l.Name, b.String(),
+		discord.NewSeparator(discord.SeparatorSpacingSizeSmall), discord.NewActionRow(
+			discord.NewDangerButton(label, applyID+":"+p.l.Name+":"+digest(p.changes)+":"+how),
+			discord.NewSecondaryButton("back", previewID+":"+p.l.Name+":fresh"),
+		))
 }
 
 // diff is the changes as a diff block, then who may post where spelled

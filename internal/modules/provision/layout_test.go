@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -52,6 +53,8 @@ type guildFake struct {
 	// timer, so it's read under mu.
 	mu   sync.Mutex
 	sent map[snowflake.ID][]discord.MessageCreate
+	// rules is the channel a community server can't delete, or 0.
+	rules snowflake.ID
 }
 
 func (g *guildFake) CreateMessage(channel snowflake.ID, m discord.MessageCreate, _ ...rest.RequestOpt) (*discord.Message, error) {
@@ -80,7 +83,7 @@ func newGuild() *guildFake {
 		roles: []discord.Role{
 			{ID: guild, Name: "@everyone", Permissions: discord.PermissionViewChannel | discord.PermissionSendMessages},
 			{ID: selfRole, Name: "cygnet", Managed: true, Tags: bot(self), Position: 10, Permissions: needs(flock)},
-			{ID: skuaRole, Name: "skua", Managed: true, Tags: bot(skuaApp), Position: 5},
+			{ID: skuaRole, Name: "skua", Managed: true, Tags: bot(skuaApp), Position: 5, Color: flock.BotColor},
 		},
 		me:   []snowflake.ID{selfRole},
 		next: 100,
@@ -148,7 +151,10 @@ func (g *guildFake) CreateRole(_ snowflake.ID, c discord.RoleCreate, _ ...rest.R
 func (g *guildFake) UpdateRole(_, id snowflake.ID, u discord.RoleUpdate, _ ...rest.RequestOpt) (*discord.Role, error) {
 	for i, r := range g.roles {
 		if r.ID == id {
-			g.roles[i].Permissions, g.roles[i].Color, g.roles[i].Hoist = *u.Permissions, *u.Color, *u.Hoist
+			g.roles[i].Color = *u.Color
+			if u.Permissions != nil {
+				g.roles[i].Permissions, g.roles[i].Hoist = *u.Permissions, *u.Hoist
+			}
 			g.writes = append(g.writes, "update role "+r.Name)
 			return &g.roles[i], nil
 		}
@@ -177,7 +183,7 @@ func (g *guildFake) CreateGuildChannel(_ snowflake.ID, c discord.GuildChannelCre
 	var ows []discord.PermissionOverwrite
 	switch c := c.(type) {
 	case discord.GuildCategoryChannelCreate:
-		ch.name, ch.typ = c.Name, discord.ChannelTypeGuildCategory
+		ch.name, ch.typ, ows = c.Name, discord.ChannelTypeGuildCategory, c.PermissionOverwrites
 	case discord.GuildTextChannelCreate:
 		ch.name, ch.typ, ch.parent, ows = c.Name, discord.ChannelTypeGuildText, c.ParentID, c.PermissionOverwrites
 	case discord.GuildVoiceChannelCreate:
@@ -237,11 +243,65 @@ func (g *guildFake) UpdatePermissionOverwrite(channel, role snowflake.ID, u disc
 
 func (g *guildFake) UpdateInteractionResponse(_ snowflake.ID, _ string, u discord.MessageUpdate, _ ...rest.RequestOpt) (*discord.Message, error) {
 	g.edits = append(g.edits, u)
-	return nil, nil
+	return nil, g.fail["edit"]
+}
+
+func (g *guildFake) GetGuild(snowflake.ID, bool, ...rest.RequestOpt) (*discord.RestGuild, error) {
+	if err := g.fail["guild"]; err != nil {
+		return nil, err
+	}
+	out := &discord.RestGuild{}
+	if g.rules != 0 {
+		out.RulesChannelID = &g.rules
+	}
+	return out, nil
+}
+
+func (g *guildFake) DeleteChannel(channel snowflake.ID, _ ...rest.RequestOpt) error {
+	if err := g.fail["delete"]; err != nil {
+		return err
+	}
+	g.chans = slices.DeleteFunc(g.chans, func(c fakeChan) bool { return c.id == channel })
+	g.writes = append(g.writes, "delete channel")
+	return nil
+}
+
+func (g *guildFake) DeleteRole(_, role snowflake.ID, _ ...rest.RequestOpt) error {
+	g.roles = slices.DeleteFunc(g.roles, func(r discord.Role) bool { return r.ID == role })
+	g.writes = append(g.writes, "delete role")
+	return nil
+}
+
+// UpdateChannelPositions moves channels, each taking its new category's
+// overwrites as lock_permissions asks.
+func (g *guildFake) UpdateChannelPositions(_ snowflake.ID, moves []discord.GuildChannelPositionUpdate, _ ...rest.RequestOpt) error {
+	if err := g.fail["move"]; err != nil {
+		return err
+	}
+	for _, mv := range moves {
+		for i := range g.chans {
+			if g.chans[i].id != mv.ID {
+				continue
+			}
+			g.chans[i].parent = *mv.ParentID
+			for _, c := range g.chans {
+				if c.id == *mv.ParentID && mv.LockPermissions.Value != nil && *mv.LockPermissions.Value {
+					g.chans[i].ows = c.ows
+				}
+			}
+		}
+	}
+	g.writes = append(g.writes, "move channels")
+	return nil
 }
 
 // planOn reads g as the module would and plans flock against it.
 func planOn(t *testing.T, g *guildFake, birds map[string]snowflake.ID) planned {
+	t.Helper()
+	return planWith(t, g, birds, false)
+}
+
+func planWith(t *testing.T, g *guildFake, birds map[string]snowflake.ID, fresh bool) planned {
 	t.Helper()
 	m := module(nil)
 	if birds != nil {
@@ -253,7 +313,7 @@ func planOn(t *testing.T, g *guildFake, birds map[string]snowflake.ID) planned {
 		}
 		m.fleet = &fakeFleet{birds: fleet, answers: answers}
 	}
-	p, err := m.read(context.Background(), g, guild, self, flock)
+	p, err := m.read(context.Background(), g, guild, self, flock, fresh)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -534,6 +594,9 @@ func pressOn(t *testing.T, m *Module, g *guildFake, customID, user string) (*[]d
 	e.Respond = func(_ discord.InteractionResponseType, d discord.InteractionResponseData, _ ...rest.RequestOpt) error {
 		got = append(got, d)
 		return nil
+	}
+	if strings.HasPrefix(customID, confirmID) {
+		return &got, m.confirmPressed(context.Background(), e)
 	}
 	if strings.HasPrefix(customID, previewID) {
 		return &got, m.previewAgain(context.Background(), e)

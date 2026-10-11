@@ -50,6 +50,10 @@ func (m *Module) OnEvent(ev bot.Event) {
 	var guild snowflake.ID
 	var client *bot.Client
 	switch e := ev.(type) {
+	case *events.RoleCreate:
+		// A bot joining makes its role, which wants the bots' colour, and
+		// a bird its overwrites.
+		guild, client = e.GuildID, e.Client()
 	case *events.RoleUpdate:
 		guild, client = e.GuildID, e.Client()
 	case *events.RoleDelete:
@@ -95,7 +99,7 @@ func (m *Module) check(ctx context.Context, r rest.Rest, guild, self snowflake.I
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
-	p, err := m.read(ctx, r, guild, self, l)
+	p, err := m.read(ctx, r, guild, self, l, false)
 	if err != nil {
 		m.warn("checking for drift", guild, err)
 		return
@@ -130,19 +134,39 @@ func (m *Module) check(ctx context.Context, r rest.Rest, guild, self snowflake.I
 	default:
 		card = p.drifted(k.Mode)
 	}
-	if err := m.guard.Allow(guild, guard.MessageSend); err != nil {
+	if err := m.post(ctx, r, guild, reports, card); err != nil {
 		m.warn("reporting drift", guild, err)
+	}
+}
+
+// report posts card to l's report channel, wherever it is now.
+func (m *Module) report(ctx context.Context, r rest.Rest, guild snowflake.ID, l Layout, card discord.ContainerComponent) {
+	channels, err := r.GetGuildChannels(guild, rest.WithCtx(ctx))
+	if err != nil {
+		m.warn("reporting a layout", guild, err)
 		return
 	}
-	_, err = r.CreateMessage(reports, discord.MessageCreate{
+	reports, ok := state{channels: channels}.named(l.Reports)
+	if !ok {
+		m.warn("reporting a layout", guild, errNoReports)
+		return
+	}
+	if err := m.post(ctx, r, guild, reports, card); err != nil {
+		m.warn("reporting a layout", guild, err)
+	}
+}
+
+func (m *Module) post(ctx context.Context, r rest.Rest, guild, channel snowflake.ID, card discord.ContainerComponent) error {
+	if err := m.guard.Allow(guild, guard.MessageSend); err != nil {
+		return err
+	}
+	_, err := r.CreateMessage(channel, discord.MessageCreate{
 		Components:      []discord.LayoutComponent{card},
 		Flags:           discord.MessageFlagIsComponentsV2,
 		AllowedMentions: core.NoPings(),
 	}, rest.WithCtx(ctx))
 	m.guard.Report(guild, struggling(err))
-	if err != nil {
-		m.warn("reporting drift", guild, err)
-	}
+	return err
 }
 
 var errNoReports = errors.New("the layout's report channel is gone")
