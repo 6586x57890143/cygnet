@@ -24,7 +24,7 @@ const W = 900, H = 473, dpr = 4 / 3;
 // again. The sky changes everywhere at once, so these and the palette are
 // what keep the file near 4 MB.
 const fps = 15, secs = 6, fade = 0.6;
-const colors = 96, dither = "bayer:bayer_scale=4";
+const colors = 90, dither = "bayer:bayer_scale=4";
 // The page's day is 400 s (4 scenes of 100); here it passes in secs.
 const day = 400 / secs;
 
