@@ -129,7 +129,12 @@ npm ci
 npm run check        # wrangler types, then tsc
 npm test             # rules, store, ledger tampering, the email budget, every page
 npx wrangler d1 migrations apply cygnet-edge --local && npm run dev
+node tools/og.mjs    # redraw public/art/og.gif, the link preview, from the live page
 ```
+
+A link to any page unfurls as `public/art/og.gif`: the swan through a day, looping.
+Discord plays it; apps that don't animate show its first frame, the night. It is drawn
+from what's deployed, so redraw it after the scene changes and deploy again.
 
 For `npm run dev`, put dev values in `edge/.dev.vars` (gitignored). Turnstile's test
 keys always pass: site key `1x00000000000000000000AA`, secret
