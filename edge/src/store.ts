@@ -50,11 +50,11 @@ export class Store {
   // launch is the launch called name: the code's, with what cygnet sent
   // for it, or one cygnet registered alone.
   async launch(name: string): Promise<Launch | undefined> {
-    const row = await this.db.prepare("SELECT guild, title, icon FROM launch WHERE name = ?1").bind(name).first<{ guild: string; title: string; icon: string }>();
+    const row = await this.db.prepare("SELECT guild, title, icon, admins FROM launch WHERE name = ?1").bind(name).first<{ guild: string; title: string; icon: string; admins: string }>();
     const known = launches[name];
     if (!row && !known) return undefined;
     const c = await this.db.prepare("SELECT stage, opens FROM campaign WHERE name = ?1").bind(name).first<{ stage: Stage; opens: number | null }>();
-    const base = row ? { ...fallback, ...known, name, guild: row.guild, title: row.title, icon: row.icon } : known!;
+    const base = row ? { ...fallback, ...known, name, guild: row.guild, title: row.title, icon: row.icon, admins: row.admins ? row.admins.split(",") : [] } : known!;
     return { ...base, stage: c?.stage ?? "gathering", opens: c?.opens ?? base.opens };
   }
 
@@ -120,14 +120,14 @@ export class Store {
 
   // register keeps what cygnet read of a launch's server. A launch the
   // code names keeps its server: another can't take its name.
-  async register(name: string, guild: string, title: string, icon: string, now: number): Promise<boolean> {
+  async register(name: string, guild: string, title: string, icon: string, now: number, admins: string[] = []): Promise<boolean> {
     const known = launches[name];
     if (known?.guild && known.guild !== guild) return false;
     const taken = await this.db.prepare("SELECT guild FROM launch WHERE name = ?1").bind(name).first<{ guild: string }>();
     if (taken && taken.guild !== guild) return false;
     await this.db
-      .prepare("INSERT INTO launch (name, guild, title, icon, at) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT (name) DO UPDATE SET title = ?3, icon = ?4, at = ?5")
-      .bind(name, guild, title, icon, now)
+      .prepare("INSERT INTO launch (name, guild, title, icon, at, admins) VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT (name) DO UPDATE SET title = ?3, icon = ?4, at = ?5, admins = ?6")
+      .bind(name, guild, title, icon, now, admins.join(","))
       .run();
     return true;
   }

@@ -349,5 +349,9 @@ func edge() *provision.Edge {
 	if u == "" || t == "" {
 		return nil
 	}
-	return &provision.Edge{URL: u, Token: t}
+	e := &provision.Edge{URL: u, Token: t}
+	if id, err := snowflake.Parse(os.Getenv("CYGNET_BOOTSTRAP_ADMIN_USER_ID")); err == nil {
+		e.Breakglass = id
+	}
+	return e
 }

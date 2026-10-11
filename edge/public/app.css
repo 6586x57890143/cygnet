@@ -212,3 +212,13 @@ header { flex-direction: column; gap: 10px; }
 /* The notice page is the full notice: the compact one under it would only
    repeat it. */
 .doc .privacy p:not(.by) { display: none; }
+
+/* The owner's list: a tree, one member a row. */
+.tree { list-style: none; margin: 8px 0 0; padding: 0; text-align: left; font: 12.5px var(--mono); }
+.tree li { display: flex; align-items: center; gap: 12px; padding: 7px 0 7px calc(var(--d, 0) * 22px); border-bottom: 1px dashed var(--edge); }
+.tree .mark { min-width: 34px; color: var(--muted); }
+.tree a { color: var(--text); text-decoration: none; }
+.tree a:hover { text-decoration: underline 1px dotted; }
+.tree b { font-weight: 500; text-transform: none; }
+.tree form { margin-left: auto; }
+.tree li > span:last-child { margin-left: auto; }

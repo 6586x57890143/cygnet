@@ -30,9 +30,19 @@ export type View =
   | { kind: "confirmed" }
   | { kind: "minted"; link: string; expires: number; now: number }
   | { kind: "error"; why: string }
+  | { kind: "list"; rows: Row[] }
   | { kind: "privacy"; controller: string; contact: string };
 
 // esc escapes text for HTML; lines also turns each line into its own.
+// Row is one member as the list shows them to the launch's owner.
+export interface Row {
+  user: string;
+  sponsor: string | null;
+  place: number;
+  released: number;
+  held: string | null;
+}
+
 export function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 }
@@ -179,6 +189,9 @@ export function page(l: Launch, total: number, view: View, sitekey: string, icon
     case "privacy":
       body = notice(view.controller, view.contact);
       break;
+    case "list":
+      body = list(l, view.rows);
+      break;
     case "error":
       body = `
       <p class="note err">${lines(view.why)}</p>
@@ -206,7 +219,7 @@ ${refresh}
 <link rel="stylesheet" href="/app.css">
 <script src="/theme.js"></script>
 </head>
-<body${wait}${view.kind === "privacy" ? ' class="doc"' : ""}>
+<body${wait}${view.kind === "privacy" || view.kind === "list" ? ' class="doc"' : ""}>
 <canvas class="field" aria-hidden="true"></canvas>
 <button type="button" class="theme" hidden aria-label="switch theme"></button>
 <main>
@@ -217,10 +230,10 @@ ${refresh}
   <section class="card">
     <header>
       <span class="ring">${mark}</span>
-      <span><span class="kicker">${view.kind === "privacy" ? "cygnet lol" : l.stage === "open" ? "open now" : "coming soon"}</span><h1>${esc(l.title ?? l.name)}</h1></span>
+      <span><span class="kicker">${view.kind === "privacy" ? "cygnet lol" : view.kind === "list" ? "the list" : l.stage === "open" ? "open now" : "coming soon"}</span><h1>${esc(l.title ?? l.name)}</h1></span>
     </header>
     ${
-      view.kind === "privacy"
+      view.kind === "privacy" || view.kind === "list"
         ? ""
         : `<p class="line">${lines(l.line)}</p>
     <p class="count"><b data-count="${total}">${total}</b> ${total === 1 ? "person" : "people"} on the list</p>`
@@ -257,7 +270,32 @@ function notice(controller: string, contact: string): string {
     ${row("how long", "ip and location hashes 30 days<br>email hashes until 30 days after launch<br>everything else until 12 months after launch<br>or until you leave the list whichever comes first")}
     ${row("when you leave", "your entry is deleted at once<br>where you invited someone your id is replaced by a keyed hash so the invite tree still adds up<br>the step record keeps that hash until the launch data is deleted")}
     ${row("cookies", "only ones that keep you signed in and in the middle of a step<br>your browser also remembers your theme and how grown the swan is<br>no analytics no tracking so there is nothing to consent to")}
+    ${row("who sees the list", "the server owner and cygnets admin can see the list after signing in with discord<br>they see discord ids your place who invited you and any hold<br>never your email or ip")}
     ${row("decisions", "nothing is decided about you by profiling<br>a second sign up from the same connection only holds invites until a person looks")}
     ${row("your rights", "see and download your data from your page<br>delete it by leaving the list<br>object to or ask to limit anything here or correct it by writing to us<br>complain to the data protection authority where you live")}
   </div>`;
+}
+
+// list is everyone on a launch's list as a tree: who came in line, and under
+// each, whoever they brought in. Each is their Discord ID, linked to their
+// profile so the owner can see who it is without names being kept here,
+// with their invites, and a hold the owner can lift.
+function list(l: Launch, rows: Row[]): string {
+  const under = new Map<string | null, Row[]>();
+  for (const r of rows) {
+    const k = r.sponsor && rows.some((x) => x.user === r.sponsor) ? r.sponsor : r.sponsor ? "gone" : null;
+    under.set(k, [...(under.get(k) ?? []), r]);
+  }
+  const line = (r: Row, depth: number): string => {
+    const who = `<a href="https://discord.com/users/${esc(r.user)}" rel="noreferrer" target="_blank"><b>${esc(r.user)}</b></a>`;
+    const what = r.held
+      ? `<span class="warn">on hold</span><form method="post" action="/${esc(l.name)}/lift"><input type="hidden" name="user" value="${esc(r.user)}"><button class="quiet" type="submit">lift</button></form>`
+      : `<span class="dim">${r.released ? `${r.released} invites` : "no invites yet"}</span>`;
+    const kids = (under.get(r.user) ?? []).map((k) => line(k, depth + 1)).join("");
+    return `<li style="--d:${depth}"><span class="mark">${depth ? "\u2514" : `#${r.place}`}</span>${who}${what}</li>${kids}`;
+  };
+  const top = (under.get(null) ?? []).map((r) => line(r, 0)).join("");
+  const orphans = (under.get("gone") ?? []).map((r) => line(r, 1)).join("");
+  return `<p class="note">${rows.length} on the list<br>only you and cygnets breakglass admin can see this</p>
+    <ul class="tree">${top}${orphans ? `<li class="dim">invited by someone who left</li>${orphans}` : ""}</ul>`;
 }

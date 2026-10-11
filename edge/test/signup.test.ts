@@ -2,11 +2,11 @@
 // batches as transactions, the ledger's tamper checks, the email budget,
 // and every page.
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 
-import { esc, page, span } from "../src/page.ts";
+import { esc, page, span, type Row } from "../src/page.ts";
 import { area, budget, created, digest, held, inviteCode, inviteLife, keyed, launches, masked, networks, normalEmail, same } from "../src/signup.ts";
 import { Store, type DB, type Stmt } from "../src/store.ts";
 
@@ -84,7 +84,9 @@ function d1(db: DatabaseSync): DB {
 
 function fresh() {
   const sql = new DatabaseSync(":memory:");
-  sql.exec(readFileSync(new URL("../migrations/0001_signup.sql", import.meta.url), "utf8"));
+  // Every migration, in order, as D1 applies them.
+  const dir = new URL("../migrations/", import.meta.url);
+  for (const f of readdirSync(dir).filter((n) => n.endsWith(".sql")).sort()) sql.exec(readFileSync(new URL(f, dir), "utf8"));
   return { sql, s: new Store(d1(sql), "test-key") };
 }
 
@@ -405,4 +407,25 @@ test("a campaign moves through its stages, and counts itself", async () => {
   assert.match(p1, /the list is closed/);
   assert.match(p2, /open now[\s\S]*is open/);
   for (const html of [p1, p2]) assert.doesNotMatch(visible(html), /[.,;:!?'"A-Z]/);
+});
+
+test("the list: only its owner, as a tree, with holds to lift", async () => {
+  const { s } = fresh();
+  assert.ok(await s.register("silcord", "1558585698712293378", "silcord", "", t0, ["175928847299117063"]));
+  assert.deepEqual((await s.launch("silcord"))?.admins, ["175928847299117063"]);
+  await s.join(l, "11111111111111111", h("1"), null, t0);
+  await s.join(l, "22222222222222222", h("2"), "someone on your connection is already on the list", t0);
+  await s.release(l, 1, 2, t0);
+  const code = await s.issue(l, "11111111111111111", t0);
+  await s.redeem(l, await digest(code!), "33333333333333333", h("3"), null, t0 + 1);
+  const rows = (await s.tree(l)) as unknown as Row[];
+  const html = page({ ...l, admins: [] }, 3, { kind: "list", rows }, "k");
+  assert.match(html, /3 on the list/);
+  assert.match(html, /#1<\/span><a href="https:\/\/discord\.com\/users\/11111111111111111"/);
+  assert.match(html, /--d:1"><span class="mark">└<\/span><a href="https:\/\/discord\.com\/users\/33333333333333333"/, "the invitee under its sponsor");
+  assert.match(html, /on hold<\/span><form method="post" action="\/silcord\/lift"><input type="hidden" name="user" value="22222222222222222">/);
+  await s.leave(l, "11111111111111111", t0 + 2);
+  const after = page(l, 2, { kind: "list", rows: (await s.tree(l)) as unknown as Row[] }, "k");
+  assert.match(after, /invited by someone who left/);
+  assert.doesNotMatch(visible(after), /[,;:!?'"A-Z]/);
 });

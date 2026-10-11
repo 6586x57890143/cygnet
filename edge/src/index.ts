@@ -4,7 +4,7 @@
 // here; the Discord app's OAuth secret does, to read who signed in, and
 // their token is revoked as soon as it's read.
 
-import { page, type View } from "./page.ts";
+import { page, type Row, type View } from "./page.ts";
 import {
   stages,
   area,
@@ -48,7 +48,7 @@ interface Env {
   CONTACT?: string;
 }
 
-type Purpose = "join" | "issue" | "redeem";
+type Purpose = "join" | "issue" | "redeem" | "list";
 
 const api = "https://discord.com/api/v10";
 // stay is how long the page remembers who you are.
@@ -82,6 +82,7 @@ const say = {
   gotInMeanwhile: "this email or account got on the list another way in the meantime",
   inviteGoneLate: "this invite got used or taken back or ran out before you finished\nask for a new one",
   closed: "the list is closed for now",
+  notYours: "only the server owner can see the list",
 };
 
 export default {
@@ -99,6 +100,7 @@ export default {
       if (second === undefined && req.method === "GET") return await landing(req, env, l);
       if (second === "wait" && req.method === "GET") return await wait(req, env, l, url);
       if (second === "mine" && req.method === "GET") return await mine(req, env, l);
+      if (second === "list" && req.method === "GET") return await listPage(req, env, l, url);
       if (req.method === "POST") {
         if (second === "join") {
           if ((l.stage ?? "gathering") !== "gathering") return html(env, l, { kind: "error", why: say.closed }, 403);
@@ -107,6 +109,7 @@ export default {
         if (second === "issue") return await issueStart(req, env, l, url);
         if (second === "revoke") return await revoke(req, env, l);
         if (second === "leave") return await leave(req, env, l);
+        if (second === "lift") return await liftPressed(req, env, l);
       }
       return new Response("not allowed", { status: 405, headers: secure(text) });
     } catch (err) {
@@ -157,7 +160,8 @@ async function oauth(env: Env, url: URL, purpose: Purpose, l: Launch, invite = "
     client_id: env.DISCORD_CLIENT_ID,
     response_type: "code",
     redirect_uri: `https://${url.host}/auth/discord`,
-    scope: "identify email",
+    // The list needs only who you are; everything else needs your email.
+    scope: purpose === "list" ? "identify" : "identify email",
     state: nonce,
     prompt: "none",
   }).toString();
@@ -212,6 +216,12 @@ async function callback(req: Request, env: Env, ctx: ExecutionContext, url: URL)
   );
   if (!me.ok) return html(env, l, { kind: "error", why: say.discordWho }, 502);
   const user = await me.json<{ id: string; email?: string | null; verified?: boolean }>();
+  // The list: only for whoever may see it, for an hour.
+  if (purpose === "list") {
+    if (!(l.admins ?? []).includes(user.id)) return html(env, l, { kind: "error", why: say.notYours }, 403);
+    const c = cookie(`cy_list_${l.name}`, await sign(env, `${l.name}.${user.id}.${Date.now() + 3_600_000}`), 3600);
+    return new Response(null, { status: 303, headers: secure({ location: `/${l.name}/list`, "set-cookie": c }) });
+  }
   if (!user.email || !user.verified) return html(env, l, { kind: "error", why: say.unverified }, 403);
   const s = store(env);
   const now = Date.now();
@@ -349,6 +359,27 @@ async function mine(req: Request, env: Env, l: Launch): Promise<Response> {
   });
 }
 
+// owner is who's signed in to see l's list, if they still may.
+async function owner(req: Request, env: Env, l: Launch): Promise<string | null> {
+  const [name, user, until] = (await unsign(env, read(req, `cy_list_${l.name}`)))?.split(".") ?? [];
+  return name === l.name && Number(until) > Date.now() && (l.admins ?? []).includes(user) ? user : null;
+}
+
+// listPage is the list for the server's owner, after a Discord sign in
+// that shows who they are.
+async function listPage(req: Request, env: Env, l: Launch, url: URL): Promise<Response> {
+  if (!(await owner(req, env, l))) return oauth(env, url, "list", l);
+  const rows = (await store(env).tree(l)) as unknown as Row[];
+  return html(env, l, { kind: "list", rows });
+}
+
+async function liftPressed(req: Request, env: Env, l: Launch): Promise<Response> {
+  if (!(await owner(req, env, l))) return new Response(null, { status: 303, headers: secure({ location: `/${l.name}/list` }) });
+  const user = String((await req.formData()).get("user") ?? "");
+  if (/^\d{17,20}$/.test(user)) await store(env).lift(l, user, Date.now());
+  return new Response(null, { status: 303, headers: secure({ location: `/${l.name}/list` }) });
+}
+
 // privacy is the full privacy notice, for every launch.
 async function privacy(env: Env): Promise<Response> {
   const l = launches.silcord;
@@ -387,14 +418,15 @@ async function admin(req: Request, env: Env, launch?: string, action?: string): 
   // cygnet registers a launch, or refreshes it, with its server's id, name
   // and picture.
   if (launch && !action && req.method === "PUT") {
-    const b = await req.json<{ guild?: string; title?: string; icon?: string }>();
+    const b = await req.json<{ guild?: string; title?: string; icon?: string; admins?: string[] }>();
     const ok =
       /^[a-z0-9-]{2,32}$/.test(launch) &&
       /^\d{17,20}$/.test(b.guild ?? "") &&
       typeof b.title === "string" && b.title.length > 0 && b.title.length <= 100 &&
-      typeof b.icon === "string" && (b.icon === "" || b.icon.startsWith("https://cdn.discordapp.com/icons/"));
+      typeof b.icon === "string" && (b.icon === "" || b.icon.startsWith("https://cdn.discordapp.com/icons/")) &&
+      (b.admins === undefined || (Array.isArray(b.admins) && b.admins.length <= 5 && b.admins.every((a) => /^\d{17,20}$/.test(a))));
     if (!ok) return new Response("bad launch", { status: 400, headers: secure(text) });
-    const kept = await s.register(launch, b.guild!, b.title!, b.icon!, Date.now());
+    const kept = await s.register(launch, b.guild!, b.title!, b.icon!, Date.now(), b.admins ?? []);
     return kept ? json({ launch, page: `/${launch}` }) : new Response("that name is another server's", { status: 409, headers: secure(text) });
   }
   const l = launch ? await s.launch(launch) : undefined;

@@ -27,6 +27,9 @@ import (
 type Edge struct {
 	URL, Token string
 	Client     *http.Client
+	// Breakglass is cygnet's breakglass admin, who may see every launch's
+	// list beside the server's owner.
+	Breakglass snowflake.ID
 }
 
 // Launch gives the module the Worker to run launches on; without it the
@@ -198,6 +201,9 @@ func (m *Module) campaignCard(ctx context.Context, guild snowflake.ID, note stri
 		discord.NewSeparator(discord.SeparatorSpacingSizeSmall),
 		discord.NewActionRow(stage("gathering"), stage("closed"), stage("open")),
 		discord.NewActionRow(release(10), release(50), discord.NewSecondaryButton("check again", campaignID)),
+		// The list itself is on the web, behind a Discord sign in, for the
+		// server's owner and the breakglass admin only: never in a channel.
+		discord.NewActionRow(discord.NewLinkButton("who's on the list", m.edge.page(name)+"/list")),
 	), nil
 }
 
@@ -211,8 +217,16 @@ func (m *Module) edgeTell(err error, missing string) error {
 
 func (e *Edge) page(name string) string { return strings.TrimRight(e.URL, "/") + "/" + name }
 
+// push sends a launch's server as cygnet sees it, with who may see its
+// list: the server's owner, and the breakglass admin.
 func (e *Edge) push(ctx context.Context, name string, g discord.Guild) error {
-	return e.do(ctx, http.MethodPut, "/admin/"+name, map[string]string{"guild": g.ID.String(), "title": g.Name, "icon": icon(g.ID, g.Icon)}, nil)
+	admins := []string{}
+	for _, id := range []snowflake.ID{g.OwnerID, e.Breakglass} {
+		if id != 0 {
+			admins = append(admins, id.String())
+		}
+	}
+	return e.do(ctx, http.MethodPut, "/admin/"+name, map[string]any{"guild": g.ID.String(), "title": g.Name, "icon": icon(g.ID, g.Icon), "admins": admins}, nil)
 }
 
 // launchOf is the launch a server has on the Worker, or "".

@@ -13,6 +13,9 @@ export interface Launch {
   guild?: string;
   title?: string;
   icon?: string;
+  // admins may see the list: the server's owner and cygnet's breakglass
+  // admin, as cygnet sent them.
+  admins?: string[];
   // opens is when the server opened, in ms, once it has. Email hashes are
   // kept until keepEmail after it, and everything until keepList.
   opens?: number;
