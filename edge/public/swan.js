@@ -319,7 +319,8 @@ export function text(f, cols, rows) {
     for (let i = 0; i < cols; i++) {
       const v = f.shade[j * cols + i];
       const r = f.refl[j * cols + i];
-      if (v >= 0) s += ramp[Math.min(ramp.length - 1, Math.round(v * (ramp.length - 1)))];
+      if (v >= 0 && f.water[j * cols + i]) s += (i + j) % 3 ? "-" : "~";
+      else if (v >= 0) s += ramp[Math.min(ramp.length - 1, Math.round(v * (ramp.length - 1)))];
       else if (j === f.horizon) s += (i * 7) % 11 < 6 ? "~" : "-";
       else if (r > 0.04) s += ramp[Math.min(4, Math.round(r * 8))];
       else s += " ";
