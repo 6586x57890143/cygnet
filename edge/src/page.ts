@@ -223,6 +223,14 @@ ${refresh}
 <meta name="description" content="${esc(l.line.replaceAll("\n", " "))}">
 <meta property="og:title" content="${esc(l.title ?? l.name)}">
 <meta property="og:description" content="${esc(l.line.replaceAll("\n", " "))}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="cygnet.lol">
+<meta property="og:image" content="https://cygnet.lol/art/og.gif">
+<meta property="og:image:type" content="image/gif">
+<meta property="og:image:width" content="800">
+<meta property="og:image:height" content="420">
+<meta property="og:image:alt" content="an ASCII swan on the water as a day goes by, beside the name cygnet">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="/art/cygnet.png">
 <link rel="stylesheet" href="/app.css">
 <script src="/theme.js"></script>

@@ -1,0 +1,129 @@
+// og draws public/art/og.gif, the picture a link to cygnet.lol unfurls
+// into: the page's own swan on its water through a whole day, night to
+// night, the card reduced to the name. It drives the page in headless
+// Chromium on a clock of its own, so every frame is the one asked for:
+// the swan moves at its own pace while the day goes by in a few seconds.
+//
+//   node tools/og.mjs [url]     # default https://cygnet.lol
+//
+// Needs Chrome or Edge, and ffmpeg on the PATH.
+import { spawn, execFileSync } from "node:child_process";
+import { mkdtempSync, writeFileSync, rmSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const url = process.argv[2] ?? "https://cygnet.lol";
+const out = fileURLToPath(new URL("../public/art/og.gif", import.meta.url));
+// The page is laid out a little over the width where it goes wide, and
+// drawn at 4/3 so its glyphs are big enough to read in a chat: 1200 by
+// 630, then 800 by 420, still more than a chat shows.
+const W = 900, H = 473, dpr = 4 / 3;
+// Frames a second and seconds of the loop, then the last fade seconds
+// blended over the first so the swan's sway doesn't jump where it starts
+// again. The sky changes everywhere at once, so these and the palette are
+// what keep the file near 4 MB.
+const fps = 15, secs = 6, fade = 0.6;
+const colors = 96, dither = "bayer:bayer_scale=4";
+// The page's day is 400 s (4 scenes of 100); here it passes in secs.
+const day = 400 / secs;
+
+const browser = [
+  process.env.CHROME,
+  "C:/Program Files/Google/Chrome/Application/chrome.exe",
+  "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
+  "/usr/bin/google-chrome",
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+].find((p) => p && existsSync(p));
+if (!browser) throw new Error("no Chrome or Edge found; set CHROME");
+
+const dir = mkdtempSync(join(tmpdir(), "og-"));
+const port = 9333;
+const proc = spawn(browser, [`--headless=new`, `--remote-debugging-port=${port}`, `--user-data-dir=${join(dir, "profile")}`, `--hide-scrollbars`, `--mute-audio`, "about:blank"], { stdio: "ignore" });
+
+try {
+  let target;
+  for (let i = 0; i < 50 && !target; i++) {
+    await new Promise((r) => setTimeout(r, 200));
+    target = await fetch(`http://127.0.0.1:${port}/json/list`).then((r) => r.json()).then((l) => l.find((t) => t.type === "page")).catch(() => null);
+  }
+  const ws = new WebSocket(target.webSocketDebuggerUrl);
+  await new Promise((r) => ws.addEventListener("open", r, { once: true }));
+  let seq = 0;
+  const waiting = new Map();
+  const events = [];
+  ws.addEventListener("message", (e) => {
+    const m = JSON.parse(e.data);
+    if (m.id && waiting.has(m.id)) {
+      const [ok, no] = waiting.get(m.id);
+      waiting.delete(m.id);
+      m.error ? no(new Error(m.error.message)) : ok(m.result);
+    } else if (m.method) events.push(m.method);
+  });
+  const cdp = (method, params = {}) => new Promise((ok, no) => {
+    waiting.set(++seq, [ok, no]);
+    ws.send(JSON.stringify({ id: seq, method, params }));
+  });
+
+  await cdp("Page.enable");
+  await cdp("Emulation.setDeviceMetricsOverride", { width: W, height: H, deviceScaleFactor: dpr, mobile: false });
+  await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }, { name: "prefers-reduced-motion", value: "no-preference" }] });
+  // The clock: animation frames run only when tick says, at its time; the
+  // page's day reads performance.now, which runs day times as fast. The
+  // swan is grown, and the card holds only the name and its line, large
+  // enough to read at the size a chat shows it.
+  await cdp("Page.addScriptToEvaluateOnNewDocument", {
+    source: `
+      localStorage.setItem("swan", "1");
+      let ms = 0;
+      const queue = [];
+      performance.now = () => ms * ${day};
+      requestAnimationFrame = (f) => queue.push(f);
+      window.tick = (dt) => { ms += dt; for (const f of queue.splice(0)) f(ms); };
+      // The page has measured itself by then: the resize has it measure again.
+      addEventListener("DOMContentLoaded", () => (document.head.append(Object.assign(document.createElement("style"), { textContent: \`
+        .soon, .fine, footer, button.theme, .ring, canvas.field { display: none !important; }
+        main { display: block; min-height: 0; height: 100vh; padding: 0; }
+        .hero { position: absolute; left: -40px; width: 790px; top: 0; height: 100%; }
+        .card { position: absolute; right: 28px; bottom: 84px; width: 268px; text-align: center; padding: 20px 16px 22px; }
+        .card header { display: block; margin: 0 0 10px; }
+        .card .kicker { display: none; }
+        .card h1 { font-size: 54px; line-height: 1; }
+        .card .line { font-size: 13px; margin: 0; white-space: nowrap; }
+      \` })), dispatchEvent(new Event("resize"))));
+    `,
+  });
+  await cdp("Page.navigate", { url });
+  while (!events.includes("Page.loadEventFired")) await new Promise((r) => setTimeout(r, 100));
+  await cdp("Runtime.evaluate", { expression: "document.fonts.ready", awaitPromise: true });
+
+  const dt = 1000 / fps;
+  // A whole day first, so the scene's easing has settled into the loop.
+  for (let i = 0; i < fps * secs; i++) await cdp("Runtime.evaluate", { expression: `tick(${dt})` });
+  const n = Math.round(fps * (secs + fade));
+  for (let i = 0; i < n; i++) {
+    await cdp("Runtime.evaluate", { expression: `tick(${dt})` });
+    const { data } = await cdp("Page.captureScreenshot", { format: "png" });
+    writeFileSync(join(dir, `${String(i).padStart(4, "0")}.png`), Buffer.from(data, "base64"));
+  }
+  ws.close();
+
+  // The loop is secs long; its tail (the day come round again) fades in
+  // over its head, then one palette for the whole thing, dithered gently.
+  const f = Math.round(fps * fade), body = fps * secs;
+  execFileSync("ffmpeg", [
+    "-y", "-loglevel", "error", "-framerate", String(fps), "-i", join(dir, "%04d.png"),
+    "-filter_complex",
+    `[0]crop=1200:630:0:0,scale=800:420:flags=lanczos,split=3[a][b][c];[a]trim=start_frame=${f}:end_frame=${body},setpts=PTS-STARTPTS[mid];` +
+      `[b]trim=start_frame=${body}:end_frame=${body + f},setpts=PTS-STARTPTS[tail];` +
+      `[c]trim=end_frame=${f},setpts=PTS-STARTPTS[head];` +
+      `[tail][head]blend=all_expr='A*(1-N/${f})+B*(N/${f})'[seam];` +
+      `[seam][mid]concat=n=2,split[s0][s1];[s0]palettegen=max_colors=${colors}:stats_mode=diff[p];[s1][p]paletteuse=dither=${dither}:diff_mode=rectangle`,
+    "-loop", "0", "-map_metadata", "-1", out,
+  ]);
+  console.log(out);
+} finally {
+  proc.kill();
+  await new Promise((r) => setTimeout(r, 500));
+  rmSync(dir, { recursive: true, force: true });
+}
