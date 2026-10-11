@@ -96,7 +96,10 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
   // mode, day in light), cycle when the cycle started, sc the scene as
   // drawn, eased toward where the cycle is. ax and aw are the stretch of
   // the page the sun and the moon cross.
-  let base = "", cycle = 0, sc = null, ink = "236,234,228", ax = 0, aw = 0, orb = 40;
+  let base = "", cycle = 0, sc = null, ink = "236,234,228", wink = "236,234,228", ax = 0, aw = 0, orb = 40;
+  // dark is how far the swan's ink has gone dark (1) from light (0), wdark
+  // the water's; page is the page's own colour under the sky.
+  let dark = 0, wdark = 0, page = [10, 13, 20];
   let mx = 0, my = 0, sunX = 0, sunY = 0, moonX = 0, moonY = 0, sunUp = 0, moonUp = 0;
   let lean = 0, aim = 0, float = 0, span = 400;
   function place() {
@@ -133,6 +136,8 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
     orb = Math.max(30, Math.min(72, w * 0.03));
     ax = wide ? r.left : 0;
     aw = wide ? r.width : w;
+    const bg = getComputedStyle(document.body).backgroundColor.match(/\d+/g);
+    if (bg) page = bg.slice(0, 3).map(Number);
     const was = base;
     base = getComputedStyle(document.documentElement).getPropertyValue("--scene").trim() === "day" ? "day" : "night";
     if (base !== was) cycle = performance.now() / 1000;
@@ -140,25 +145,26 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   // The scenes, in the order the day goes. Colours are r, g, b (and a);
   // sun and moon are how strongly each shows, stars and clouds likewise;
-  // dark is how far the swan is drawn in dark ink rather than light; at is
+  // hue tints the swan's ink, which is light or dark by what's behind it;
+  // at is
   // where the sun is along its arc (0 rising on the left, 0.5 overhead, 1
   // setting on the right), the moon riding the opposite side of it.
   const scenes = {
     night: {
       top: [4, 7, 22, 0.9], low: [22, 34, 64, 0.72], sunC: [255, 170, 90], moonC: [196, 206, 224], sun: 0, moon: 1,
-      stars: 1, clouds: 0, cloud: [180, 190, 214], glint: [214, 224, 244], deep: [3, 6, 14, 0.86], ink: [236, 234, 228], dark: 0, at: -0.1,
+      stars: 1, clouds: 0, cloud: [180, 190, 214], glint: [214, 224, 244], deep: [3, 6, 14, 0.86], hue: [196, 212, 255], at: -0.1,
     },
     morning: {
       top: [92, 108, 168, 0.9], low: [252, 190, 158, 0.82], sunC: [255, 196, 120], moonC: [214, 214, 230], sun: 1, moon: 0.2,
-      stars: 0.15, clouds: 0.75, cloud: [255, 214, 214], glint: [255, 200, 150], deep: [64, 66, 104, 0.82], ink: [44, 38, 54], dark: 1, at: 0.16,
+      stars: 0.15, clouds: 0.75, cloud: [255, 214, 214], glint: [255, 200, 150], deep: [64, 66, 104, 0.82], hue: [132, 72, 120], at: 0.16,
     },
     day: {
       top: [128, 182, 236, 0.9], low: [255, 238, 208, 0.78], sunC: [255, 196, 82], moonC: [230, 234, 240], sun: 1, moon: 0,
-      stars: 0, clouds: 1, cloud: [255, 255, 255], glint: [188, 118, 22], deep: [146, 174, 204, 0.8], ink: [26, 31, 39], dark: 1, at: 0.5,
+      stars: 0, clouds: 1, cloud: [255, 255, 255], glint: [188, 118, 22], deep: [146, 174, 204, 0.8], hue: [40, 74, 128], at: 0.5,
     },
     evening: {
       top: [38, 36, 90, 0.92], low: [246, 138, 78, 0.82], sunC: [255, 138, 64], moonC: [214, 210, 226], sun: 1, moon: 0.3,
-      stars: 0.4, clouds: 0.6, cloud: [255, 166, 136], glint: [255, 150, 70], deep: [36, 24, 44, 0.84], ink: [238, 226, 214], dark: 0, at: 0.84,
+      stars: 0.4, clouds: 0.6, cloud: [255, 166, 136], glint: [255, 150, 70], deep: [36, 24, 44, 0.84], hue: [84, 56, 150], at: 0.84,
     },
   };
   const order = ["night", "morning", "day", "evening"];
@@ -325,7 +331,19 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
     // round, under the water: it jumps there, unseen, rather than sweep
     // back across the sky (the moon is in the same place either way).
     if (Math.abs(tg.at - sc.at) > 0.6) sc.at = tg.at;
-    ink = rgb(sc.ink);
+    // The swan's ink: the scene's hue, light against a dark sky and dark
+    // against a bright one, judged by the sky behind it as it shows over
+    // the page, and turned quickly, so it's never the sky's own shade for
+    // long. The water's strokes are judged by the water the same way.
+    const lum = (c) => {
+      const v = c.slice(0, 3).map((u, i) => u * c[3] + page[i] * (1 - c[3]));
+      return (0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]) / 255;
+    };
+    dark += ((lum(mixed(sc.top, sc.low, 0.8)) > 0.42 ? 1 : 0) - dark) * 0.08;
+    wdark += ((lum(sc.deep) > 0.42 ? 1 : 0) - wdark) * 0.08;
+    const pale = mixed(sc.hue, [255, 255, 255], 0.8), deep = mixed(sc.hue, [0, 0, 0], 0.62);
+    ink = rgb(mixed(pale, deep, dark));
+    wink = rgb(mixed(pale, deep, wdark));
     [sunX, sunY, sunUp] = arc(sc.at);
     [moonX, moonY, moonUp] = arc(sc.at + 0.5 > 1.1 ? sc.at - 0.7 : sc.at + 0.5);
     // The light comes from whichever is up, weighted by how bright it is.
@@ -372,7 +390,7 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
       for (let gx = (r * 13) % 11; gx < w; gx += cw * 1.25) {
         const v = Math.sin(gx * 0.021 + r * 1.7 + s * 0.9) + Math.sin(gx * 0.053 - s * 1.3 + r * 2.3) * 0.7;
         if (v < 0.55) continue;
-        x.fillStyle = `rgba(${ink},${(fade * Math.min(1, v - 0.4)).toFixed(3)})`;
+        x.fillStyle = `rgba(${wink},${(fade * Math.min(1, v - 0.4)).toFixed(3)})`;
         x.fillText(v > 1.25 ? "~" : "-", gx, ry + wave(gx, s) * (0.6 - Math.min(0.4, Math.abs(r) * 0.05)) - ch * 0.5);
       }
     }
@@ -391,7 +409,7 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
         // Drawn in light ink at night and dark ink by day: by day the side in
         // the sun takes the least ink, so the light still falls where it's
         // lit.
-        else if (v >= 0) lanes[Math.min(bands - 1, Math.floor((v + (1 - v * 0.85 - v) * sc.dark) * bands))].push(i, j);
+        else if (v >= 0) lanes[Math.min(bands - 1, Math.floor((v + (0.38 + (1 - v) * 0.6 - v) * dark) * bands))].push(i, j);
         else if (f.refl[q] > 0.03) glints.push(i, j, f.refl[q]);
       }
     }
@@ -418,7 +436,7 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
       const gx = bx + i * cw + Math.sin(s * (0.7 + r1) + r2 * 6) * cw * 0.6;
       const a = (0.06 + ripples[n + 2] * 0.42) * (0.6 + 0.4 * Math.sin(s * (1.1 + r2 * 1.7) + r1 * 9));
       if (a < 0.04) continue;
-      x.fillStyle = `rgba(${ink},${a.toFixed(3)})`;
+      x.fillStyle = `rgba(${wink},${a.toFixed(3)})`;
       // On the water line exactly: the bird's lift (which carries the swan's
       // own ride) taken back out, and the line's wave where the stroke is.
       x.fillText(r1 > 0.72 ? "~" : r1 > 0.12 ? "-" : ".", gx, by - lift - ride + j * ch - ch * 0.5 + wave(gx, s) * 0.6);
@@ -440,7 +458,7 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
       if (band < -0.3 + deep * 0.03) continue;
       const a = (0.04 + v * 0.42) * Math.min(1, 0.45 + band * 0.5) * (1 - Math.min(0.6, deep * 0.035));
       if (a < 0.03) continue;
-      x.fillStyle = `rgba(${ink},${a.toFixed(3)})`;
+      x.fillStyle = `rgba(${wink},${a.toFixed(3)})`;
       const r = hash(j, i * 3);
       x.fillText(band > 0.9 && r > 0.4 ? "=" : r > 0.8 ? "~" : r > 0.1 ? "-" : ".", rx, by - lift - ride + j * ch + wave(gx, s) * 0.6);
     }
@@ -461,7 +479,7 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
     for (let gx = -drift; gx < w; gx += 7) {
       if (hull(gx) || hull(gx + 4)) continue;
       const near = Math.max(0, 1 - Math.abs(gx - mid) / (cols * cw * 0.9));
-      x.fillStyle = `rgba(${ink},${(0.1 + 0.42 * near * near).toFixed(3)})`;
+      x.fillStyle = `rgba(${wink},${(0.1 + 0.42 * near * near).toFixed(3)})`;
       x.fillRect(gx, cy + wave(gx, s) * 0.6, 4, 1);
     }
     x.font = `${ch}px ui-monospace, Menlo, Consolas, monospace`;
