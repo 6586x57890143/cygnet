@@ -71,8 +71,8 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
 // The swan: the model in swan.js drawn as shaded ASCII beside the card,
 // its outline bright. It turns a little on the water, nods and sways its
 // neck, leans toward the pointer, and grows from the stage last seen on
-// this device to this page's. The water it sits on is a line of digits in
-// a slow wave across the whole screen, level with the card's bottom edge
+// this device to this page's. The water it sits on is a fine dashed line
+// on a slow wave across the whole screen, level with the card's bottom edge
 // on a wide screen and its top edge on a phone, and the reflection
 // ripples with it. The still frame the page came with stays until the
 // first live one is drawn.
@@ -162,15 +162,14 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
       x.fillStyle = `rgba(${ink},${(0.05 + v * 0.35).toFixed(3)})`;
       x.fillText(ramp[1 + Math.min(3, Math.floor(v * 8))], rx, by - lift + j * ch + wave(gx, s));
     }
-    // The water: digits along a slow wave across the screen, brightest
-    // under the swan, each changing on its own every few seconds.
-    x.font = `${ch + 1}px ui-monospace, Menlo, Consolas, monospace`;
+    // The water: a fine dashed line across the screen on a slow wave,
+    // brightest under the swan.
     const mid = bx + (cols * cw) / 2;
-    for (let gx = 0, q = 0; gx < w; gx += cw * 1.5, q++) {
-      const near = Math.max(0, 1 - Math.abs(gx - mid) / (cols * cw));
-      const tick = Math.floor(s * 0.5 + hash(q, 1) * 7);
-      x.fillStyle = `rgba(${ink},${(0.12 + 0.45 * near * near).toFixed(3)})`;
-      x.fillText(String(Math.floor(hash(q, tick) * 10)), gx, cy - ch * 0.6 + wave(gx, s));
+    const drift = (s * 9) % 7;
+    for (let gx = -drift; gx < w; gx += 7) {
+      const near = Math.max(0, 1 - Math.abs(gx - mid) / (cols * cw * 0.9));
+      x.fillStyle = `rgba(${ink},${(0.1 + 0.42 * near * near).toFixed(3)})`;
+      x.fillRect(gx, cy + wave(gx, s) * 0.6, 4, 1);
     }
     x.font = `${ch}px ui-monospace, Menlo, Consolas, monospace`;
   }

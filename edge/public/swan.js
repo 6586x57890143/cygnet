@@ -1,10 +1,18 @@
 // The swan: a 3D model drawn in ASCII, the way donut.c draws a torus. Its
-// surfaces (a boat of a body, an S of a neck swept as a tube, head, beak,
-// raised wings, tail, eyes) are sampled densely into points with normals;
-// each frame they're turned, projected, the nearest point kept for each
-// character cell, and shaded by how much it faces the light. t grows it
-// from a cygnet (0) to a swan (1). The Worker draws one still frame of it
-// into the page and app.js brings it to life, from this one file.
+// surfaces are sampled densely into points with normals; each frame they're
+// turned, projected, the nearest point kept for each character cell, and
+// shaded by how much it faces the light. t grows it from a cygnet (0) to a
+// swan (1). The Worker draws one still frame of it into the page and
+// app.js brings it to life, from this one file.
+//
+// The proportions are a mute swan's, measured off a side photograph with
+// the body as 2.1 units from chest to tail and the water at y 0: a tall
+// half egg of a body, low at the chest and highest toward the rear, wings
+// folded over it with their long feathers raised at the back and a short
+// tail turned up; a thick, even neck rising almost straight from the front
+// of the chest at the water and arching forward at the top into the crown;
+// the head tipped steeply down, the beak a long wedge with a knob at its
+// base. Facing left while it's built, then turned to face right.
 
 const TAU = Math.PI * 2;
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -12,30 +20,44 @@ const lerp = (a, b, t) => a + (b - a) * t;
 // ramp is the shading, dark to light.
 export const ramp = " .,:-=+*#%@";
 
-// shape is the swan's measurements at t, its neck held at pose: 0 upright,
-// 1 arched back over its body to look behind it, and sway its side to side
-// lean.
+// profile is a smooth curve through [x, y] knots, read at x.
+function profile(knots, x) {
+  if (x <= knots[0][0]) return knots[0][1];
+  for (let i = 1; i < knots.length; i++) {
+    const [x1, y1] = knots[i];
+    const [x0, y0] = knots[i - 1];
+    if (x <= x1) {
+      const k = (x - x0) / (x1 - x0);
+      return lerp(y0, y1, k * k * (3 - 2 * k));
+    }
+  }
+  return knots[knots.length - 1][1];
+}
+
+// shape is the swan's measurements at t, its neck nodding by pose (0 head
+// up, 1 head lower) and swaying by sway.
 function shape(t, pose, sway) {
   const L = (a, b) => lerp(a, b, t);
-  const P = (up, arch) => lerp(up, arch, pose);
   return {
-    scale: L(0.66, 1),
-    len: L(0.8, 1.05),
-    ry: L(0.46, 0.34),
-    rz: L(0.52, 0.46),
-    lift: L(0.04, 0.22),
+    scale: L(0.6, 1),
+    len: L(0.86, 1.05),
+    // How high the back stands above the water along the body, and how
+    // wide it is, from the chest (-1) to the tail (1).
+    height: [[-1, L(0.2, 0.14)], [-0.75, L(0.42, 0.36)], [-0.35, L(0.58, 0.64)], [0.1, L(0.64, 0.8)], [0.5, L(0.6, 0.88)], [0.82, L(0.48, 0.8)], [1, L(0.3, 0.52)]],
+    width: [[-1, 0.1], [-0.75, 0.36], [-0.3, 0.52], [0.3, 0.54], [0.8, 0.4], [1, 0.12]],
     neck: [
-      [L(-0.52, -0.74), L(0.28, 0.34), 0],
-      [L(-0.78, P(-1.16, -1.22)), L(0.5, P(0.82, 0.86)), sway * 0.3],
-      [L(-0.4, P(-0.26, -0.36)), L(0.72, P(1.24, 1.3)), sway * 0.8],
-      [L(-0.62, P(-0.7, -0.8)), L(0.86, P(1.52, 1.48)), sway],
+      [L(-0.82, -0.93), 0.06, 0],
+      [L(-0.86, -0.86), L(0.42, 0.92), sway * 0.25],
+      [L(-0.72, -0.6 + pose * 0.04), L(0.86, 1.86 - pose * 0.08), sway * 0.75],
+      [L(-0.96, -0.98 - pose * 0.04), L(0.84, 1.72 - pose * 0.1), sway],
     ],
-    neckR: [L(0.21, 0.18), L(0.12, 0.068)],
-    head: [L(0.16, 0.17), L(0.13, 0.1), L(0.12, 0.09)],
-    beak: L(0.1, 0.27),
-    wing: [L(0.4, 0.66), L(0.12, 0.2), L(0.1, 0.12)],
-    wingLift: L(0.02, 0.13),
-    tail: L(0.06, 0.24),
+    neckR: [L(0.17, 0.17), L(0.13, 0.125), L(0.13, 0.11)],
+    head: [L(0.16, 0.19), L(0.12, 0.12), L(0.11, 0.105)],
+    // How far down the head tips from the neck's line, in radians.
+    tip: L(0.35, 0.68) + pose * 0.1,
+    beak: L(0.16, 0.34),
+    plumes: L(0.04, 0.2),
+    tail: L(0.06, 0.2),
   };
 }
 
@@ -46,8 +68,9 @@ function bez(p, s) {
 }
 
 // model is the swan at t as points: x y z, then the normal, then what it
-// is (0 plumage, 1 eye, 2 beak), seven numbers a point.
-export function model(t, density = 1, pose = 0, sway = 0, wings = 0) {
+// is (0 plumage, 1 eye, 2 beak, 3 the line between feathers), seven
+// numbers a point.
+export function model(t, density = 1, pose = 0, sway = 0) {
   const m = shape(t, pose, sway);
   const out = [];
   // Samples sit off the grid by a fixed random amount, so the surface reads
@@ -59,54 +82,57 @@ export function model(t, density = 1, pose = 0, sway = 0, wings = 0) {
     out.push(x * m.scale, y * m.scale, z * m.scale, nx / l, ny / l, nz / l, kind);
   };
   const n = (a) => Math.max(4, Math.round(a * density));
-  const cy = 0.12;
 
-  // The body: an egg along x, fuller at the chest, rising to the tail,
-  // cut at the water.
-  const bu = n(190), bv = n(90);
+  // The body: each slice across it a half ellipse standing on the water,
+  // as high and as wide as the profiles say there. The folded wings are
+  // its top: rows of feathers run back along it, and toward the rear the
+  // long ones lift.
+  const bu = n(120), bv = n(120);
   for (let j = 0; j < bv; j++) {
-    const s = (j + jit()) / bv;
-    const x0 = -Math.cos(Math.PI * s);
-    const r = Math.pow(Math.sin(Math.PI * s), 0.72) * (1 - 0.16 * x0);
-    const rise = m.lift * Math.max(0, x0) ** 2;
+    const u = -1 + 2 * ((j + jit()) / bv);
+    const x = u * m.len;
+    const hh = profile(m.height, u), ww = profile(m.width, u);
+    const dh = (profile(m.height, u + 0.01) - profile(m.height, u - 0.01)) / 0.02;
     for (let i = 0; i < bu; i++) {
-      const th = ((i + jit()) / bu) * TAU;
-      const y = cy + m.ry * r * Math.sin(th) + rise;
-      if (y < -0.02) continue;
-      const z = m.rz * r * Math.cos(th);
-      add(x0 * m.len, y, z, Math.cos(Math.PI * s) * -0.3, Math.sin(th) / m.ry, Math.cos(th) / m.rz, 0);
+      const th = ((i + jit()) / bu) * Math.PI;
+      const y = hh * Math.sin(th), z = ww * Math.cos(th);
+      // Rows of feathers: a faint line every so often along the back.
+      const row = (u * 9 + Math.cos(th) * 2.5) % 1;
+      const kind = th > 0.5 && th < Math.PI - 0.5 && Math.abs(row) < 0.07 && u > -0.4 ? 3 : 0;
+      add(x, y, z, -dh * Math.sin(th) * 0.4, Math.sin(th) / hh, Math.cos(th) / ww, kind);
     }
   }
 
-  // The wings, folded and raised a little along the back, one a side: the
-  // upper shell only, since a folded wing shows its top. lift raises them
-  // a touch off the back, as a swan does when it settles its feathers.
-  for (const side of [-1, 1]) {
-    const wu = n(76), wv = n(40);
-    const [rx, ry, rz] = m.wing;
-    const raise = m.wingLift + 0.08 * wings;
-    for (let j = 0; j < wv; j++) {
-      const ph = ((j + jit()) / wv) * Math.PI;
-      for (let i = 0; i < wu; i++) {
-        const th = ((i + jit()) / wu) * Math.PI;
-        const lx = rx * Math.cos(th) * Math.sin(ph), ly = ry * Math.sin(th) * Math.sin(ph), lz = rz * Math.cos(ph);
-        const x = 0.16 * m.len + lx;
-        const y = cy + m.ry * 0.5 + ly + raise * Math.max(0, lx / rx + 0.3) ** 2;
-        const z = side * (m.rz * 0.5) + lz;
-        add(x, y, z, lx / (rx * rx), ly / (ry * ry), lz / (rz * rz), 0);
+  // The long feathers raised at the back of the folded wings, and the tail
+  // below them: points turned up and back.
+  const spike = (x0, y0, z0, len, ang, r0) => {
+    const su = n(10), sv = n(22);
+    const dx = Math.cos(ang), dy = Math.sin(ang);
+    for (let j = 0; j < sv; j++) {
+      const s = (j + jit()) / sv;
+      const r = r0 * (1 - s);
+      for (let i = 0; i < su; i++) {
+        const th = ((i + jit()) / su) * TAU;
+        const c = Math.cos(th), sn = Math.sin(th);
+        add(x0 + dx * len * s - dy * r * c, y0 + dy * len * s + dx * r * c, z0 + r * sn * 1.8, -dy * c, dx * c, sn, 0);
       }
     }
+  };
+  for (const [k, z] of [[0, -0.18], [1, 0.18], [2, -0.06], [3, 0.06], [4, -0.3], [5, 0.3]]) {
+    const u = 0.66 + k * 0.035;
+    spike(u * m.len, profile(m.height, u) - 0.06, z, m.plumes * (1 - k * 0.08), 0.55 + k * 0.05, 0.05);
   }
+  for (const z of [-0.08, 0, 0.08]) spike(0.94 * m.len, profile(m.height, 0.94) * 0.7, z, m.tail, 0.75, 0.05);
 
-  // The neck: a tube along an S, thick at the chest and fine at the head.
-  const nu = n(36), nv = n(190);
+  // The neck: a tube along the curve, thickest where it meets the chest.
+  const nu = n(40), nv = n(200);
   for (let j = 0; j < nv; j++) {
     const s = (j + jit()) / nv;
     const [px, py, pz] = bez(m.neck, s);
     const [qx, qy] = bez(m.neck, Math.min(1, s + 0.01));
     const tl = Math.hypot(qx - px, qy - py) || 1;
     const nx = -(qy - py) / tl, ny = (qx - px) / tl;
-    const r = lerp(m.neckR[0], m.neckR[1], Math.pow(s, 0.7));
+    const r = s < 0.5 ? lerp(m.neckR[0], m.neckR[1], s * 2) : lerp(m.neckR[1], m.neckR[2], (s - 0.5) * 2);
     for (let i = 0; i < nu; i++) {
       const th = ((i + jit()) / nu) * TAU;
       const c = Math.cos(th), sn = Math.sin(th);
@@ -114,20 +140,16 @@ export function model(t, density = 1, pose = 0, sway = 0, wings = 0) {
     }
   }
 
-  // The head, carried on along the neck and tipped down toward the water,
-  // the beak out in front of it, and an eye a side.
+  // The head: on from the neck's end, tipped down by tip, the beak a wedge
+  // out in front with a knob where it meets the face, and an eye a side.
   const [hx, hy, hz] = bez(m.neck, 1);
-  const [gx, gy] = bez(m.neck, 0.97);
-  let ang = Math.atan2(hy - gy, hx - gx);
-  // Tip the head 40 degrees toward straight down, whichever way is shorter.
-  const down = -Math.PI / 2;
-  let dlt = ((down - ang + 3 * Math.PI) % TAU) - Math.PI;
-  ang += Math.sign(dlt) * Math.min(Math.abs(dlt), 0.45);
+  const [gx, gy] = bez(m.neck, 0.96);
+  const ang = Math.atan2(hy - gy, hx - gx) + (Math.cos(Math.atan2(hy - gy, hx - gx)) < 0 ? m.tip : -m.tip);
   const fx = Math.cos(ang), fy = Math.sin(ang);
-  const ux = -fy, uy = fx; // up, across the head
+  const ux = -fy * Math.sign(fx || -1) * -1, uy = fx * Math.sign(fx || -1) * -1; // up across the head
   const [rx, ry, rz] = m.head;
-  const hcx = hx + fx * rx * 0.45 + ux * ry * 0.2, hcy = hy + fy * rx * 0.45 + uy * ry * 0.2;
-  const hu = n(44), hv = n(28);
+  const hcx = hx + fx * rx * 0.55, hcy = hy + fy * rx * 0.55;
+  const hu = n(50), hv = n(30);
   for (let j = 0; j < hv; j++) {
     const ph = ((j + jit()) / hv) * Math.PI;
     for (let i = 0; i < hu; i++) {
@@ -137,39 +159,34 @@ export function model(t, density = 1, pose = 0, sway = 0, wings = 0) {
       add(hcx + a * fx + b * ux, hcy + a * fy + b * uy, hz + lz, na * fx + nb * ux, na * fy + nb * uy, lz / (rz * rz), 0);
     }
   }
-  const bx = hcx + fx * rx * 0.85 - ux * ry * 0.25, by = hcy + fy * rx * 0.85 - uy * ry * 0.25;
-  // The beak runs a little below the head's line.
-  const kx = Math.cos(ang - 0.35 * Math.sign(fx || 1)), ky = Math.sin(ang - 0.35 * Math.sign(fx || 1));
-  const ku = n(16), kv = n(30);
+  const bx = hcx + fx * rx * 0.8, by = hcy + fy * rx * 0.8;
+  const ku = n(18), kv = n(36);
   for (let j = 0; j < kv; j++) {
     const s = (j + 0.5) / kv;
-    const r = lerp(0.045, 0.006, s) * (1 + m.beak);
-    const x = bx + kx * m.beak * s, y = by + ky * m.beak * s;
+    // Deep at the face, flat and narrowing to the tip.
+    const r = lerp(0.07, 0.015, s) * (0.6 + 0.4 * t);
+    const x = bx + fx * m.beak * s, y = by + fy * m.beak * s;
     for (let i = 0; i < ku; i++) {
       const th = ((i + 0.5) / ku) * TAU;
-      add(x - ky * r * Math.sin(th), y + kx * r * Math.sin(th), hz + r * Math.cos(th), -ky * Math.sin(th), kx * Math.sin(th), Math.cos(th), 2);
+      const c = Math.cos(th), sn = Math.sin(th);
+      add(x + ux * r * c, y + uy * r * c, hz + r * 0.7 * sn, ux * c, uy * c, sn, 2);
     }
   }
+  // The knob at the beak's base.
+  for (let i = 0; i < n(60); i++) {
+    const a = (i / n(60)) * TAU * 7.3, b = Math.acos(1 - (2 * i + 1) / n(60));
+    const r = 0.04 * t;
+    add(bx + ux * 0.05 + r * Math.cos(a) * Math.sin(b), by + uy * 0.05 + r * Math.sin(a) * Math.sin(b), hz + r * Math.cos(b), Math.cos(a), Math.sin(a), Math.cos(b), 1);
+  }
   for (const side of [-1, 1]) {
-    for (let i = 0; i < 6; i++) {
-      const a = (i / 6) * TAU;
-      const ex = hcx + fx * rx * 0.25 + ux * ry * 0.25, ey = hcy + fy * rx * 0.25 + uy * ry * 0.25;
-      add(ex + 0.012 * Math.cos(a), ey + 0.012 * Math.sin(a), hz + side * rz * 0.98, 0, 0, side, 1);
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * TAU;
+      const ex = hcx + fx * rx * 0.35 + ux * ry * 0.3, ey = hcy + fy * rx * 0.35 + uy * ry * 0.3;
+      add(ex + 0.014 * Math.cos(a), ey + 0.014 * Math.sin(a), hz + side * rz * 0.97, 0, 0, side, 1);
     }
   }
 
-  // The tail, a short point lifted at the back.
-  const tx = m.len * 0.94, ty = cy + m.lift + 0.06;
-  const tu = n(14), tv = n(20);
-  for (let j = 0; j < tv; j++) {
-    const s = (j + 0.5) / tv;
-    const r = lerp(0.1, 0.01, s);
-    for (let i = 0; i < tu; i++) {
-      const th = ((i + 0.5) / tu) * TAU;
-      add(tx + m.tail * s, ty + m.tail * 0.8 * s + r * Math.sin(th), r * Math.cos(th) * 1.6, 0.4, Math.sin(th), Math.cos(th), 0);
-    }
-  }
-  // Turned to face right, as the swan in front of the card does.
+  // Turned to face right.
   for (let p = 0; p < out.length; p += 7) {
     out[p] = -out[p];
     out[p + 3] = -out[p + 3];
@@ -188,7 +205,7 @@ export function frame(pts, cols, rows, yaw, pitch, aspect = 0.55) {
   const rdepth = new Float32Array(cols * rows).fill(-1e9);
   const cyw = Math.cos(yaw), syw = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
   const horizon = rows * 0.72;
-  const k = Math.min(cols / 2.7, (horizon - 1) / (1.8 * aspect));
+  const k = Math.min(cols / 2.9, (horizon - 1) / (2.05 * aspect));
   const ox = cols / 2 - k * 0.06;
   const deep = rows - horizon;
   // The light: above, a little left and toward the viewer.
