@@ -133,11 +133,13 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
     const lanes = Array.from({ length: bands }, () => []);
     const rims = [];
     const glints = [];
+    const ripples = [];
     for (let j = 0; j < rows; j++) {
       for (let i = 0; i < cols; i++) {
         const q = j * cols + i;
         const v = f.shade[q];
-        if (v >= 0 && f.edge[q]) rims.push(i, j, v);
+        if (v >= 0 && f.water[q]) ripples.push(i, j, v);
+        else if (v >= 0 && f.edge[q]) rims.push(i, j, v);
         else if (v >= 0) lanes[Math.min(bands - 1, Math.floor(v * bands))].push(i, j);
         else if (f.refl[q] > 0.03) glints.push(i, j, f.refl[q]);
       }
@@ -148,6 +150,11 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
       const g = ramp[1 + Math.round((b / (bands - 1)) * (ramp.length - 2))];
       const lane = lanes[b];
       for (let n = 0; n < lane.length; n += 2) x.fillText(g, bx + lane[n] * cw, by - lift + lane[n + 1] * ch);
+    }
+    // The rings on the water round the hull: dashes, fainter outward.
+    for (let n = 0; n < ripples.length; n += 3) {
+      x.fillStyle = `rgba(${ink},${(ripples[n + 2] * 0.9).toFixed(3)})`;
+      x.fillText((ripples[n] + ripples[n + 1]) % 3 ? "-" : "~", bx + ripples[n] * cw, by - lift + ripples[n + 1] * ch);
     }
     // The outline: every cell at the edge of the bird, bright and solid.
     x.fillStyle = `rgba(${ink},0.95)`;
@@ -166,7 +173,18 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
     // brightest under the swan.
     const mid = bx + (cols * cw) / 2;
     const drift = (s * 9) % 7;
+    // It stops where the bird sits, rather than running through it.
+    const hull = (gx) => {
+      const i = Math.floor((gx - bx) / cw);
+      if (i < 0 || i >= cols) return false;
+      for (const j of [f.horizon - 1, f.horizon]) {
+        const q = j * cols + i;
+        if (f.shade[q] >= 0 && !f.water[q]) return true;
+      }
+      return false;
+    };
     for (let gx = -drift; gx < w; gx += 7) {
+      if (hull(gx) || hull(gx + 4)) continue;
       const near = Math.max(0, 1 - Math.abs(gx - mid) / (cols * cw * 0.9));
       x.fillStyle = `rgba(${ink},${(0.1 + 0.42 * near * near).toFixed(3)})`;
       x.fillRect(gx, cy + wave(gx, s) * 0.6, 4, 1);

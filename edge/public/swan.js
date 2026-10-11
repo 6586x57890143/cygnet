@@ -16,6 +16,10 @@
 
 const TAU = Math.PI * 2;
 const lerp = (a, b, t) => a + (b - a) * t;
+const smooth = (a, b, x) => {
+  const k = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return k * k * (3 - 2 * k);
+};
 
 // ramp is the shading, dark to light.
 export const ramp = " .,:-=+*#%@";
@@ -68,7 +72,8 @@ function bez(p, s) {
 }
 
 // model is the swan at t as points: x y z, then the normal, then what it
-// is (0 plumage, 1 eye, 2 beak, 3 the line between feathers), seven
+// is (0 plumage, 1 eye, 2 beak, 3 the edge of a feather, 4 to 6 the water's
+// rings, nearest first), seven
 // numbers a point.
 export function model(t, density = 1, pose = 0, sway = 0) {
   const m = shape(t, pose, sway);
@@ -83,46 +88,82 @@ export function model(t, density = 1, pose = 0, sway = 0) {
   };
   const n = (a) => Math.max(4, Math.round(a * density));
 
-  // The body: each slice across it a half ellipse standing on the water,
-  // as high and as wide as the profiles say there. The folded wings are
-  // its top: rows of feathers run back along it, and toward the rear the
-  // long ones lift.
+  // The body: each slice across it a hull standing in the water, as high
+  // and as wide as the profiles say there, fullest at the waterline. It
+  // rides a little nose down, deeper at the chest and higher at the stern,
+  // and the water cuts it where it meets y 0.
+  const trim = (u) => -0.07 * Math.max(0, -u) + 0.04 * Math.max(0, u);
+  const surface = (u, th) => {
+    const hh = profile(m.height, u), ww = profile(m.width, u);
+    return [u * m.len, hh * Math.pow(Math.sin(th), 0.85) + trim(u), ww * Math.cos(th), hh, ww];
+  };
   const bu = n(120), bv = n(120);
   for (let j = 0; j < bv; j++) {
     const u = -1 + 2 * ((j + jit()) / bv);
-    const x = u * m.len;
-    const hh = profile(m.height, u), ww = profile(m.width, u);
     const dh = (profile(m.height, u + 0.01) - profile(m.height, u - 0.01)) / 0.02;
     for (let i = 0; i < bu; i++) {
       const th = ((i + jit()) / bu) * Math.PI;
-      const y = hh * Math.sin(th), z = ww * Math.cos(th);
-      // Rows of feathers: a faint line every so often along the back.
-      const row = (u * 9 + Math.cos(th) * 2.5) % 1;
-      const kind = th > 0.5 && th < Math.PI - 0.5 && Math.abs(row) < 0.07 && u > -0.4 ? 3 : 0;
-      add(x, y, z, -dh * Math.sin(th) * 0.4, Math.sin(th) / hh, Math.cos(th) / ww, kind);
+      const [x, y, z, hh, ww] = surface(u, th);
+      if (y < -0.005) continue;
+      add(x, y, z, -dh * Math.sin(th) * 0.4, Math.sin(th) / hh, Math.cos(th) / ww, 0);
     }
   }
 
-  // The long feathers raised at the back of the folded wings, and the tail
-  // below them: points turned up and back.
-  const spike = (x0, y0, z0, len, ang, r0) => {
-    const su = n(10), sv = n(22);
-    const dx = Math.cos(ang), dy = Math.sin(ang);
-    for (let j = 0; j < sv; j++) {
-      const s = (j + jit()) / sv;
-      const r = r0 * (1 - s);
-      for (let i = 0; i < su; i++) {
-        const th = ((i + jit()) / su) * TAU;
-        const c = Math.cos(th), sn = Math.sin(th);
-        add(x0 + dx * len * s - dy * r * c, y0 + dy * len * s + dx * r * c, z0 + r * sn * 1.8, -dy * c, dx * c, sn, 0);
+  // The folded wings: a panel a side lying over the body like a roof, the
+  // two meeting in a ridge along the back. Each runs from the shoulder to
+  // past the tail, its lower edge a clean line along the flank. Toward the
+  // rear the long inner feathers (the tertials) lift off the back in a
+  // soft hump and end in layered, scalloped tips that overhang the tail.
+  // The feathers show as overlapping rows of scales.
+  for (const side of [1, -1]) {
+    const wu = n(150), wv = n(48);
+    for (let j = 0; j < wu; j++) {
+      const u = -0.38 + 1.52 * ((j + jit()) / wu);
+      const back = Math.min(1, u);
+      const edge = lerp(0.62, 0.9, Math.max(0, (u - 0.6) / 0.5)); // the flank line rises toward the rear
+      for (let i = 0; i < wv; i++) {
+        const v = (i + jit()) / wv;
+        // Past the body's end only the upper feathers go on, and their tips
+        // are scalloped, longest at the ridge.
+        if (u > 1 && (v > 0.55 || u - 1 > 0.14 * (1 - v) * (0.55 + 0.45 * Math.abs(Math.sin(v * Math.PI * 4))))) continue;
+        const th = side > 0 ? lerp(Math.PI / 2 - 0.03, edge, v) : lerp(Math.PI / 2 + 0.03, Math.PI - edge, v);
+        const [x0, y0, z0, hh, ww] = surface(back, th);
+        const rise = m.plumes * smooth(0.45, 1.05, u) * (1 - 0.6 * v) + 0.025 * (1 - v);
+        const x = u * m.len, y = y0 + 0.035 + rise, z = z0 * 1.04;
+        // Scales: the edge of each feather, a short arc, row on row.
+        const row = (u * 11 + Math.abs(Math.sin(v * Math.PI * 5)) * 0.45) % 1;
+        const kind = row < 0.07 && u > -0.2 ? 3 : 0;
+        add(x, y, z, 0.15 * smooth(0.5, 1, u), Math.sin(th) / hh, (Math.cos(th) / ww) * 0.8, kind);
       }
     }
-  };
-  for (const [k, z] of [[0, -0.18], [1, 0.18], [2, -0.06], [3, 0.06], [4, -0.3], [5, 0.3]]) {
-    const u = 0.66 + k * 0.035;
-    spike(u * m.len, profile(m.height, u) - 0.06, z, m.plumes * (1 - k * 0.08), 0.55 + k * 0.05, 0.05);
   }
-  for (const z of [-0.08, 0, 0.08]) spike(0.94 * m.len, profile(m.height, 0.94) * 0.7, z, m.tail, 0.75, 0.05);
+
+  // The tail: short, flat and pointed, under the wing tips and turned a
+  // little up, a thin slab with a face up and a face down.
+  const tu = n(30), tv = n(16);
+  for (let j = 0; j < tu; j++) {
+    const s = (j + jit()) / tu;
+    const half = 0.16 * (1 - s) * (0.4 + t * 0.6);
+    for (let i = 0; i < tv; i++) {
+      const v = -1 + 2 * ((i + jit()) / tv);
+      const x = (0.9 + m.tail * s) * m.len, z = half * v;
+      const y = profile(m.height, 0.9) * 0.62 + trim(0.9) + m.tail * 0.55 * s * s;
+      for (const face of [1, -1]) add(x, y + face * 0.012, z, -0.3 * face, face, 0, 0);
+    }
+  }
+
+  // The water where the swan is: the line it cuts round the hull, and
+  // rings spreading from it, flat at y 0 (kinds 4 to 6, fading outward), so the bird hides the
+  // far side of each and the near side crosses in front of it.
+  for (const [k, kind] of [[1.0, 4], [1.22, 5], [1.55, 6]]) {
+    const pts = n(260);
+    for (let i = 0; i < pts; i++) {
+      const g = (i / pts) * TAU;
+      // A gap now and then, so a ring reads as ripples and not a wire.
+      if (Math.sin(g * 9 + k * 5) > 0.55) continue;
+      add(Math.cos(g) * m.len * 1.06 * k, 0, Math.sin(g) * 0.58 * k, 0, 1, 0, kind);
+    }
+  }
 
   // The neck: a tube along the curve, thickest where it meets the chest.
   const nu = n(40), nv = n(200);
@@ -203,6 +244,8 @@ export function frame(pts, cols, rows, yaw, pitch, aspect = 0.55) {
   const refl = new Float32Array(cols * rows).fill(-1);
   const depth = new Float32Array(cols * rows).fill(-1e9);
   const rdepth = new Float32Array(cols * rows).fill(-1e9);
+  // water marks the cells the water's rings won, which aren't the bird's.
+  const water = new Uint8Array(cols * rows);
   const cyw = Math.cos(yaw), syw = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
   const horizon = rows * 0.72;
   const k = Math.min(cols / 2.9, (horizon - 1) / (2.05 * aspect));
@@ -222,7 +265,7 @@ export function frame(pts, cols, rows, yaw, pitch, aspect = 0.55) {
     let l = n1x * lx + n2y * ly + n2z * lz;
     // Light, a little ambient, and a rim where the surface turns away.
     const rim = Math.max(0, 1 - Math.abs(n2z)) ** 3 * 0.3;
-    l = kind === 1 ? 0.02 : kind === 2 ? 0.3 + 0.5 * Math.max(0, l) : kind === 3 ? 0.06 + 0.4 * Math.max(0, l) : Math.min(1, 0.12 + 0.82 * Math.max(0, l) ** 0.85 + rim);
+    l = kind >= 4 ? [0.62, 0.42, 0.26][kind - 4] : kind === 1 ? 0.02 : kind === 2 ? 0.3 + 0.5 * Math.max(0, l) : kind === 3 ? 0.06 + 0.4 * Math.max(0, l) : Math.min(1, 0.12 + 0.82 * Math.max(0, l) ** 0.85 + rim);
     const cx = Math.round(ox + x1 * k);
     const cyy = Math.round(horizon - y2 * k * aspect);
     if (cx >= 0 && cx < cols && cyy >= 0 && cyy < rows) {
@@ -230,6 +273,7 @@ export function frame(pts, cols, rows, yaw, pitch, aspect = 0.55) {
       if (z2 > depth[i]) {
         depth[i] = z2;
         shade[i] = l;
+        water[i] = kind >= 4 ? 1 : 0;
       }
     }
     // The reflection: the bird again below the line, squashed and dim.
@@ -258,10 +302,11 @@ export function frame(pts, cols, rows, yaw, pitch, aspect = 0.55) {
   for (let j = 1; j < rows - 1; j++) {
     for (let i = 1; i < cols - 1; i++) {
       const q = j * cols + i;
-      if (shade[q] >= 0 && (shade[q - 1] < 0 || shade[q + 1] < 0 || shade[q - cols] < 0 || shade[q + cols] < 0)) edge[q] = 1;
+      const bird = (r) => shade[r] >= 0 && !water[r];
+      if (bird(q) && (!bird(q - 1) || !bird(q + 1) || !bird(q - cols) || !bird(q + cols))) edge[q] = 1;
     }
   }
-  return { shade, refl, edge, horizon: Math.round(horizon) };
+  return { shade, refl, edge, water, horizon: Math.round(horizon) };
 }
 
 // text is a frame as lines of characters, for a page without script.
