@@ -133,8 +133,9 @@ export function model(t, density = 1, pose = 0, sway = 0) {
     // its edge and shades the one under it. Along the lower wing the long
     // flight feathers run back in shallow grooves.
     const across = u * 10 + 0.35 * Math.sin(v * Math.PI * 2);
-    const rows = 0.016 * (across - Math.floor(across)) * (1 - 0.3 * v) * smooth(-0.3, -0.1, u);
-    const grooves = 0.009 * Math.abs(Math.sin(v * Math.PI * 7)) * smooth(0.5, 0.75, v) * smooth(-0.1, 0.2, u);
+    // Swan plumage is smooth: each row only a soft swell, not a step.
+    const rows = 0.006 * Math.sin(Math.PI * (across - Math.floor(across))) ** 2 * (1 - 0.3 * v) * smooth(-0.3, -0.1, u);
+    const grooves = 0.004 * Math.sin(v * Math.PI * 7) ** 2 * smooth(0.5, 0.75, v) * smooth(-0.1, 0.2, u);
     const out = 0.035 + rows + grooves;
     return [u * m.len, y0 + rise + out * Math.sin(th), z0 * 1.04 + out * Math.cos(th) * 0.8];
   };
@@ -156,7 +157,7 @@ export function model(t, density = 1, pose = 0, sway = 0) {
         if (ny * y + nz * z < 0) (nx = -nx), (ny = -ny), (nz = -nz);
         // Scales: the edge of each feather, a short arc, row on row.
         const row = (u * 11 + Math.abs(Math.sin(v * Math.PI * 5)) * 0.45) % 1;
-        const kind = row < 0.07 && u > -0.2 ? 3 : 0;
+        const kind = row < 0.05 && u > -0.2 ? 3 : 0;
         add(x, y, z, nx, ny, nz, kind);
       }
     }
@@ -297,7 +298,7 @@ export function frame(pts, cols, rows, yaw, pitch, aspect = 0.55, light = [-0.45
     let l = n1x * lx + n2y * ly + n2z * lz;
     // Light, a little ambient, and a rim where the surface turns away.
     const rim = Math.max(0, 1 - Math.abs(n2z)) ** 3 * 0.3;
-    l = kind >= 4 ? [0.62, 0.42, 0.26][kind - 4] : kind === 1 ? 0.02 : kind === 2 ? 0.3 + 0.5 * Math.max(0, l) : kind === 3 ? (0.1 + 0.82 * Math.max(0, l) ** 0.85) * 0.72 : Math.min(1, 0.12 + 0.82 * Math.max(0, l) ** 0.85 + rim);
+    l = kind >= 4 ? [0.62, 0.42, 0.26][kind - 4] : kind === 1 ? 0.02 : kind === 2 ? 0.3 + 0.5 * Math.max(0, l) : kind === 3 ? (0.1 + 0.82 * Math.max(0, l) ** 0.85) * 0.9 : Math.min(1, 0.12 + 0.82 * Math.max(0, l) ** 0.85 + rim);
     const cx = Math.round(ox + x1 * k);
     const cyy = Math.round(horizon - y2 * k * aspect);
     if (cx >= 0 && cx < cols && cyy >= 0 && cyy < rows) {
@@ -330,6 +331,19 @@ export function frame(pts, cols, rows, yaw, pitch, aspect = 0.55, light = [-0.45
       if (around.length >= 3) shade[q] = around.reduce((a, b) => a + b, 0) / around.length;
     }
   }
+  // Soften the shading as down softens light: each bird cell eased toward
+  // its bird neighbours, so no lone sample turns into a dark speck.
+  const soft = Float32Array.from(shade);
+  for (let j = 1; j < rows - 1; j++) {
+    for (let i = 1; i < cols - 1; i++) {
+      const q = j * cols + i;
+      if (shade[q] < 0 || water[q]) continue;
+      let sum = shade[q] * 2, n = 2;
+      for (const r of [q - 1, q + 1, q - cols, q + cols]) if (shade[r] >= 0 && !water[r]) (sum += shade[r]), n++;
+      soft[q] = Math.max(shade[q], sum / n);
+    }
+  }
+  shade.set(soft);
   // edge is each drawn cell beside an empty one: the outline, drawn bright.
   const edge = new Uint8Array(cols * rows);
   for (let j = 1; j < rows - 1; j++) {
