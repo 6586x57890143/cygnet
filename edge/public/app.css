@@ -57,25 +57,30 @@ body {
 
 main {
   position: relative; z-index: 1;
-  width: min(460px, 100%); margin: 0 auto;
-  padding: max(30svh, 170px) max(16px, env(safe-area-inset-right)) 48px max(16px, env(safe-area-inset-left));
-  display: grid; gap: 0;
+  max-width: 1360px; margin: 0 auto;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 48px max(16px, env(safe-area-inset-left));
+  display: grid; gap: 8px 48px;
+  grid-template-areas: "hero" "card" "privacy";
 }
-@media (min-width: 900px) { main { padding-top: max(26svh, 210px); } }
+@media (min-width: 900px) {
+  main { min-height: 100svh; align-content: center; grid-template-columns: minmax(0, 1.4fr) minmax(380px, 460px); grid-template-areas: "hero card" "hero privacy"; padding-top: 48px; }
+}
 
-/* The swan: a point cloud behind everything but the field, spread round
-   the card. Without script, its still frame, faint, in the same place. */
-.hero { position: fixed; inset: 0; margin: 0; z-index: 0; pointer-events: none; }
+/* The swan: its still frame in the hero, then drawn live on a canvas over
+   the whole page, so its water can run the width of the screen. */
+.hero { grid-area: hero; position: relative; margin: 0; height: clamp(220px, 34svh, 340px); pointer-events: none; }
+@media (min-width: 900px) { .hero { height: auto; } }
 .hero .ascii {
-  position: absolute; left: 0; right: 0; top: 0; height: 74svh; margin: 0; display: grid; place-items: end center; overflow: hidden; white-space: pre;
-  color: var(--swan); opacity: .22; font: calc(min(100vw, 1100px) / 74)/1.1 var(--mono); text-transform: none;
+  position: absolute; inset: 0; margin: 0; display: grid; place-items: center; overflow: hidden; white-space: pre;
+  color: var(--swan); opacity: .8; font: calc(min(100vw - 32px, 560px) / 62)/1.1 var(--mono); text-transform: none;
 }
-.swan { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; transition: opacity 1.6s ease; }
+.swan { position: fixed; inset: 0; width: 100%; height: 100%; z-index: -1; opacity: 0; transition: opacity 1.2s ease; filter: drop-shadow(0 0 6px var(--glow)); }
 .hero.live .swan { opacity: 1; }
 .hero.live .ascii { opacity: 0; transition: opacity .8s ease; }
 
 /* The card. */
 .card {
+  grid-area: card; align-self: end;
   background: var(--glass); border: 1px solid var(--edge); border-radius: 18px;
   padding: clamp(20px, 4vw, 30px);
   -webkit-backdrop-filter: blur(14px) saturate(120%); backdrop-filter: blur(14px) saturate(120%);
@@ -131,7 +136,7 @@ button.quiet:hover { color: var(--text); transform: none; }
 @keyframes pulse { 50% { opacity: .25; transform: scale(.7); } }
 
 /* Privacy: there, readable, not asking for attention. */
-.privacy { margin-top: 30px; max-width: 52ch; color: var(--muted); opacity: .55; font: 11.5px/1.6 var(--mono); transition: opacity .3s ease; }
+.privacy { grid-area: privacy; align-self: start; margin-top: 30px; max-width: 52ch; color: var(--muted); opacity: .55; font: 11.5px/1.6 var(--mono); transition: opacity .3s ease; }
 .privacy:hover, .privacy:focus-within { opacity: .85; }
 .privacy p { margin: 0 0 10px; }
 .privacy p:first-child { letter-spacing: .2em; }

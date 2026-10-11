@@ -26,9 +26,9 @@ function shape(t, pose, sway) {
     lift: L(0.04, 0.22),
     neck: [
       [L(-0.52, -0.74), L(0.28, 0.34), 0],
-      [L(-0.78, P(-1.08, -1.2)), L(0.5, P(0.72, 0.8)), sway * 0.3],
-      [L(-0.4, P(-0.52, -0.7)), L(0.72, P(1.18, 1.3)), sway * 0.8],
-      [L(-0.62, P(-0.86, -1.02)), L(0.86, P(1.52, 1.44)), sway],
+      [L(-0.78, P(-1.16, -1.22)), L(0.5, P(0.82, 0.86)), sway * 0.3],
+      [L(-0.4, P(-0.26, -0.36)), L(0.72, P(1.24, 1.3)), sway * 0.8],
+      [L(-0.62, P(-0.7, -0.8)), L(0.86, P(1.52, 1.48)), sway],
     ],
     neckR: [L(0.21, 0.18), L(0.12, 0.068)],
     head: [L(0.16, 0.17), L(0.13, 0.1), L(0.12, 0.09)],
@@ -47,7 +47,7 @@ function bez(p, s) {
 
 // model is the swan at t as points: x y z, then the normal, then what it
 // is (0 plumage, 1 eye, 2 beak), seven numbers a point.
-export function model(t, density = 1, pose = 0, sway = 0, wings = 1) {
+export function model(t, density = 1, pose = 0, sway = 0, wings = 0) {
   const m = shape(t, pose, sway);
   const out = [];
   // Samples sit off the grid by a fixed random amount, so the surface reads
@@ -78,43 +78,22 @@ export function model(t, density = 1, pose = 0, sway = 0, wings = 1) {
     }
   }
 
-  // The wings: each a fan of feathers from the shoulder, spread out to
-  // its side by open (0 folded along the back, 1 held wide and high like
-  // a swan rising on the water), the leading edge arching up and out and
-  // the feathers hanging from it, longest toward the tip. Brightness steps
-  // feather to feather, and the primaries' tips are ragged.
-  const open = Math.min(1, t * 1.15) * wings;
-  const feathers = 16;
-  for (const side of [1, -1]) {
-    const fold = (k) =>
-      k === "lead"
-        ? [[-0.15, 0.45, 0.3], [0.2, 0.56, 0.42], [0.6, 0.56, 0.42], [0.95, 0.5, 0.36]]
-        : [[0.3, 0.38, 0.3], [0.6, 0.38, 0.4], [0.9, 0.4, 0.4], [1.02, 0.44, 0.34]];
-    const wide = (k) =>
-      k === "lead"
-        ? [[0.02, 0.6, 0.26], [0.1, 1.3, 0.62], [0.2, 1.62, 1.22], [0.38, 1.46, 1.95]]
-        : [[0.2, 0.32, 0.28], [0.3, 0.42, 0.74], [0.42, 0.72, 1.36], [0.5, 1.04, 2.05]];
-    const curve = (k) => fold(k).map((a, q) => [0, 1, 2].map((d) => lerp(a[d], wide(k)[q][d], open) * (d === 2 ? side : 1)));
-    const lead = curve("lead"), tips = curve("tips");
-    const fu = n(220), fv = n(76);
-    for (let i = 0; i < fu; i++) {
-      const u = (i + jit()) / fu;
-      const f = (u * feathers) % 1;
-      const a = bez(lead, u), b = bez(tips, u);
-      const a2 = bez(lead, Math.min(1, u + 0.01));
-      // The primaries, toward the tip, hang past the trailing line.
-      const reach = 1 + (u > 0.4 ? 0.22 * (1 - f) * (u - 0.4) * 1.8 : 0.05 * (1 - f));
-      // The normal: across the span and down the feathers, facing front.
-      const e1 = [a2[0] - a[0], a2[1] - a[1], a2[2] - a[2]], e2 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
-      let nx = e1[1] * e2[2] - e1[2] * e2[1], ny = e1[2] * e2[0] - e1[0] * e2[2], nz = e1[0] * e2[1] - e1[1] * e2[0];
-      if (nx > 0) (nx = -nx), (ny = -ny), (nz = -nz);
-      for (let j = 0; j < fv; j++) {
-        const v = ((j + jit()) / fv) * reach;
-        // Toward the tip the long feathers part, so they read one by one.
-        if (u > 0.38 && v > 0.5 && f < 0.24) continue;
-        // A little camber, so each wing cups forward and isn't flat.
-        const cup = Math.sin(Math.PI * Math.min(1, v)) * 0.08 * (1 - u * 0.4);
-        add(lerp(a[0], b[0], v) - cup, lerp(a[1], b[1], v), lerp(a[2], b[2], v), nx, ny, nz, f < 0.1 ? 3 : 0);
+  // The wings, folded and raised a little along the back, one a side: the
+  // upper shell only, since a folded wing shows its top. lift raises them
+  // a touch off the back, as a swan does when it settles its feathers.
+  for (const side of [-1, 1]) {
+    const wu = n(76), wv = n(40);
+    const [rx, ry, rz] = m.wing;
+    const raise = m.wingLift + 0.08 * wings;
+    for (let j = 0; j < wv; j++) {
+      const ph = ((j + jit()) / wv) * Math.PI;
+      for (let i = 0; i < wu; i++) {
+        const th = ((i + jit()) / wu) * Math.PI;
+        const lx = rx * Math.cos(th) * Math.sin(ph), ly = ry * Math.sin(th) * Math.sin(ph), lz = rz * Math.cos(ph);
+        const x = 0.16 * m.len + lx;
+        const y = cy + m.ry * 0.5 + ly + raise * Math.max(0, lx / rx + 0.3) ** 2;
+        const z = side * (m.rz * 0.5) + lz;
+        add(x, y, z, lx / (rx * rx), ly / (ry * ry), lz / (rz * rz), 0);
       }
     }
   }
@@ -143,7 +122,7 @@ export function model(t, density = 1, pose = 0, sway = 0, wings = 1) {
   // Tip the head 40 degrees toward straight down, whichever way is shorter.
   const down = -Math.PI / 2;
   let dlt = ((down - ang + 3 * Math.PI) % TAU) - Math.PI;
-  ang += Math.sign(dlt) * Math.min(Math.abs(dlt), 0.7);
+  ang += Math.sign(dlt) * Math.min(Math.abs(dlt), 0.45);
   const fx = Math.cos(ang), fy = Math.sin(ang);
   const ux = -fy, uy = fx; // up, across the head
   const [rx, ry, rz] = m.head;
@@ -209,8 +188,7 @@ export function frame(pts, cols, rows, yaw, pitch, aspect = 0.55) {
   const rdepth = new Float32Array(cols * rows).fill(-1e9);
   const cyw = Math.cos(yaw), syw = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
   const horizon = rows * 0.72;
-  // Wide enough for the wings spread, tall enough for the head.
-  const k = Math.min(cols / 4.8, (horizon - 1) / (1.8 * aspect));
+  const k = Math.min(cols / 2.7, (horizon - 1) / (1.8 * aspect));
   const ox = cols / 2 - k * 0.06;
   const deep = rows - horizon;
   // The light: above, a little left and toward the viewer.

@@ -1,6 +1,6 @@
 // cygnet.lol's moving parts. Each is an extra: every page works without
 // this file, and with reduced motion nothing here moves.
-import { model } from "./swan.js";
+import { frame, model, ramp } from "./swan.js";
 
 const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -68,15 +68,14 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
   requestAnimationFrame(loop);
 })();
 
-// The swan: the model in swan.js as a sparse, see-through cloud of points
-// behind everything but the field. It faces you with its wings spread
-// round the card, its neck rising over it: it turns a little, beats its
-// wings slowly, nods and sways, leans toward the pointer, and every point
-// shimmers and twinkles on its own. It grows from the stage last seen on
-// this device to this page's. The water it stands in is a line of digits
-// in a slow wave, level with the card's bottom edge on a wide screen and
-// its top edge on a phone, and the reflection ripples with it. The still
-// frame the page came with stays until the first live one is drawn.
+// The swan: the model in swan.js drawn as shaded ASCII beside the card,
+// its outline bright. It turns a little on the water, nods and sways its
+// neck, leans toward the pointer, and grows from the stage last seen on
+// this device to this page's. The water it sits on is a line of digits in
+// a slow wave across the whole screen, level with the card's bottom edge
+// on a wide screen and its top edge on a phone, and the reflection
+// ripples with it. The still frame the page came with stays until the
+// first live one is drawn.
 (() => {
   const c = document.querySelector("canvas.swan");
   if (!c) return;
@@ -91,9 +90,8 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
   } catch {}
   if (still) t = to;
   const from = t;
-  const density = 0.42;
-  let w = 0, h = 0, cx = 0, cy = 0, size = 200, ink = "236,230,218";
-  let lean = 0, aim = 0, tilt = 0, aimTilt = 0;
+  let w = 0, h = 0, cy = 0, bx = 0, by = 0, cw = 6, ch = 10, cols = 0, rows = 0, ink = "236,230,218";
+  let lean = 0, aim = 0;
   function place() {
     const dpr = Math.min(devicePixelRatio || 1, 2);
     w = innerWidth;
@@ -101,18 +99,26 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
     c.width = w * dpr;
     c.height = h * dpr;
     x.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const r = hero.getBoundingClientRect();
     const k = card.getBoundingClientRect();
     const wide = w >= 900;
-    cx = k.left + k.width / 2;
-    // The wings span about 4.6 sizes and the head stands 1.75 above the
-    // water: as big as fits, with the head clear of the card's top.
-    size = Math.min(w / 4.9, h * 0.34);
-    cy = wide ? Math.min(k.bottom, k.top - 28 + 1.72 * size) : k.top - 8;
-    size = Math.min(size, (cy - 14) / 1.8);
+    cy = wide ? k.bottom : k.top - 10;
+    ch = wide ? 8 : 6;
+    cw = ch * 0.6;
+    // The swan's box: a little over half the hero wide, its water line
+    // (at 72% of its height) on the card's.
+    const bw = Math.min(wide ? r.width * 0.86 : w * 0.92, 760);
+    const bh = bw * 0.8;
+    bx = (wide ? r.left + r.width / 2 : w / 2) - bw / 2;
+    by = cy - bh * 0.72;
+    cols = Math.floor(bw / cw);
+    rows = Math.floor(bh / ch);
+    x.font = `${ch}px ui-monospace, Menlo, Consolas, monospace`;
+    x.textBaseline = "top";
     ink = getComputedStyle(document.documentElement).getPropertyValue("--ink").trim() || ink;
   }
   // wave is the water's height at a point along it.
-  const wave = (gx, s) => Math.sin(gx * 0.012 + s * 1.1) * 5 + Math.sin(gx * 0.041 - s * 0.7) * 1.6;
+  const wave = (gx, s) => Math.sin(gx * 0.012 + s * 1.1) * 4 + Math.sin(gx * 0.041 - s * 0.7) * 1.4;
   // hash is a steady random number for an integer pair.
   const hash = (a, b) => {
     const v = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453;
@@ -120,79 +126,74 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
   };
   function draw(now, pts) {
     const s = now / 1000;
-    lean += (aim - lean) * 0.03;
-    tilt += (aimTilt - tilt) * 0.03;
-    const yaw = -Math.PI / 2 + Math.sin(s * 0.13) * 0.32 + lean;
-    const pitch = 0.12 + Math.sin(s * 0.21) * 0.04 + tilt;
-    const cyw = Math.cos(yaw), syw = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
-    const bob = Math.sin(s * 0.5) * size * 0.01;
+    lean += (aim - lean) * 0.04;
+    const f = frame(pts, cols, rows, -0.55 + Math.sin(s * 0.23) * 0.22 + lean, 0.13 + Math.sin(s * 0.41) * 0.025, cw / ch);
     x.clearRect(0, 0, w, h);
-    // The water: digits along a slow wave, brightest under the swan.
-    x.font = "10px ui-monospace, Menlo, Consolas, monospace";
-    x.textBaseline = "middle";
-    // Each digit changes on its own every few seconds.
-    const step = 9;
-    for (let gx = 0, q = 0; gx < w; gx += step, q++) {
-      const near = Math.max(0, 1 - Math.abs(gx - cx) / (size * 3.2));
-      const tick = Math.floor(s * 0.5 + hash(q, 1) * 7);
-      x.fillStyle = `rgba(${ink},${(0.1 + 0.42 * near * near).toFixed(3)})`;
-      x.fillText(String(Math.floor(hash(q, tick) * 10)), gx, cy + wave(gx, s));
-    }
-    for (let p = 0, n = 0; p < pts.length; p += 7, n++) {
-      const ph = n * 2.399;
-      // Each point shimmers a little around where it belongs.
-      const px = pts[p] + Math.sin(s * 0.9 + ph) * 0.01, py = pts[p + 1] + Math.cos(s * 0.7 + ph * 1.3) * 0.01, pz = pts[p + 2];
-      const x1 = px * cyw + pz * syw, z1 = -px * syw + pz * cyw;
-      const y2 = py * cp - z1 * sp, z2 = py * sp + z1 * cp;
-      const nx = pts[p + 3] * cyw + pts[p + 5] * syw, nz0 = -pts[p + 3] * syw + pts[p + 5] * cyw;
-      const ny = pts[p + 4] * cp - nz0 * sp, nz = pts[p + 4] * sp + nz0 * cp;
-      const persp = 5 / (5 - z2);
-      const sx = cx + x1 * size * persp, sy = cy + bob - y2 * size * persp;
-      const light = Math.max(0, -0.35 * nx + 0.6 * ny + 0.7 * Math.abs(nz));
-      const near = Math.min(1, Math.max(0, (z2 + 2) / 4));
-      const twinkle = 0.72 + 0.28 * Math.sin(s * 2.1 + ph * 3.7);
-      const kind = pts[p + 6];
-      let a = (0.14 + 0.5 * light) * (0.5 + 0.5 * near) * twinkle;
-      if (kind === 1) a = 0.75;
-      else if (kind === 3) a *= 0.55;
-      const d = (0.7 + near * 1.1) * Math.max(1, size / 240);
-      x.fillStyle = `rgba(${ink},${a.toFixed(3)})`;
-      x.fillRect(sx, sy, d, d);
-      // The reflection: the point again below the water, fainter, carried
-      // by the wave and broken up by ripples the deeper it goes.
-      if (py > 0) {
-        const depth = y2 * size * persp * 0.6;
-        const rx = sx + Math.sin(depth * 0.16 + s * 2.2) * Math.min(6, depth * 0.04);
-        x.fillStyle = `rgba(${ink},${(a * 0.2 * (1 - Math.min(1, depth / (size * 1.1)))).toFixed(3)})`;
-        x.fillRect(rx, cy + wave(rx, s) + 6 + depth, d, d * 0.6);
+    const bands = 10;
+    const lanes = Array.from({ length: bands }, () => []);
+    const rims = [];
+    const glints = [];
+    for (let j = 0; j < rows; j++) {
+      for (let i = 0; i < cols; i++) {
+        const q = j * cols + i;
+        const v = f.shade[q];
+        if (v >= 0 && f.edge[q]) rims.push(i, j, v);
+        else if (v >= 0) lanes[Math.min(bands - 1, Math.floor(v * bands))].push(i, j);
+        else if (f.refl[q] > 0.03) glints.push(i, j, f.refl[q]);
       }
     }
+    const lift = (by + f.horizon * ch) - cy; // so the bird's water is the card's
+    for (let b = 0; b < bands; b++) {
+      x.fillStyle = `rgba(${ink},${0.3 + (b / (bands - 1)) * 0.7})`;
+      const g = ramp[1 + Math.round((b / (bands - 1)) * (ramp.length - 2))];
+      const lane = lanes[b];
+      for (let n = 0; n < lane.length; n += 2) x.fillText(g, bx + lane[n] * cw, by - lift + lane[n + 1] * ch);
+    }
+    // The outline: every cell at the edge of the bird, bright and solid.
+    x.fillStyle = `rgba(${ink},0.95)`;
+    for (let n = 0; n < rims.length; n += 3) x.fillText(rims[n + 2] > 0.5 ? "#" : "*", bx + rims[n] * cw, by - lift + rims[n + 1] * ch);
+    // The reflection, carried by the wave and broken up by ripples the
+    // deeper it goes.
+    for (let n = 0; n < glints.length; n += 3) {
+      const i = glints[n], j = glints[n + 1], v = glints[n + 2];
+      const gx = bx + i * cw;
+      const deep = j - f.horizon;
+      const rx = gx + Math.sin(deep * 0.9 + s * 2.2) * Math.min(5, deep * 0.5);
+      x.fillStyle = `rgba(${ink},${(0.05 + v * 0.35).toFixed(3)})`;
+      x.fillText(ramp[1 + Math.min(3, Math.floor(v * 8))], rx, by - lift + j * ch + wave(gx, s));
+    }
+    // The water: digits along a slow wave across the screen, brightest
+    // under the swan, each changing on its own every few seconds.
+    x.font = `${ch + 1}px ui-monospace, Menlo, Consolas, monospace`;
+    const mid = bx + (cols * cw) / 2;
+    for (let gx = 0, q = 0; gx < w; gx += cw * 1.5, q++) {
+      const near = Math.max(0, 1 - Math.abs(gx - mid) / (cols * cw));
+      const tick = Math.floor(s * 0.5 + hash(q, 1) * 7);
+      x.fillStyle = `rgba(${ink},${(0.12 + 0.45 * near * near).toFixed(3)})`;
+      x.fillText(String(Math.floor(hash(q, tick) * 10)), gx, cy - ch * 0.6 + wave(gx, s));
+    }
+    x.font = `${ch}px ui-monospace, Menlo, Consolas, monospace`;
   }
   place();
   addEventListener("resize", place);
   addEventListener("scroll", place, { passive: true });
   matchMedia("(prefers-color-scheme: light)").addEventListener("change", place);
-  addEventListener(
-    "pointermove",
-    (e) => {
-      aim = (e.clientX / innerWidth - 0.5) * 0.7;
-      aimTilt = (e.clientY / innerHeight - 0.5) * 0.16;
-    },
-    { passive: true },
-  );
+  addEventListener("pointermove", (e) => (aim = (e.clientX / innerWidth - 0.5) * 0.6), { passive: true });
   const start = performance.now();
   let last = 0;
+  let pts = model(t);
   const loop = (now) => {
-    if (!document.hidden && now - last > 30) {
+    if (!document.hidden && now - last > 33) {
       last = now;
       if (t !== to) {
-        const k = Math.min(1, (now - start) / 2800);
+        const k = Math.min(1, (now - start) / 2600);
         t = from + (to - from) * (1 - Math.pow(1 - k, 3));
         if (k === 1) t = to;
       }
       const s = still ? 0 : now / 1000;
-      // The neck nods and sways, and the wings beat slowly.
-      draw(still ? 0 : now, model(t, density, 0.25 + Math.sin(s * 0.17) * 0.25, Math.sin(s * 0.4) * 0.09, 0.9 + Math.sin(s * 0.55) * 0.1));
+      // The neck nods and sways; the model is drawn fresh for it.
+      pts = model(t, 1, 0.12 + Math.sin(s * 0.19) * 0.12, Math.sin(s * 0.37) * 0.07);
+      draw(still ? 0 : now, pts);
       hero.classList.add("live");
     }
     if (!still) requestAnimationFrame(loop);

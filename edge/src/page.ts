@@ -74,7 +74,7 @@ const stills = new Map<number, string>();
 export function still(t: number): string {
   let s = stills.get(t);
   if (!s) {
-    s = text(frame(model(t), 120, 44, -Math.PI / 2, 0.1), 120, 44);
+    s = text(frame(model(t), 96, 40, -0.55, 0.14), 96, 40);
     stills.set(t, s);
   }
   return s;
