@@ -61,6 +61,22 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # edge/ is the Worker at cygnet.lol: typed against its own bindings,
+  # and its rules and SQL run against SQLite, which D1 is.
+  edge:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: edge
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - run: npm ci --no-audit --no-fund
+      - run: npm run check
+      - run: npm test
+
   prose:
     runs-on: ubuntu-latest
     steps:

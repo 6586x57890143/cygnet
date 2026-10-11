@@ -598,6 +598,9 @@ func pressOn(t *testing.T, m *Module, g *guildFake, customID, user string) (*[]d
 	if strings.HasPrefix(customID, confirmID) {
 		return &got, m.confirmPressed(context.Background(), e)
 	}
+	if strings.HasPrefix(customID, campaignID) {
+		return &got, m.campaignPressed(context.Background(), e)
+	}
 	if strings.HasPrefix(customID, previewID) {
 		return &got, m.previewAgain(context.Background(), e)
 	}

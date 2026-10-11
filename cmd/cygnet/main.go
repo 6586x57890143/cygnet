@@ -175,7 +175,7 @@ func run(log *slog.Logger) error {
 	all := []core.Module{
 		st,
 		perf.New(obs.Default),
-		provision.New(fleet, func() discord.Permissions { return core.Install(running).Permissions }, func(i discord.Interaction) bool { return router.Admin(i) }, g).Keep(kept, saveKept, log),
+		provision.New(fleet, func() discord.Permissions { return core.Install(running).Permissions }, func(i discord.Interaction) bool { return router.Admin(i) }, g).Keep(kept, saveKept, log).Launch(edge()),
 		help.New(func() []core.Module { return running }, func(i discord.Interaction) bool { return router.Admin(i) }, toggles),
 	}
 
@@ -340,4 +340,18 @@ func env(k, def string) string {
 		return v
 	}
 	return def
+}
+
+// edge is the Worker at cygnet.lol that /provision launch registers with,
+// if CYGNET_EDGE_URL and CYGNET_EDGE_TOKEN (the Worker's ADMIN_TOKEN) are set.
+func edge() *provision.Edge {
+	u, t := os.Getenv("CYGNET_EDGE_URL"), os.Getenv("CYGNET_EDGE_TOKEN")
+	if u == "" || t == "" {
+		return nil
+	}
+	e := &provision.Edge{URL: u, Token: t}
+	if id, err := snowflake.Parse(os.Getenv("CYGNET_BOOTSTRAP_ADMIN_USER_ID")); err == nil {
+		e.Breakglass = id
+	}
+	return e
 }

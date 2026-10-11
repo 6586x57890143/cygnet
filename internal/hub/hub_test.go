@@ -122,11 +122,10 @@ func TestRefusals(t *testing.T) {
 	h, url := fleet(t)
 	release := make(chan struct{})
 	bird(t, url, "merlin", func(c *link.Client) {
-		c.Handle("hold", func(ctx context.Context, _ link.Call) (any, error) {
-			select {
-			case <-release:
-			case <-ctx.Done():
-			}
+		// hold answers only once released: answering when its deadline
+		// passes could reach the caller before its own timeout does.
+		c.Handle("hold", func(context.Context, link.Call) (any, error) {
+			<-release
 			return nil, nil
 		})
 		c.Handle("deny", func(context.Context, link.Call) (any, error) { return nil, link.Err(link.Denied, "not for you") })
@@ -330,10 +329,13 @@ func TestLeavingAndReplacing(t *testing.T) {
 	h, url := fleet(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	merlin := link.New(link.Config{URL: "ws" + strings.TrimPrefix(url, "http") + "/v1/link", Token: tokens["merlin"]})
-	entered := make(chan struct{})
-	merlin.Handle("hang", func(hctx context.Context, _ link.Call) (any, error) {
+	// The handler never answers before merlin is gone: an answer racing the
+	// closing link would reach skua instead of offline.
+	entered, hold := make(chan struct{}), make(chan struct{})
+	t.Cleanup(func() { close(hold) })
+	merlin.Handle("hang", func(context.Context, link.Call) (any, error) {
 		close(entered)
-		<-hctx.Done()
+		<-hold
 		return nil, nil
 	})
 	done := make(chan struct{})

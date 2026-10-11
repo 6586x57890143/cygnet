@@ -1,0 +1,31 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cygnet-edge",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": false,
+  "routes": [{ "pattern": "cygnet.lol", "custom_domain": true }],
+  "assets": { "directory": "./public" },
+  // A sign up makes several D1 round trips: the Worker runs beside the
+  // database, while the art is still served from the edge nearest the
+  // person.
+  "placement": { "mode": "smart" },
+  "d1_databases": [
+    // database_id comes from `wrangler d1 create cygnet-edge` (docs/edge.md).
+    { "binding": "DB", "database_name": "cygnet-edge", "database_id": "721e043a-515b-4cea-ab9a-7983681a2260", "migrations_dir": "migrations" }
+  ],
+  // Forgets the hashes that have done their job (src/signup.ts).
+  "triggers": { "crons": ["17 4 * * *"] },
+  "vars": {
+    // cygnet's application ID and the Turnstile widget's site key, both
+    // public. The secrets are DISCORD_CLIENT_SECRET, TURNSTILE_SECRET,
+    // HMAC_KEY, ADMIN_TOKEN and SCW_SECRET_KEY, set with `wrangler secret put`.
+    "DISCORD_CLIENT_ID": "1558558264885776516",
+    "TURNSTILE_SITEKEY": "0x4AAAAAAFTug37RCCpuOI3k",
+    // The Scaleway project Transactional Email bills; its secret key is
+    // SCW_SECRET_KEY, a secret.
+    "SCW_PROJECT_ID": "64f0e035-b3dd-41ac-a0c9-2d066bac57e6"
+  },
+  // Off: a request's URL can hold an invite code, and logs keep URLs.
+  "observability": { "enabled": false }
+}

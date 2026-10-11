@@ -1,0 +1,15 @@
+{
+  "name": "cygnet-edge",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "wrangler types && tsc",
+    "test": "node --test test/*.test.ts",
+    "dev": "wrangler dev",
+    "deploy": "wrangler d1 migrations apply cygnet-edge --remote && wrangler deploy"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2",
+    "wrangler": "4.149.0"
+  }
+}
