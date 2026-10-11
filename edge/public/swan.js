@@ -41,36 +41,52 @@ function profile(knots, x) {
 // shape is the swan's measurements at t, its neck nodding by pose (0 head
 // up, 1 head lower) and swaying by sway.
 function shape(t, pose, sway) {
-  const L = (a, b) => lerp(a, b, t);
-  return {
-    scale: L(0.6, 1),
-    // The body: an egg, low in the water and rising to a lifted tail, the
-    // folded wings raised a little toward the rear.
-    ry: L(0.38, 0.34),
-    rz: L(0.52, 0.46),
-    lift: L(0.04, 0.22),
-    wing: [L(0.4, 0.66), L(0.12, 0.2), L(0.1, 0.12)],
-    wingLift: L(0.02, 0.13),
-    len: L(0.86, 1.05),
-    // How high the back stands above the water along the body, and how
-    // wide it is, from the chest (-1) to the tail (1).
-    // The back rises from the breast to its height two thirds of the way
-    // back, then slopes down to a narrow stern, where the tail comes out.
-    height: [[-1, L(0.2, 0.16)], [-0.75, L(0.42, 0.38)], [-0.35, L(0.58, 0.64)], [0.1, L(0.64, 0.78)], [0.5, L(0.6, 0.86)], [0.74, L(0.5, 0.8)], [0.9, L(0.38, 0.6)], [1, L(0.24, 0.34)]],
-    width: [[-1, 0.1], [-0.75, 0.36], [-0.3, 0.52], [0.3, 0.54], [0.75, 0.42], [0.92, 0.22], [1, 0.08]],
+  // The adult is the model; a younger bird is the adult in a cygnet's
+  // proportions, each a factor that reaches 1 at t = 1: a rounder, shorter
+  // body, a short thick neck on the adult's own curve, a big head, a short
+  // beak, small low wings and no lifted plumes yet. Every stage has the
+  // adult's detail, only its shape changes.
+  const G = (young) => lerp(young, 1, t);
+  const adult = {
+    ry: 0.34,
+    rz: 0.46,
+    lift: 0.22,
+    wing: [0.66, 0.2, 0.12],
+    wingLift: 0.13,
+    len: 1.05,
     neck: [
-      [L(-0.82, -0.93), 0.06, 0],
-      [L(-0.92, -0.86), L(0.5, 0.92), sway * 0.25],
-      [L(-0.66, -0.6 + pose * 0.04), L(1.12, 1.86 - pose * 0.08), sway * 0.75],
-      [L(-0.9, -0.98 - pose * 0.04), L(1.08, 1.72 - pose * 0.1), sway],
+      [-0.93, 0.06, 0],
+      [-0.86, 0.92, sway * 0.25],
+      [-0.6 + pose * 0.04, 1.86 - pose * 0.08, sway * 0.75],
+      [-0.98 - pose * 0.04, 1.72 - pose * 0.1, sway],
     ],
-    neckR: [L(0.17, 0.17), L(0.13, 0.125), L(0.13, 0.11)],
-    head: [L(0.16, 0.19), L(0.12, 0.12), L(0.11, 0.105)],
-    // How far down the head tips from the neck's line, in radians.
-    tip: L(0.35, 0.68) + pose * 0.1,
-    beak: L(0.16, 0.34),
-    plumes: L(0.04, 0.2),
-    tail: L(0.06, 0.2),
+    neckR: [0.17, 0.125, 0.11],
+    head: [0.19, 0.12, 0.105],
+    tip: 0.68 + pose * 0.1,
+    beak: 0.34,
+    plumes: 0.2,
+    tail: 0.2,
+  };
+  // The neck's curve shrinks toward where it meets the chest: much shorter,
+  // a little narrower.
+  const [bx, by] = adult.neck[0];
+  const nx = G(0.82), ny = G(0.52);
+  return {
+    ...adult,
+    scale: G(0.62),
+    ry: adult.ry * G(1.14),
+    rz: adult.rz * G(1.08),
+    lift: adult.lift * G(0.3),
+    wing: adult.wing.map((v) => v * G(0.72)),
+    wingLift: adult.wingLift * G(0.25),
+    len: adult.len * G(0.86),
+    neck: adult.neck.map(([x, y, z]) => [bx + (x - bx) * nx, by + (y - by) * ny, z]),
+    neckR: adult.neckR.map((v, i) => v * G(i ? 1.35 : 1.15)),
+    head: adult.head.map((v) => v * G(1.28)),
+    tip: adult.tip * G(0.75),
+    beak: adult.beak * G(0.5),
+    plumes: adult.plumes * G(0.2),
+    tail: adult.tail * G(0.4),
   };
 }
 

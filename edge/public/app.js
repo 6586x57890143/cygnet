@@ -139,7 +139,9 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
     span = k.width;
     const wide = w >= 900;
     cy = wide ? k.bottom : k.top - 10;
-    ch = wide ? 8 : 6;
+    // The cell shrinks with the bird, so a cygnet has as many characters
+    // across it as the swan does: its detail, at its size.
+    ch = (wide ? 8 : 6) * (0.62 + 0.38 * to);
     cw = ch * 0.6;
     // The swan's box: a little over half the hero wide, its water line
     // (at 72% of its height) on the card's.

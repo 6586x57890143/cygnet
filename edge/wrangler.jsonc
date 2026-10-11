@@ -12,7 +12,7 @@
   "placement": { "mode": "smart" },
   "d1_databases": [
     // database_id comes from `wrangler d1 create cygnet-edge` (docs/edge.md).
-    { "binding": "DB", "database_name": "cygnet-edge", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "migrations" }
+    { "binding": "DB", "database_name": "cygnet-edge", "database_id": "721e043a-515b-4cea-ab9a-7983681a2260", "migrations_dir": "migrations" }
   ],
   // Forgets the hashes that have done their job (src/signup.ts).
   "triggers": { "crons": ["17 4 * * *"] },
