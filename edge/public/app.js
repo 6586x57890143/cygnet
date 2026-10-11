@@ -101,6 +101,25 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
   // the water's; page is the page's own colour under the sky.
   let dark = 0, wdark = 0, page = [10, 13, 20];
   let pale = [236, 234, 228], deep = [20, 24, 34], lit = [250, 250, 250];
+  let warm = [255, 244, 226], cool = [150, 170, 210], core = [80, 96, 130];
+  // paint is a cell's value by day, as a painter sets a white bird in sun:
+  // two families with a clean edge between them, the lit one high and
+  // narrow, the shadow one clearly lower; the core of the shadow darkest
+  // just past the edge; the shadow lifted where it faces the bright water
+  // below and a little where it faces the sky.
+  function paint(v, up) {
+    const lightness = Math.min(1, Math.max(0, (v - 0.36) / 0.08));
+    const inLight = 0.64 + 0.36 * Math.max(0, (v - 0.4) / 0.6);
+    const inShade = 0.3 + 0.2 * Math.max(0, -up) + 0.08 * Math.max(0, up) - 0.08 * Math.max(0, 1 - Math.abs(v - 0.33) / 0.06);
+    return inShade + (inLight - inShade) * lightness;
+  }
+  // hue is the colour of a value: the core, the cool shadow, then the warm
+  // light, white at the very top.
+  function hue(p) {
+    if (p < 0.3) return mixed(core, cool, p / 0.3);
+    if (p < 0.6) return mixed(cool, warm, (p - 0.3) / 0.3);
+    return mixed(warm, [255, 255, 255], Math.min(1, (p - 0.6) / 0.38));
+  }
   let mx = 0, my = 0, sunX = 0, sunY = 0, moonX = 0, moonY = 0, sunUp = 0, moonUp = 0;
   let lean = 0, aim = 0, float = 0, span = 400;
   function place() {
@@ -348,6 +367,11 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
     // its sunlit planes nearly white: both stand off a bright sky, so the
     // whole form reads, as it does at night in light ink on the dark.
     lit = mixed(sc.hue, [255, 255, 255], 0.93);
+    // The day painting's colours: the light warmed by the sun, the shadow
+    // cooled by the sky, the core darkest where the form turns away.
+    warm = mixed(mixed(sc.sunC, [255, 255, 255], 0.78), [255, 255, 255], 0.15);
+    cool = mixed(mixed(sc.top, sc.hue, 0.35).slice(0, 3), [255, 255, 255], 0.28);
+    core = mixed(cool, deep, 0.55);
     ink = rgb(mixed(pale, deep, dark));
     wink = rgb(mixed(pale, deep, wdark));
     [sunX, sunY, sunUp] = arc(sc.at);
@@ -359,7 +383,10 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
     // Lit from there, a little toward the viewer: whichever side faces it
     // is bright and the far side falls into shadow.
     const sx = bx + (cols * cw) / 2, sy = cy - cols * cw * 0.2;
-    const light = [mx - sx, sy - my, Math.hypot(mx - sx, sy - my) * 0.5];
+    // By day the light rakes in from the side, as a painter would set it,
+    // so the bird has a shadow side to model it; at night it's softer and
+    // more frontal.
+    const light = [mx - sx, sy - my, Math.hypot(mx - sx, sy - my) * (0.5 - 0.32 * dark)];
     const f = frame(pts, cols, rows, -0.55 + Math.sin(s * 0.23) * 0.22 + lean, 0.13 + Math.sin(s * 0.41) * 0.025, cw / ch, light);
     x.clearRect(0, 0, w, h);
     // The card floats on the water line itself: its bottom corners sit on
@@ -403,6 +430,8 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
     glitter(s, Math.min(1, ws + wm));
     const bands = 10;
     const lanes = Array.from({ length: bands }, () => []);
+    const steps = 18;
+    const tones = Array.from({ length: steps }, () => []);
     const rims = [];
     const glints = [];
     const ripples = [];
@@ -414,7 +443,12 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
         else if (v >= 0 && f.edge[q]) rims.push(i, j, v);
         // The brighter a cell, the denser its glyph, night or day: what
         // changes with the light is the colour each tone is drawn in.
-        else if (v >= 0) lanes[Math.min(bands - 1, Math.floor(v * bands))].push(i, j);
+        else if (v >= 0) {
+          if (dark > 0.5) {
+            const p = paint(v, f.up[q]);
+            tones[Math.min(steps - 1, Math.floor(p * steps))].push(i, j);
+          } else lanes[Math.min(bands - 1, Math.floor(v * bands))].push(i, j);
+        }
         else if (f.refl[q] > 0.03) glints.push(i, j, f.refl[q]);
       }
     }
@@ -422,12 +456,21 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
     // whole box rises and falls with the line under its middle.
     const ride = wave(bx + (cols * cw) / 2, s) * 0.6;
     const lift = by + f.horizon * ch - cy - ride; // so the bird's water is the card's
+    // By day, painted: each value of the light and shadow families in its
+    // own colour, solid, so the surfaces carry the form.
+    for (let b = 0; b < steps; b++) {
+      const lane = tones[b];
+      if (!lane.length) continue;
+      const p = (b + 0.5) / steps;
+      x.fillStyle = `rgba(${rgb(hue(p))},0.94)`;
+      const g = p > 0.93 ? "@" : p > 0.62 ? "%" : "#";
+      for (let n = 0; n < lane.length; n += 2) x.fillText(g, bx + lane[n] * cw, by - lift + lane[n + 1] * ch);
+    }
     for (let b = 0; b < bands; b++) {
       const k = b / (bands - 1);
-      // At night a tone is the light ink, fainter in shadow; by day it's a
-      // colour between the deep ink in shadow and near white in the sun.
-      const col = mixed(pale, mixed(deep, lit, k), dark);
-      const a = 0.3 + 0.7 * k + (0.9 - (0.3 + 0.7 * k)) * dark;
+      // At night a tone is the light ink, fainter in shadow.
+      const col = pale;
+      const a = 0.3 + 0.7 * k;
       x.fillStyle = `rgba(${rgb(col)},${a.toFixed(3)})`;
       const g = ramp[1 + Math.round((b / (bands - 1)) * (ramp.length - 2))];
       const lane = lanes[b];
@@ -453,7 +496,12 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
     }
     // The outline: every cell at the edge of the bird, bright and solid.
     x.fillStyle = `rgba(${ink},0.95)`;
-    for (let n = 0; n < rims.length; n += 3) x.fillText(rims[n + 2] > 0.5 ? "#" : "*", bx + rims[n] * cw, by - lift + rims[n + 1] * ch);
+    for (let n = 0; n < rims.length; n += 3) {
+      // By day the edge is found in shadow and nearly lost in the light,
+      // where the bird's white meets the bright sky.
+      if (dark > 0.5) x.fillStyle = rims[n + 2] > 0.42 ? `rgba(${rgb(mixed(cool, warm, 0.5))},0.85)` : `rgba(${rgb(core)},0.95)`;
+      x.fillText(rims[n + 2] > 0.5 ? "#" : "*", bx + rims[n] * cw, by - lift + rims[n + 1] * ch);
+    }
     // The reflection, as moving water breaks it: each row slides on its own
     // and further the deeper it is, the rows fall apart into horizontal
     // streaks with gaps between them that drift, and the brightness comes

@@ -47,8 +47,10 @@ function shape(t, pose, sway) {
     len: L(0.86, 1.05),
     // How high the back stands above the water along the body, and how
     // wide it is, from the chest (-1) to the tail (1).
-    height: [[-1, L(0.2, 0.14)], [-0.75, L(0.42, 0.36)], [-0.35, L(0.58, 0.64)], [0.1, L(0.64, 0.8)], [0.5, L(0.6, 0.88)], [0.82, L(0.48, 0.8)], [1, L(0.3, 0.52)]],
-    width: [[-1, 0.1], [-0.75, 0.36], [-0.3, 0.52], [0.3, 0.54], [0.8, 0.4], [1, 0.12]],
+    // The back rises from the breast to its height two thirds of the way
+    // back, then slopes down to a narrow stern, where the tail comes out.
+    height: [[-1, L(0.2, 0.16)], [-0.75, L(0.42, 0.38)], [-0.35, L(0.58, 0.64)], [0.1, L(0.64, 0.78)], [0.5, L(0.6, 0.86)], [0.74, L(0.5, 0.8)], [0.9, L(0.38, 0.6)], [1, L(0.24, 0.34)]],
+    width: [[-1, 0.1], [-0.75, 0.36], [-0.3, 0.52], [0.3, 0.54], [0.75, 0.42], [0.92, 0.22], [1, 0.08]],
     neck: [
       [L(-0.82, -0.93), 0.06, 0],
       [L(-0.86, -0.86), L(0.42, 0.92), sway * 0.25],
@@ -122,8 +124,19 @@ export function model(t, density = 1, pose = 0, sway = 0) {
     const edge = lerp(0.62, 0.9, Math.max(0, (u - 0.6) / 0.5)); // the flank line rises toward the rear
     const th = side > 0 ? lerp(Math.PI / 2 - 0.03, edge, v) : lerp(Math.PI / 2 + 0.03, Math.PI - edge, v);
     const [, y0, z0] = surface(back, th);
-    const rise = m.plumes * smooth(0.45, 1.05, u) * (1 - 0.6 * v) + 0.025 * (1 - v);
-    return [u * m.len, y0 + 0.035 + rise, z0 * 1.04];
+    // The long inner feathers lift at the rear in a few overlapping lobes,
+    // highest along the ridge.
+    const lobes = 0.8 + 0.2 * Math.cos(v * Math.PI * 3.2 + u * 4);
+    const rise = m.plumes * smooth(0.42, 1.04, u) * (1 - 0.55 * v) * lobes + 0.025 * (1 - v);
+    // The feathers lie in rows, each overlapping the one behind it: a
+    // sawtooth of relief along the wing, so every row catches the light at
+    // its edge and shades the one under it. Along the lower wing the long
+    // flight feathers run back in shallow grooves.
+    const across = u * 10 + 0.35 * Math.sin(v * Math.PI * 2);
+    const rows = 0.016 * (across - Math.floor(across)) * (1 - 0.3 * v) * smooth(-0.3, -0.1, u);
+    const grooves = 0.009 * Math.abs(Math.sin(v * Math.PI * 7)) * smooth(0.5, 0.75, v) * smooth(-0.1, 0.2, u);
+    const out = 0.035 + rows + grooves;
+    return [u * m.len, y0 + rise + out * Math.sin(th), z0 * 1.04 + out * Math.cos(th) * 0.8];
   };
   for (const side of [1, -1]) {
     const wu = n(150), wv = n(48);
@@ -261,6 +274,9 @@ export function frame(pts, cols, rows, yaw, pitch, aspect = 0.55, light = [-0.45
   const rdepth = new Float32Array(cols * rows).fill(-1e9);
   // water marks the cells the water's rings won, which aren't the bird's.
   const water = new Uint8Array(cols * rows);
+  // up is how far each cell's surface faces up (1) or down (-1), for light
+  // from the sky above and the water below.
+  const up = new Float32Array(cols * rows);
   const cyw = Math.cos(yaw), syw = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
   const horizon = rows * 0.72;
   const k = Math.min(cols / 2.9, (horizon - 1) / (2.05 * aspect));
@@ -290,6 +306,7 @@ export function frame(pts, cols, rows, yaw, pitch, aspect = 0.55, light = [-0.45
         depth[i] = z2;
         shade[i] = l;
         water[i] = kind >= 4 ? 1 : 0;
+        up[i] = n2y;
       }
     }
     // The reflection: the bird again below the line, squashed and dim.
@@ -322,7 +339,7 @@ export function frame(pts, cols, rows, yaw, pitch, aspect = 0.55, light = [-0.45
       if (bird(q) && (!bird(q - 1) || !bird(q + 1) || !bird(q - cols) || !bird(q + cols))) edge[q] = 1;
     }
   }
-  return { shade, refl, edge, water, horizon: Math.round(horizon) };
+  return { shade, refl, edge, water, up, horizon: Math.round(horizon) };
 }
 
 // text is a frame as lines of characters, for a page without script.
