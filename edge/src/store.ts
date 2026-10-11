@@ -265,27 +265,38 @@ export class Store {
   }
 
   // challenge starts a proof of user's email, unless they've started too
-  // many this hour. id and addr are digests of the cookie's token and the
-  // address's.
-  async challenge(c: { id: string; addr: string; launch: string; user: string; purpose: "issue" | "redeem"; made: number; expires: number; email: string; invite?: string; hashes?: Omit<Hashes, "email">; held?: string | null }, perHour: number): Promise<boolean> {
+  // many this hour. id and link are digests of the cookie's token and the
+  // emailed link's.
+  async challenge(c: { id: string; link: string; launch: string; user: string; purpose: "issue" | "redeem"; made: number; expires: number; email: string; invite?: string; hashes?: Omit<Hashes, "email">; held?: string | null }, perHour: number): Promise<boolean> {
     const r = await this.db
       .prepare(
-        `INSERT INTO challenge (id, addr, launch, user, purpose, made, expires, email, invite, ip, net, geo, held)
+        `INSERT INTO challenge (id, link, launch, user, purpose, made, expires, email, invite, ip, net, geo, held)
         SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13
         WHERE (SELECT COUNT(*) FROM challenge WHERE user = ?4 AND made > ?6 - 3600000) < ?14
         RETURNING id`,
       )
-      .bind(c.id, c.addr, c.launch, c.user, c.purpose, c.made, c.expires, c.email, c.invite ?? null, c.hashes?.ip ?? null, c.hashes?.net ?? null, c.hashes?.geo ?? null, c.held ?? null, perHour)
+      .bind(c.id, c.link, c.launch, c.user, c.purpose, c.made, c.expires, c.email, c.invite ?? null, c.hashes?.ip ?? null, c.hashes?.net ?? null, c.hashes?.geo ?? null, c.held ?? null, perHour)
       .first();
     return !!r;
   }
 
-  // prove marks the challenge at addr proven, if the email that came in is
-  // from the address it waits for.
-  async prove(addr: string, email: string, now: number): Promise<boolean> {
+  // prove marks the challenge its emailed link names as clicked.
+  async prove(link: string, now: number): Promise<boolean> {
+    return !!(await this.db.prepare("UPDATE challenge SET verified = ?2 WHERE link = ?1 AND verified IS NULL AND expires > ?2 RETURNING id").bind(link, now).first());
+  }
+
+  // spend takes one email from the budget, if any is left in the window:
+  // one statement, so two sends at once can't both take the last one.
+  async spend(now: number, emails: number, days: number): Promise<boolean> {
+    const today = Math.floor(now / 86_400_000);
     return !!(await this.db
-      .prepare("UPDATE challenge SET verified = ?3 WHERE addr = ?1 AND email = ?2 AND verified IS NULL AND expires > ?3 RETURNING id")
-      .bind(addr, email, now)
+      .prepare(
+        `INSERT INTO sends (day, n) SELECT ?1, 1
+        WHERE (SELECT COALESCE(SUM(n), 0) FROM sends WHERE day > ?1 - ?3) < ?2
+        ON CONFLICT (day) DO UPDATE SET n = n + 1
+        RETURNING n`,
+      )
+      .bind(today, emails, days)
       .first());
   }
 
@@ -309,6 +320,7 @@ export class Store {
     const out = [
       this.db.prepare("UPDATE member SET ip = NULL, net = NULL, geo = NULL WHERE at < ?1 AND (ip IS NOT NULL OR net IS NOT NULL OR geo IS NOT NULL)").bind(now - keepNetwork),
       this.db.prepare("DELETE FROM challenge WHERE expires < ?1").bind(now),
+      this.db.prepare("DELETE FROM sends WHERE day < ?1").bind(Math.floor(now / 86_400_000) - 62),
     ];
     for (const l of launches) {
       if (l.opens && now > l.opens + keepEmail) out.push(this.db.prepare("UPDATE member SET email = NULL WHERE launch = ?1 AND email IS NOT NULL").bind(l.name));

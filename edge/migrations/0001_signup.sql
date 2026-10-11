@@ -43,16 +43,15 @@ CREATE TABLE invite (
 );
 CREATE INDEX invite_issuer ON invite (launch, issuer);
 
--- challenge is a proof of an email address waiting to arrive: the person
--- sends any email from it to the one time address addr names. id is the
--- SHA-256 of the token in their browser's cookie and addr of the address's
--- token, so neither is any use to someone who reads this table. verified
--- is when a signed email from the address came in. What it does once it
--- has is in purpose and the columns after it; email is the keyed hash the
--- email has to match.
+-- challenge is a link emailed to a person, waiting to be clicked: id is
+-- the SHA-256 of the token in their browser's cookie and link of the token
+-- in the emailed link, so neither is any use to someone who reads this
+-- table. verified is when the link was clicked; what happens then is in
+-- purpose and the columns after it, and only in the browser that holds
+-- the cookie.
 CREATE TABLE challenge (
   id       TEXT    PRIMARY KEY,
-  addr     TEXT    NOT NULL UNIQUE,
+  link     TEXT    NOT NULL UNIQUE,
   launch   TEXT    NOT NULL,
   user     TEXT    NOT NULL,
   purpose  TEXT    NOT NULL CHECK (purpose IN ('issue', 'redeem')),
@@ -67,6 +66,13 @@ CREATE TABLE challenge (
   held    TEXT
 );
 CREATE INDEX challenge_user ON challenge (user, made);
+
+-- sends is how many emails went out each day (days since 1970), so the
+-- Worker stays inside the plan's included emails (src/signup.ts, budget).
+CREATE TABLE sends (
+  day INTEGER PRIMARY KEY,
+  n   INTEGER NOT NULL
+);
 
 -- ledger is every release, invite, redemption, revocation, hold and leave,
 -- in order. Each entry's mac is keyed over the one before it, so an entry

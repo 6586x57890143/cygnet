@@ -16,7 +16,7 @@ export interface Launch {
 export const launches: Record<string, Launch> = {
   silcord: {
     name: "silcord",
-    line: "a new discord server, opening soon; get in line now, and when invites are released to the front of the line you can bring friends",
+    line: "a new discord server is on the way\nget on the list and when invites go out to the front of the line you can bring your friends in",
     minAgeDays: 30,
   },
 };
@@ -25,12 +25,16 @@ export const minute = 60_000;
 export const hour = 60 * minute;
 export const day = 24 * hour;
 // inviteLife is how long an invite link works before it's back in its
-// issuer's hands; proofLife, how long someone has to send the email that
-// proves their address. proofs is how many of those one Discord account
-// can start in an hour.
+// issuer's hands; proofLife, how long an emailed link does. proofs is how
+// many links one Discord account can be sent in an hour.
 export const inviteLife = 48 * hour;
 export const proofLife = 30 * minute;
 export const proofs = 5;
+
+// budget is the most emails sent in any window days long. The paid plan
+// includes 3,000 a month and a billing month is at most 31 days, so no
+// month can go over and the bill stays at the plan's price.
+export const budget = { emails: 2_900, days: 31 };
 // keepNetwork is how long the network and area hashes are kept; keepEmail,
 // how long after a launch opens its email hashes are.
 export const keepNetwork = 30 * day;
@@ -129,10 +133,14 @@ export function token(): string {
   return base64url(crypto.getRandomValues(new Uint8Array(32)));
 }
 
-// mailbox is a one time address's local part: "v-" and 16 random bytes,
-// base32, so it can't be guessed and fits any mail client.
-export function mailbox(): string {
-  return "v-" + base32(crypto.getRandomValues(new Uint8Array(16)));
+// masked is an address with most of it hidden, so a page can say which
+// inbox to look in without showing the address: st***@gm***.com.
+export function masked(email: string): string {
+  const at = email.lastIndexOf("@");
+  const domain = email.slice(at + 1);
+  const dot = domain.lastIndexOf(".");
+  const hide = (s: string) => s.slice(0, Math.min(2, Math.max(1, s.length - 1))) + "***";
+  return `${hide(email.slice(0, at))}@${hide(domain.slice(0, dot))}${domain.slice(dot)}`.toLowerCase();
 }
 
 // digest is value's SHA-256, hex: for a code with entropy of its own, which

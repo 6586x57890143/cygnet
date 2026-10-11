@@ -1,5 +1,10 @@
-// The pages a launch has, drawn on the server: no script of ours, and
-// Turnstile's only on a page that asks for it.
+// The pages a launch has, drawn on the server. The only scripts are
+// Turnstile's, on a page that asks for it, and confirm.js, which presses
+// the button on an emailed link's page so a person clicks once and a mail
+// scanner that only fetches the link confirms nothing.
+//
+// The voice is a person texting: lowercase, no punctuation, one thought a
+// line. A line break does what a full stop would.
 
 import type { Launch } from "./signup.ts";
 
@@ -15,18 +20,20 @@ export type View =
   | { kind: "open" }
   | { kind: "in"; rank: number | null; held: string | null; released: number; left: number; invites: Invite[]; now: number }
   | { kind: "invited"; code: string; expires: number; now: number }
-  | { kind: "prove"; address: string; expires: number; now: number; what: string }
+  | { kind: "sent"; to: string; expires: number; now: number; what: string }
+  | { kind: "confirm"; token: string }
+  | { kind: "confirmed" }
   | { kind: "minted"; link: string; expires: number; now: number }
   | { kind: "error"; why: string };
 
+// esc escapes text for HTML; lines also turns each line into its own.
 export function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 }
-
-const n = (x: number) => x.toLocaleString("en-US");
+const lines = (s: string) => esc(s).replaceAll("\n", "<br>");
 
 // span is a duration in its two largest units, as UX.md has them: 45s,
-// 12m, 3h 12m, 2d 4h.
+// 12m 0s, 3h 12m, 2d 4h.
 export function span(ms: number): string {
   const units = [[86400, "d"], [3600, "h"], [60, "m"], [1, "s"]] as const;
   const s = Math.max(0, Math.round(ms / 1000));
@@ -41,19 +48,19 @@ const widget = (sitekey: string) =>
   `<div class="cf-turnstile" data-sitekey="${esc(sitekey)}" data-theme="auto" data-size="flexible" data-appearance="interaction-only"></div>`;
 
 function invites(l: Launch, v: Extract<View, { kind: "in" }>, sitekey: string): string {
-  if (!v.released) return `<pre class="grid">invites   not released to you yet\nopens     when the server does</pre>`;
+  if (!v.released) return `<pre class="grid">invites   not yet\n          they go to the front of the line first</pre>`;
   const rows = v.invites
     .map((i) => {
-      const made = `<span class="dim">made ${span(v.now - i.made)} ago</span>`;
-      if (i.spent_at) return `<li><span class="ok">✓ used</span>${made}</li>`;
-      if (i.revoked) return `<li><span class="dim">taken back</span>${made}</li>`;
-      if (i.expires <= v.now) return `<li><span class="dim">expired, back with you</span>${made}</li>`;
-      return `<li><span>▸ open · ${span(i.expires - v.now)} left</span><form method="post" action="/${esc(l.name)}/revoke"><input type="hidden" name="invite" value="${esc(i.hash)}"><button class="quiet" type="submit">take back</button></form></li>`;
+      const ago = `<span class="dim">${span(v.now - i.made)} ago</span>`;
+      if (i.spent_at) return `<li><span class="ok">used</span>${ago}</li>`;
+      if (i.revoked) return `<li><span class="dim">taken back</span>${ago}</li>`;
+      if (i.expires <= v.now) return `<li><span class="dim">ran out and came back to you</span>${ago}</li>`;
+      return `<li><span>open for ${span(i.expires - v.now)}</span><form method="post" action="/${esc(l.name)}/revoke"><input type="hidden" name="invite" value="${esc(i.hash)}"><button class="quiet" type="submit">take it back</button></form></li>`;
     })
     .join("");
   const make = v.left
     ? `<form method="post" action="/${esc(l.name)}/issue">${widget(sitekey)}<button type="submit">make an invite</button></form>
-      <p class="fine">an invite is a link for one person, good for 48 hours. making one takes a sign in with discord and an email from your address, so only you can, and whoever you bring in is linked to you</p>`
+      <p class="fine">each invite is a link for one person and lasts 2 days<br>we email you a link first to make sure its really you<br>whoever you bring in is tied to you</p>`
     : "";
   return `<pre class="grid">invites   <span class="bar">${"▰".repeat(v.left)}${"▱".repeat(Math.max(0, v.released - v.left))}</span>  ${v.left} of ${v.released} left</pre>
     ${rows ? `<ul class="invites">${rows}</ul>` : ""}
@@ -63,62 +70,70 @@ function invites(l: Launch, v: Extract<View, { kind: "in" }>, sitekey: string): 
 export function page(l: Launch, total: number, view: View, sitekey: string): string {
   let body = "";
   let turnstile = false;
+  let script = "";
   let refresh = "";
   switch (view.kind) {
     case "open":
       turnstile = true;
       body = `
       <form method="post" action="/${esc(l.name)}/join">${widget(sitekey)}<button type="submit">count me in</button></form>
-      <p class="fine">you sign in with discord, which shares your account id and your verified email; nothing else is asked for</p>`;
+      <p class="fine">you sign in with discord<br>we only see your account id and your email</p>`;
       break;
     case "in":
       turnstile = view.left > 0 && !view.held;
       body = `
       <div class="place">
-        <span class="label">${view.rank === null ? "you're in through an invite" : "your place"}</span>
-        <span class="rank">${view.rank === null ? "✓" : `#${n(view.rank)}`}</span>
+        <span class="label">${view.rank === null ? "youre in through a friend" : "your spot"}</span>
+        <span class="rank">${view.rank === null ? "in" : `#${view.rank}`}</span>
       </div>
       ${view.held ? "" : invites(l, view, sitekey)}
       ${
         view.held
-          ? `<p class="note warn">! your invites wait for a quick check, because ${esc(view.held)}; your place doesn't</p>`
+          ? `<p class="note warn">your invites are on hold while we take a quick look<br>${esc(view.held)}<br>your spot in line stays the same</p>`
           : view.rank === null
-            ? `<p class="note ok">✓ you get in with the person who invited you</p>`
-            : `<p class="note ok">✓ you're in line; invites are released from the front of it</p>`
+            ? `<p class="note ok">you get in with the friend who invited you</p>`
+            : `<p class="note ok">youre on the list<br>invites go out from the front of the line</p>`
       }
       <form method="post" action="/${esc(l.name)}/leave" class="leave"><button type="submit" class="quiet">leave the list</button></form>`;
       break;
     case "invited":
       turnstile = true;
       body = `
-      <p class="note ok">▸ you've been invited; this link works for one person, for ${span(view.expires - view.now)} more</p>
+      <p class="note ok">someone invited you<br>this link is for one person and works for another ${span(view.expires - view.now)}</p>
       <form method="post" action="/i/${esc(view.code)}">${widget(sitekey)}<button type="submit">take the invite</button></form>
-      <p class="fine">you sign in with discord, then send one email from your address to show it's yours. nothing is ever emailed to you</p>`;
+      <p class="fine">you sign in with discord<br>then we email you a link to make sure its you</p>`;
       break;
-    case "prove":
+    case "sent":
       refresh = `<meta http-equiv="refresh" content="5">`;
       body = `
-      <p class="note">▸ to ${esc(view.what)}, send any email from the address on your discord account to</p>
-      <a class="mailto" href="mailto:${esc(view.address)}?subject=${encodeURIComponent(l.name)}">${esc(view.address)}</a>
-      <pre class="grid">from      your discord email
-says      anything, or nothing
-works     ${span(view.expires - view.now)} more</pre>
-      <p class="fine">this page moves on by itself once it arrives. the email is checked for your provider's signature, then dropped: nothing in it is kept</p>`;
+      <p class="note">check your email<br>we sent a link to <b>${esc(view.to)}</b> to ${esc(view.what)}</p>
+      <pre class="grid">link works   ${span(view.expires - view.now)}\nopen it on   any device</pre>
+      <p class="fine">this page carries on by itself once you click it<br>nothing there yet so check your spam folder too</p>`;
+      break;
+    case "confirm":
+      script = `<script src="/confirm.js" defer></script>`;
+      body = `
+      <form method="post" action="/v/${esc(view.token)}" class="auto"><button type="submit">thats me</button></form>
+      <p class="fine">one sec</p>`;
+      break;
+    case "confirmed":
+      body = `
+      <p class="note ok">all set<br>go back to the tab where you started and it carries on from there</p>`;
       break;
     case "minted":
       body = `
-      <p class="note ok">✓ here's your invite, for one person, good for ${span(view.expires - view.now)}</p>
+      <p class="note ok">heres your invite<br>its for one person and works for ${span(view.expires - view.now)}</p>
       <p class="link" aria-label="invite link">${esc(view.link)}</p>
-      <p class="note warn">! this is the only time it's shown; copy it now and send it to the one person it's for</p>
-      <a class="again" href="/${esc(l.name)}">back to your place</a>`;
+      <p class="note warn">this is the only time youll see it<br>copy it now and send it to the one person its for</p>
+      <a class="again" href="/${esc(l.name)}">back to your spot</a>`;
       break;
     case "error":
       body = `
-      <p class="note err">✗ ${esc(view.why)}</p>
-      <a class="again" href="/${esc(l.name)}">back</a>`;
+      <p class="note err">${lines(view.why)}</p>
+      <a class="again" href="/${esc(l.name)}">go back</a>`;
       break;
   }
-  const script = turnstile ? `<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>` : "";
+  if (turnstile) script = `<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>`;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -128,10 +143,10 @@ works     ${span(view.expires - view.now)} more</pre>
 <meta name="theme-color" content="#1e2228" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#f1ece2" media="(prefers-color-scheme: light)">
 ${refresh}
-<title>${esc(l.name)} · get in line</title>
-<meta name="description" content="${esc(l.line)}">
+<title>${esc(l.name)}</title>
+<meta name="description" content="${esc(l.line.replaceAll("\n", " "))}">
 <meta property="og:title" content="${esc(l.name)}">
-<meta property="og:description" content="${esc(l.line)}">
+<meta property="og:description" content="${esc(l.line.replaceAll("\n", " "))}">
 <meta property="og:image" content="/art/banner.png">
 <link rel="icon" href="/art/cygnet.png">
 <style>${style}</style>
@@ -140,15 +155,15 @@ ${refresh}
 <div class="sky" aria-hidden="true"></div>
 <main>
   <section class="card">
-    <p class="kicker">▸ launch</p>
+    <p class="kicker">coming soon</p>
     <h1>${esc(l.name)}</h1>
-    <p class="line">${esc(l.line)}</p>
-    <p class="count"><b>${n(total)}</b> ${total === 1 ? "person" : "people"} on the list</p>
+    <p class="line">${lines(l.line)}</p>
+    <p class="count"><b>${total}</b> ${total === 1 ? "person" : "people"} on the list</p>
     ${body}
   </section>
   <footer>
-    <p class="birds"><img src="/art/cygnet.png" alt="" width="20" height="20"><img src="/art/skua.png" alt="" width="20" height="20">kept by cygnet, with skua</p>
-    <p class="fine">we keep your discord id, your place and who invited you. your email, connection and rough area are kept only as keyed hashes that can't be turned back into them, to stop one person getting in twice, and the connection and area are forgotten after 30 days. we never send you email</p>
+    <p class="birds"><img src="/art/cygnet.png" alt="" width="20" height="20"><img src="/art/skua.png" alt="" width="20" height="20">kept by cygnet with skua</p>
+    <p class="fine">we keep your discord id and your spot and who invited you<br>your email and connection and rough location are only kept as scrambled hashes so nobody gets in twice<br>the connection and location ones are deleted after 30 days</p>
   </footer>
 </main>
 ${script}
@@ -185,6 +200,7 @@ main { max-width: 480px; margin: 0 auto; padding: 0 16px 48px; }
   border: 2px solid var(--line); box-shadow: 6px 6px 0 var(--shadow); }
 .kicker, .label, .count, .grid, .note, .fine, footer { font-family: var(--mono); }
 .kicker { margin: 0; color: var(--accent); font-size: 13px; letter-spacing: .08em; }
+.auto button { margin-bottom: 4px; }
 h1 { margin: 4px 0 8px; font: 700 clamp(40px, 9vw, 52px)/1.05 var(--mono); letter-spacing: -.02em; }
 .line { margin: 0 0 16px; color: var(--muted); }
 .count { margin: 0 0 20px; padding: 8px 0; border-block: 2px dashed var(--line); font-size: 14px; color: var(--muted); }

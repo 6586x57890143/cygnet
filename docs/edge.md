@@ -2,7 +2,7 @@
 
 `edge/` is `cygnet.lol`: a launch's page (`/silcord`), its sign in with Discord, the
 invites its members give, and the list and ledger it keeps in D1. It holds no bot token,
-opens nothing on foundry and never sends email.
+opens nothing on foundry, and emails only the one link a person asks for.
 
 ## Getting on the list
 
@@ -37,21 +37,27 @@ opens nothing on foundry and never sends email.
   takes back a member's unspent invites but keeps whoever they brought in under them:
   the tree is the record of who vouched for whom. `GET /admin/silcord/tree` reads it.
 
-## Proving an email without sending one
+## Proving an email with a link
 
-The person sends any email from their Discord email to a one time address shown on the
-page (`v-<26 random characters>@cygnet.lol`, 30 minutes). Email Routing hands it to
-the Worker's `email` handler, which:
+Making or taking an invite emails a link to the address on the person's Discord account
+(`cygnet@cygnet.lol`, through Email Sending). The address is used for that send and
+never stored; the page shows it masked (`st***@gm***.com`) from a signed cookie.
 
-1. checks DKIM itself (`src/dkim.ts`): one `From`, a signature from that address's own
-   domain over `From` and the whole body (`l=` refused), verified with the key the
-   domain publishes, looked up over Cloudflare's DNS over HTTPS. Cloudflare's own
-   inbound check accepts SPF or DKIM for any domain, which doesn't prove the `From`;
-2. compares the keyed hash of the address with the one the proof waits for;
-3. marks it proven and drops the email. Nothing in it is kept.
+- The link is `cygnet.lol/v/<32 random bytes>`, good once, for 30 minutes. Its token and
+  the browser's cookie token are stored as SHA-256 digests.
+- Opening it shows a page with one button that `confirm.js` presses, so a person clicks
+  once while a mail scanner that only fetches links confirms nothing.
+- It can be opened on any device. What it was for (minting the invite, or taking it)
+  happens only in the browser that started it, which waits on `/silcord/wait` and moves
+  on by itself.
+- Five links an hour per Discord account, each behind Turnstile and a fresh Discord
+  sign in.
 
-The page refreshes itself and goes on once it's proven. Both the cookie's token and the
-address's token are stored as SHA-256 digests, five proofs an hour per account.
+**The bill stays at $5.** Email Sending needs Workers Paid ($5 a month), which includes
+3,000 emails a month. Every send first takes a slot in `sends`, one atomic statement:
+no more than 2,900 go out in any 31 days, so no billing month (at most 31 days) goes over
+what's included. Past it the page says so and nothing is sent. Everything else this uses
+(Workers, D1, Turnstile, static assets) is well inside the plan's included usage.
 
 ## The ledger
 
@@ -71,7 +77,7 @@ are keyed hashes of Discord IDs.
 | email | HMAC | 30 days after the launch opens |
 | connection, network, area | HMAC | 30 days after they joined |
 | invite codes, proof tokens | SHA-256 | invites stay as the tree's record; proofs go with the daily cron |
-| the email that proves an address | not kept | read, checked, dropped |
+| the address a link is sent to | not kept | used for the send, shown masked from a cookie |
 
 Worker logs are off (`observability`): a URL can hold an invite code.
 
@@ -81,7 +87,7 @@ Worker logs are off (`observability`): a URL can hold an invite code.
 cd edge
 npm ci
 npm run check        # wrangler types, then tsc
-npm test             # rules, store, ledger tampering and DKIM, against SQLite
+npm test             # rules, store, ledger tampering, the email budget, every page
 npx wrangler d1 migrations apply cygnet-edge --local && npm run dev
 ```
 
@@ -91,13 +97,14 @@ keys always pass: site key `1x00000000000000000000AA`, secret
 
 ## Going live
 
-On the Cloudflare account that holds `cygnet.lol` (everything here is on the free plan):
+On the Cloudflare account that holds `cygnet.lol`, on Workers Paid ($5 a month):
 
 1. `npx wrangler d1 create cygnet-edge`, and put its `database_id` in `wrangler.jsonc`.
 2. A Turnstile widget for `cygnet.lol` (managed); its site key goes in `wrangler.jsonc`
    as `TURNSTILE_SITEKEY`.
-3. Email Routing on `cygnet.lol`, with the catch-all rule sending to the
-   `cygnet-edge` Worker.
+3. Email Sending on `cygnet.lol` (`npx wrangler email sending enable cygnet.lol`, then
+   the DNS records it lists). New accounts start with a low daily sending quota that
+   grows, so do this well before announcing.
 4. In the Discord developer portal, cygnet's app, OAuth2: add the redirect
    `https://cygnet.lol/auth/discord`. Its application ID goes in `wrangler.jsonc` as
    `DISCORD_CLIENT_ID`.
@@ -107,5 +114,5 @@ On the Cloudflare account that holds `cygnet.lol` (everything here is on the fre
    ledger's chain unverifiable, so set it once.
 6. `npm run deploy` applies the migrations and deploys to the `cygnet.lol` custom
    domain.
-7. Before announcing it: one real proof each from Gmail, Outlook and a custom domain,
-   since DKIM is checked here and only this proves it reads their signatures.
+7. Before announcing it: one real link each to Gmail, Outlook and a custom domain, to
+   see it lands in the inbox and not spam.

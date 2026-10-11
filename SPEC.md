@@ -28,8 +28,7 @@ performance claim measured, safety that costs nothing measurable. She adds one m
    Invites are released to the front of the line in contingents; each one a member
    gives is made only after they prove their email, and taken only by someone who
    proves theirs, so every member hangs from whoever vouched for them. An email is
-   proven by the person sending one to a one time address, never by cygnet sending
-   one (`docs/edge.md`).
+   proven by a link sent to it and clicked once (`docs/edge.md`).
 2. **A way in that is theirs.** When their wave opens, cygnet adds them to the server
    herself: no invite link exists for anyone to forward. Someone who would rather not
    grant that gets a Discord invite made for them alone: one use, gone in minutes.

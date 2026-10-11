@@ -1,14 +1,13 @@
 // The list's rules, its store run against SQLite (which D1 is) with D1's
-// batches as transactions, the ledger's tamper checks, and DKIM against
-// messages signed here.
+// batches as transactions, the ledger's tamper checks, the email budget,
+// and every page.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 
-import { canonBody, canonHeader, canonHeaders, parse, signer, stripB, type Lookup } from "../src/dkim.ts";
 import { esc, page, span } from "../src/page.ts";
-import { area, created, digest, held, inviteCode, inviteLife, keyed, launches, mailbox, networks, normalEmail, same } from "../src/signup.ts";
+import { area, budget, created, digest, held, inviteCode, inviteLife, keyed, launches, masked, networks, normalEmail, same } from "../src/signup.ts";
 import { Store, type DB, type Stmt } from "../src/store.ts";
 
 const l = launches.silcord;
@@ -45,7 +44,8 @@ test("codes, hashes and comparisons", async () => {
   assert.notEqual(a, await keyed("other", "ip", "203.0.113.7"));
   assert.match(inviteCode(), /^[a-z2-7]{32}$/);
   assert.notEqual(inviteCode(), inviteCode());
-  assert.match(mailbox(), /^v-[a-z2-7]{26}$/);
+  assert.equal(masked("Steve.Tester@GMail.com"), "st***@gm***.com");
+  assert.equal(masked("a@b.io"), "a***@b***.io");
   assert.equal((await digest("abc")).slice(0, 8), "ba7816bf");
   assert.ok(same("abc", "abc"));
   assert.ok(!same("abc", "abd") && !same("abc", "ab"));
@@ -201,86 +201,81 @@ test("the ledger can't be rewritten, and a rewrite shows", async () => {
   assert.equal((await b.s.verify()).mismatches.length, 2);
 });
 
-test("a proof: started, rate limited, proven by the right email, used once", async () => {
+test("a link: sent, rate limited, clicked, used once", async () => {
   const { s } = fresh();
-  const c = (i: number) => ({ id: `id${i}`, addr: `a${i}`, launch: "silcord", user: "1", purpose: "issue" as const, made: t0 + i, expires: t0 + 600_000, email: "E" });
+  const c = (i: number) => ({ id: `id${i}`, link: `k${i}`, launch: "silcord", user: "1", purpose: "issue" as const, made: t0 + i, expires: t0 + 600_000, email: "E" });
   for (let i = 0; i < 5; i++) assert.ok(await s.challenge(c(i), 5));
   assert.ok(!(await s.challenge(c(5), 5)), "five an hour");
   assert.ok(await s.challenge({ ...c(6), made: t0 + 3_600_001, expires: t0 + 4_000_000 }, 5));
 
   assert.equal((await s.waiting("id0", t0))?.verified, null);
-  assert.equal(await s.consume("id0", t0), null, "not proven yet");
-  assert.ok(!(await s.prove("a0", "other", t0)), "the wrong email proves nothing");
-  assert.ok(await s.prove("a0", "E", t0 + 1));
-  assert.ok(!(await s.prove("a0", "E", t0 + 2)), "proven once");
+  assert.equal(await s.consume("id0", t0), null, "not clicked yet");
+  assert.ok(!(await s.prove("nope", t0)));
+  assert.ok(await s.prove("k0", t0 + 1));
+  assert.ok(!(await s.prove("k0", t0 + 2)), "clicked once");
   assert.equal((await s.consume("id0", t0 + 3))?.user, "1");
   assert.equal(await s.consume("id0", t0 + 4), null, "used once");
-  assert.ok(!(await s.prove("a1", "E", t0 + 700_000)), "too late");
+  assert.ok(!(await s.prove("k1", t0 + 700_000)), "too late");
   await s.forget(t0 + 4_000_001, 1, [l], 1);
   assert.equal(await s.waiting("id6", t0), null);
 });
 
-// mail signs a message the way a provider does, with this test's key.
-async function mail(o: { from: string; d: string; a: "rsa-sha256" | "ed25519-sha256"; c: string; key: CryptoKey; extra?: string; body?: string; tags?: string }) {
-  const [hc, bc] = o.c.split("/");
-  const body = o.body ?? "hi there  \r\n\r\n\r\n";
-  const head = `From: Steve <${o.from}>\r\nTo: v-x@cygnet.lol\r\nSubject:  a\r\n\tfolded subject\r\n`;
-  const bh = btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonBody(body, bc))))));
-  const sig = `DKIM-Signature: v=1; a=${o.a}; c=${o.c}; d=${o.d}; s=sel;\r\n h=from:to:\r\n\tsubject; ${o.tags ?? ""}bh=${bh}; b=\r\n`;
-  const data = canonHeaders(parse(head), ["from", "to", "subject"], hc) + canonHeader(stripB(sig), hc).replace(/\r\n$/, "");
-  const bytes = new TextEncoder().encode(data);
-  const raw =
-    o.a === "rsa-sha256"
-      ? await crypto.subtle.sign("RSASSA-PKCS1-v1_5", o.key, bytes)
-      : await crypto.subtle.sign("Ed25519", o.key, await crypto.subtle.digest("SHA-256", bytes));
-  const b = btoa(String.fromCharCode(...new Uint8Array(raw)));
-  return sig.replace("b=\r\n", `b=${b.slice(0, 40)}\r\n ${b.slice(40)}\r\n`) + (o.extra ?? "") + head + "\r\n" + body;
-}
-
-test("dkim: a signature from the address's own domain, or nothing", async () => {
-  const rsa = (await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"])) as CryptoKeyPair;
-  const ed = (await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"])) as CryptoKeyPair;
-  const p = async (k: CryptoKey, f: "spki" | "raw") => btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.exportKey(f, k))));
-  const keys: Record<string, string> = {
-    "sel._domainkey.example.com": `v=DKIM1; k=rsa; p=${await p(rsa.publicKey, "spki")}`,
-    "sel._domainkey.ed.example": `v=DKIM1; k=ed25519; p=${await p(ed.publicKey, "raw")}`,
-  };
-  const lookup: Lookup = async (n) => keys[n] ?? null;
-  const now = Date.now();
-
-  for (const c of ["relaxed/relaxed", "simple/simple", "relaxed/simple", "simple/relaxed"]) {
-    assert.equal(await signer(await mail({ from: "Steve@Example.com", d: "example.com", a: "rsa-sha256", c, key: rsa.privateKey }), lookup, now), "steve@example.com", c);
-  }
-  assert.equal(await signer(await mail({ from: "s@mail.example.com", d: "example.com", a: "rsa-sha256", c: "relaxed/relaxed", key: rsa.privateKey }), lookup, now), "s@mail.example.com", "a subdomain of d");
-  assert.equal(await signer(await mail({ from: "s@ed.example", d: "ed.example", a: "ed25519-sha256", c: "relaxed/relaxed", key: ed.privateKey }), lookup, now), "s@ed.example");
-
-  const good = await mail({ from: "s@example.com", d: "example.com", a: "rsa-sha256", c: "relaxed/relaxed", key: rsa.privateKey });
-  assert.equal(await signer(good.replace("hi there", "hi theRe"), lookup, now), null, "a changed body");
-  assert.equal(await signer(good.replace("Steve <s@example.com>", "Steve <t@example.com>"), lookup, now), null, "a changed from");
-  assert.equal(await signer(good.replace("\r\n\r\n", "\r\nFrom: x@evil.test\r\n\r\n"), lookup, now), null, "a second from");
-  assert.equal(await signer(good.replace(/b=([A-Za-z0-9+/]{5})/, "b=AAAAA"), lookup, now), null, "a changed signature");
-  assert.equal(await signer(await mail({ from: "s@victim.test", d: "example.com", a: "rsa-sha256", c: "relaxed/relaxed", key: rsa.privateKey }), lookup, now), null, "signed by someone else's domain");
-  assert.equal(await signer(await mail({ from: "s@example.com", d: "example.com", a: "rsa-sha256", c: "relaxed/relaxed", key: rsa.privateKey, tags: "l=5; " }), lookup, now), null, "part of the body");
-  assert.equal(await signer(await mail({ from: "s@example.com", d: "example.com", a: "rsa-sha256", c: "relaxed/relaxed", key: rsa.privateKey, tags: "x=1; " }), lookup, now), null, "expired");
-  assert.equal(await signer(await mail({ from: "s@nokey.test", d: "nokey.test", a: "rsa-sha256", c: "relaxed/relaxed", key: rsa.privateKey }), lookup, now), null, "no key published");
-  assert.equal(await signer("no headers here", lookup, now), null);
+test("the email budget can't be overspent, in any window", async () => {
+  const { s } = fresh();
+  const d = 86_400_000;
+  for (let i = 0; i < 3; i++) assert.ok(await s.spend(t0, 5, 31));
+  assert.ok(await s.spend(t0 + 10 * d, 5, 31));
+  assert.ok(await s.spend(t0 + 20 * d, 5, 31));
+  assert.ok(!(await s.spend(t0 + 30 * d, 5, 31)), "five in 31 days");
+  assert.ok(await s.spend(t0 + 31 * d, 5, 31), "the first day's three have left the window");
+  assert.ok(budget.emails <= 3000 && budget.days >= 31, "inside what the plan includes in any billing month");
 });
 
-test("the page says what it should, escaped", () => {
-  const open = page(l, 1204, { kind: "open" }, "key");
-  assert.match(open, /1,204<\/b> people on the list/);
-  assert.match(open, /data-sitekey="key"/);
+// visible is what a person reads on a page: no markup, styles or scripts,
+// and nothing in bold, which is an address or a number.
+const visible = (html: string) =>
+  html
+    .replace(/<(style|script|title)[\s\S]*?<\/\1>/g, "")
+    .replace(/<meta[^>]*>/g, "")
+    .replace(/<b>[\s\S]*?<\/b>/g, "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&#\d+;/g, "");
+
+test("every page, in the voice", () => {
   const now = t0;
-  const mine = page(l, 1, { kind: "in", rank: 7, held: null, released: 3, left: 2, now, invites: [{ hash: "h1", made: now - 3_600_000, expires: now + 7_200_000, spent_at: null, revoked: null }, { hash: "h2", made: now - 60_000, expires: now, spent_at: now, revoked: null }] }, "key");
-  assert.match(mine, /#7/);
-  assert.match(mine, /▰▰▱<\/span>  2 of 3 left/);
-  assert.match(mine, /▸ open · 2h 0m left/);
-  assert.match(mine, /✓ used/);
-  assert.match(mine, /make an invite/);
-  const held = page(l, 1, { kind: "in", rank: 2, held: "a <b>", released: 3, left: 3, now, invites: [] }, "key");
-  assert.match(held, /a &#60;b&#62;/);
-  assert.doesNotMatch(held, /turnstile\/v0|make an invite/);
-  assert.match(page(l, 1, { kind: "prove", address: "v-x@cygnet.lol", expires: now + 600_000, now, what: "take your invite" }, "k"), /http-equiv="refresh"[\s\S]*mailto:v-x@cygnet.lol/);
+  const views = {
+    open: page(l, 1204, { kind: "open" }, "key"),
+    mine: page(l, 1, { kind: "in", rank: 7, held: null, released: 3, left: 2, now, invites: [{ hash: "h1", made: now - 3_600_000, expires: now + 7_200_000, spent_at: null, revoked: null }, { hash: "h2", made: now - 60_000, expires: now, spent_at: now, revoked: null }, { hash: "h3", made: now - 60_000, expires: now + 1, spent_at: null, revoked: now }, { hash: "h4", made: now - 3 * 86400_000, expires: now - 1, spent_at: null, revoked: null }] }, "key"),
+    invitee: page(l, 1, { kind: "in", rank: null, held: null, released: 0, left: 0, now, invites: [] }, "key"),
+    held: page(l, 1, { kind: "in", rank: 2, held: "someone on your connection is already on the list", released: 3, left: 3, now, invites: [] }, "key"),
+    invited: page(l, 1, { kind: "invited", code: "c", expires: now + 3_600_000, now }, "key"),
+    sent: page(l, 1, { kind: "sent", to: "st***@gm***.com", expires: now + 600_000, now, what: "take your invite" }, "k"),
+    confirm: page(l, 1, { kind: "confirm", token: "t" }, "k"),
+    confirmed: page(l, 1, { kind: "confirmed" }, "k"),
+    error: page(l, 1, { kind: "error", why: "that link ran out or was already used\nstart again from your page" }, "k"),
+  };
+  for (const [name, html] of Object.entries(views)) {
+    const words = visible(html);
+    assert.doesNotMatch(words, /[.,;:!?'"\u2014\u2026]/, `${name} has punctuation: ${words.match(/.{0,30}[.,;:!?'"].{0,30}/)?.[0]}`);
+    assert.doesNotMatch(words, /[A-Z]/, `${name} has capitals`);
+  }
+  assert.match(views.open, /<b>1204<\/b> people on the list/);
+  assert.match(views.open, /data-sitekey="key"/);
+  assert.match(views.mine, /#7/);
+  assert.match(views.mine, /▰▰▱<\/span>  2 of 3 left/);
+  assert.match(views.mine, /open for 2h 0m/);
+  assert.match(views.mine, />used</);
+  assert.match(views.mine, /taken back/);
+  assert.match(views.mine, /ran out and came back to you/);
+  assert.match(views.mine, /make an invite/);
+  assert.match(views.invitee, /youre in through a friend/);
+  assert.doesNotMatch(views.held, /turnstile\/v0|make an invite/);
+  assert.match(views.sent, /http-equiv="refresh"[\s\S]*<b>st\*\*\*@gm\*\*\*\.com<\/b>/);
+  assert.match(views.confirm, /src="\/confirm\.js"[\s\S]*/);
+  assert.match(views.confirm, /action="\/v\/t"/);
+  assert.match(views.error, /ran out or was already used<br>start again/);
+  assert.match(page(l, 1, { kind: "in", rank: 2, held: "a <b>", released: 3, left: 3, now, invites: [] }, "key"), /a &#60;b&#62;/);
+  assert.match(page(l, 1, { kind: "minted", link: "https://cygnet.lol/i/x", expires: now + inviteLife, now }, "k"), /class="link"[^>]*>https:\/\/cygnet\.lol\/i\/x</);
   assert.equal(span(45_000), "45s");
   assert.equal(span(3 * 3600_000 + 12 * 60_000 + 5_000), "3h 12m");
   assert.equal(span(2 * 86400_000 + 4 * 3600_000), "2d 4h");
