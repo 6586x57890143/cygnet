@@ -46,7 +46,7 @@ function shape(t, pose, sway) {
     scale: L(0.6, 1),
     // The body: an egg, low in the water and rising to a lifted tail, the
     // folded wings raised a little toward the rear.
-    ry: L(0.46, 0.34),
+    ry: L(0.38, 0.34),
     rz: L(0.52, 0.46),
     lift: L(0.04, 0.22),
     wing: [L(0.4, 0.66), L(0.12, 0.2), L(0.1, 0.12)],
@@ -60,9 +60,9 @@ function shape(t, pose, sway) {
     width: [[-1, 0.1], [-0.75, 0.36], [-0.3, 0.52], [0.3, 0.54], [0.75, 0.42], [0.92, 0.22], [1, 0.08]],
     neck: [
       [L(-0.82, -0.93), 0.06, 0],
-      [L(-0.86, -0.86), L(0.42, 0.92), sway * 0.25],
-      [L(-0.72, -0.6 + pose * 0.04), L(0.86, 1.86 - pose * 0.08), sway * 0.75],
-      [L(-0.96, -0.98 - pose * 0.04), L(0.84, 1.72 - pose * 0.1), sway],
+      [L(-0.92, -0.86), L(0.5, 0.92), sway * 0.25],
+      [L(-0.66, -0.6 + pose * 0.04), L(1.12, 1.86 - pose * 0.08), sway * 0.75],
+      [L(-0.9, -0.98 - pose * 0.04), L(1.08, 1.72 - pose * 0.1), sway],
     ],
     neckR: [L(0.17, 0.17), L(0.13, 0.125), L(0.13, 0.11)],
     head: [L(0.16, 0.19), L(0.12, 0.12), L(0.11, 0.105)],
