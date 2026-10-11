@@ -92,7 +92,7 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const from = t;
   let w = 0, h = 0, cy = 0, bx = 0, by = 0, cw = 6, ch = 10, cols = 0, rows = 0, ink = "236,230,218", deep = "3,5,8", depth = 0.55;
   // The sky's: night or day, its colours, and where the moon or sun is.
-  let night = true, skyTop = "8,12,26,0.5", skyLow = "26,38,62,0.35", glow = "226,232,240", glint = "235,240,250", mx = 0, my = 0, orb = 40;
+  let night = true, skyTop = "8,12,26,0.5", skyLow = "26,38,62,0.35", glow = "226,232,240", glint = "235,240,250", star = "236,242,255", mx = 0, my = 0, orb = 40;
   let lean = 0, aim = 0, float = 0, span = 400;
   function place() {
     const dpr = Math.min(devicePixelRatio || 1, 2);
@@ -132,6 +132,7 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
     skyLow = css.getPropertyValue("--sky-low").trim() || skyLow;
     glow = css.getPropertyValue("--orb").trim() || glow;
     glint = css.getPropertyValue("--glint").trim() || glint;
+    star = css.getPropertyValue("--star").trim() || star;
     // Above the swan's side of the page on a wide screen, the top right
     // on a phone.
     orb = Math.max(30, Math.min(72, w * 0.03));
@@ -158,13 +159,17 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
     x.fillRect(0, 0, w, cy);
     if (night) {
       // Stars: fixed places, each twinkling in its own time.
-      for (let i = 0; i < 160; i++) {
-        const sx = hash(i, 3) * w, sy = Math.pow(hash(i, 4), 1.4) * (cy - 30);
-        if (Math.hypot(sx - mx, sy - my) < orb * 2.2) continue;
-        const tw = 0.5 + 0.5 * Math.sin(s * (0.6 + hash(i, 5) * 1.6) + i);
-        const big = hash(i, 6) > 0.93;
-        x.fillStyle = `rgba(${glow},${((big ? 0.5 : 0.22) * (0.35 + 0.65 * tw)).toFixed(3)})`;
-        x.fillText(big ? (tw > 0.8 ? "+" : "*") : tw > 0.7 ? "." : "·", sx, sy);
+      for (let i = 0; i < 190; i++) {
+        const sx = hash(i, 3) * w, sy = Math.pow(hash(i, 4), 1.35) * (cy - 30);
+        if (Math.hypot(sx - mx, sy - my) < orb * 2) continue;
+        const tw = 0.5 + 0.5 * Math.sin(s * (0.6 + hash(i, 5) * 1.8) + i);
+        const big = hash(i, 6) > 0.86;
+        x.fillStyle = `rgba(${star},${((big ? 0.95 : 0.55) * (0.4 + 0.6 * tw)).toFixed(3)})`;
+        if (big) {
+          x.font = `${ch + 3}px ui-monospace, Menlo, Consolas, monospace`;
+          x.fillText(tw > 0.75 ? "+" : tw > 0.35 ? "*" : "·", sx, sy);
+          x.font = `${ch}px ui-monospace, Menlo, Consolas, monospace`;
+        } else x.fillText(tw > 0.6 ? "." : "·", sx, sy);
       }
     } else {
       // Clouds: soft clusters of glyphs drifting slowly across.
@@ -187,8 +192,8 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
       }
     }
     // The glow round the moon or the sun.
-    const halo = x.createRadialGradient(mx, my, orb * 0.6, mx, my, orb * (night ? 5 : 7));
-    halo.addColorStop(0, `rgba(${glow},${night ? 0.16 : 0.35})`);
+    const halo = x.createRadialGradient(mx, my, orb * 0.6, mx, my, orb * (night ? 3.6 : 7));
+    halo.addColorStop(0, `rgba(${glow},${night ? 0.07 : 0.35})`);
     halo.addColorStop(1, `rgba(${glow},0)`);
     x.fillStyle = halo;
     x.fillRect(mx - orb * 7, my - orb * 7, orb * 14, orb * 14);
@@ -210,7 +215,7 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
         } else {
           v = 0.7 + 0.3 * nz;
         }
-        x.fillStyle = `rgba(${glow},${Math.min(1, 0.35 + v * 0.65).toFixed(3)})`;
+        x.fillStyle = `rgba(${glow},${Math.min(1, night ? 0.16 + v * 0.42 : 0.35 + v * 0.65).toFixed(3)})`;
         x.fillText(ramp[Math.min(ramp.length - 1, 3 + Math.round(v * (ramp.length - 4)))], mx + i * cw - cw / 2, my + j * ch - ch / 2);
       }
     }
@@ -309,23 +314,35 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
     // water is: the same strokes, centred on the same line, riding the same
     // wave, fainter outward.
     for (let n = 0; n < ripples.length; n += 3) {
-      const gx = bx + ripples[n] * cw;
-      const j = ripples[n + 1];
-      x.fillStyle = `rgba(${ink},${(0.08 + ripples[n + 2] * 0.42).toFixed(3)})`;
-      x.fillText((ripples[n] + j) % 3 ? "-" : "~", gx, by - lift + j * ch - ch * 0.5 + wave(gx, s) * (0.6 - Math.min(0.4, Math.abs(j - f.horizon) * 0.05)));
+      const i = ripples[n], j = ripples[n + 1];
+      // Each stroke drifts and flickers on its own, a little.
+      const r1 = hash(i, j), r2 = hash(j, i + 31);
+      const gx = bx + i * cw + Math.sin(s * (0.7 + r1) + r2 * 6) * cw * 0.6;
+      const a = (0.06 + ripples[n + 2] * 0.42) * (0.6 + 0.4 * Math.sin(s * (1.1 + r2 * 1.7) + r1 * 9));
+      if (a < 0.04) continue;
+      x.fillStyle = `rgba(${ink},${a.toFixed(3)})`;
+      x.fillText(r1 > 0.72 ? "~" : r1 > 0.12 ? "-" : ".", gx, by - lift + j * ch - ch * 0.5 + (r2 - 0.5) * 2 + wave(gx, s) * (0.6 - Math.min(0.4, Math.abs(j - f.horizon) * 0.05)));
     }
     // The outline: every cell at the edge of the bird, bright and solid.
     x.fillStyle = `rgba(${ink},0.95)`;
     for (let n = 0; n < rims.length; n += 3) x.fillText(rims[n + 2] > 0.5 ? "#" : "*", bx + rims[n] * cw, by - lift + rims[n + 1] * ch);
-    // The reflection, carried by the wave and broken up by ripples the
-    // deeper it goes.
+    // The reflection, as moving water breaks it: each row slides on its own
+    // and further the deeper it is, the rows fall apart into horizontal
+    // streaks with gaps between them that drift, and the brightness comes
+    // and goes along each streak.
     for (let n = 0; n < glints.length; n += 3) {
       const i = glints[n], j = glints[n + 1], v = glints[n + 2];
-      const gx = bx + i * cw;
       const deep = j - f.horizon;
-      const rx = gx + Math.sin(deep * 0.9 + s * 2.2) * Math.min(5, deep * 0.5);
-      x.fillStyle = `rgba(${ink},${(0.05 + v * 0.35).toFixed(3)})`;
-      x.fillText(ramp[1 + Math.min(3, Math.floor(v * 8))], rx, by - lift + j * ch + wave(gx, s));
+      const gx = bx + i * cw;
+      const slide = Math.sin(s * (0.9 + hash(j, 2) * 0.8) + hash(j, 5) * 6.3) * Math.min(cw * 3.5, deep * cw * 0.45);
+      const rx = gx + slide;
+      const band = Math.sin(rx * 0.045 + s * 0.8 + j * 2.1) + Math.sin(rx * 0.12 - s * 1.5 + j * 0.7) * 0.6 + (hash(i, j) - 0.5) * 0.9;
+      if (band < -0.3 + deep * 0.03) continue;
+      const a = (0.04 + v * 0.42) * Math.min(1, 0.45 + band * 0.5) * (1 - Math.min(0.6, deep * 0.035));
+      if (a < 0.03) continue;
+      x.fillStyle = `rgba(${ink},${a.toFixed(3)})`;
+      const r = hash(j, i * 3);
+      x.fillText(band > 0.9 && r > 0.4 ? "=" : r > 0.8 ? "~" : r > 0.1 ? "-" : ".", rx, by - lift + j * ch + wave(gx, s) * 0.8);
     }
     // The water: a fine dashed line across the screen on a slow wave,
     // brightest under the swan.

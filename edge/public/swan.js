@@ -155,13 +155,15 @@ export function model(t, density = 1, pose = 0, sway = 0) {
   // The water where the swan is: the line it cuts round the hull, and
   // rings spreading from it, flat at y 0 (kinds 4 to 6, fading outward), so the bird hides the
   // far side of each and the near side crosses in front of it.
-  for (const [k, kind] of [[1.0, 4], [1.22, 5], [1.55, 6]]) {
-    const pts = n(260);
+  for (const [k, kind] of [[1.0, 4], [1.24, 5], [1.58, 6]]) {
+    const pts = n(300);
     for (let i = 0; i < pts; i++) {
       const g = (i / pts) * TAU;
-      // A gap now and then, so a ring reads as ripples and not a wire.
-      if (Math.sin(g * 9 + k * 5) > 0.55) continue;
-      add(Math.cos(g) * m.len * 1.06 * k, 0, Math.sin(g) * 0.58 * k, 0, 1, 0, kind);
+      // Uneven gaps and a wandering radius, so a ring reads as ripples
+      // pushed about by the water and not as a drawn ellipse.
+      if (Math.sin(g * 7 + k * 5) + Math.sin(g * 17 + k * 11) * 0.6 + (jit() - 0.5) * 0.9 > 0.5) continue;
+      const wob = 1 + Math.sin(g * 5 + k * 3) * 0.05 + Math.sin(g * 13 - k) * 0.03 + (jit() - 0.5) * 0.06;
+      add(Math.cos(g) * m.len * 1.06 * k * wob, 0, Math.sin(g) * 0.58 * k * wob, 0, 1, 0, kind);
     }
   }
 

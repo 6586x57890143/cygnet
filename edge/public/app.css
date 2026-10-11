@@ -4,7 +4,7 @@
    on paper. */
 
 :root {
-  --bg: #0c0f13;
+  --bg: #0a0d14;
   --glass: rgba(18, 23, 30, 0.74);
   --edge: rgba(150, 168, 196, 0.16);
   --text: #ece6da;
@@ -17,15 +17,16 @@
   --ok: #94b8a0;
   --warn: #dcae72;
   --err: #d98088;
-  --field: 96, 118, 150;
-  --ink: 243, 237, 225;
-  --deep: 2, 4, 7;
-  --deep-a: .62;
+  --field: 84, 104, 142;
+  --ink: 236, 234, 228;
+  --deep: 1, 3, 9;
+  --deep-a: .66;
   --scene: night;
-  --sky-top: 6, 10, 24, .55;
-  --sky-low: 30, 44, 72, .32;
-  --orb: 226, 232, 242;
-  --glint: 236, 241, 252;
+  --sky-top: 4, 7, 22, .62;
+  --sky-low: 24, 36, 66, .3;
+  --orb: 196, 206, 224;
+  --glint: 214, 224, 244;
+  --star: 238, 244, 255;
   --sea: 74, 92, 120;
   --mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -48,13 +49,14 @@
     --err: #a8424a;
     --field: 120, 112, 98;
     --ink: 26, 31, 39;
-    --deep: 38, 52, 78;
-    --deep-a: .14;
+    --deep: 34, 58, 92;
+    --deep-a: .15;
     --scene: day;
-    --sky-top: 150, 192, 232, .55;
-    --sky-low: 255, 241, 214, .4;
-    --orb: 255, 196, 92;
-    --glint: 196, 128, 30;
+    --sky-top: 128, 182, 236, .55;
+    --sky-low: 255, 236, 204, .42;
+    --orb: 255, 188, 76;
+    --glint: 188, 118, 22;
+    --star: 255, 255, 255;
     --sea: 150, 160, 178;
     color-scheme: light;
   }
