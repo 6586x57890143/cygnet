@@ -1,10 +1,10 @@
 // og draws public/art/og.gif, the picture a link to cygnet.lol unfurls
-// into: the page's own swan on its water through a whole day, night to
-// night, the card reduced to the name. It drives the page in headless
-// Chromium on a clock of its own, so every frame is the one asked for:
-// the swan moves at its own pace while the day goes by in a few seconds.
+// into: the page's own swan on its water in one scene of its day, the
+// card reduced to the name. It drives the page in headless Chromium on a
+// clock of its own, so every frame is the one asked for.
 //
-//   node tools/og.mjs [url]     # default https://cygnet.lol
+//   node tools/og.mjs [scene] [url]   # night (default), morning, day or
+//                                     # evening; https://cygnet.lol
 //
 // Needs Chrome or Edge, and ffmpeg on the PATH.
 import { spawn, execFileSync } from "node:child_process";
@@ -13,7 +13,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const url = process.argv[2] ?? "https://cygnet.lol";
+const scene = process.argv[2] ?? "night";
+const url = process.argv[3] ?? "https://cygnet.lol";
+// Where the scene is in the page's day, which starts at night and holds
+// each scene 75 s of every 100.
+const at = { night: 10, morning: 110, day: 210, evening: 310 }[scene];
+if (at === undefined) throw new Error(`no scene ${scene}`);
 const out = fileURLToPath(new URL("../public/art/og.gif", import.meta.url));
 // The page is laid out a little over the width where it goes wide, and
 // drawn at 4/3 so its glyphs are big enough to read in a chat: 1200 by
@@ -21,12 +26,9 @@ const out = fileURLToPath(new URL("../public/art/og.gif", import.meta.url));
 const W = 900, H = 473, dpr = 4 / 3;
 // Frames a second and seconds of the loop, then the last fade seconds
 // blended over the first so the swan's sway doesn't jump where it starts
-// again. The sky changes everywhere at once, so these and the palette are
-// what keep the file near 4 MB.
-const fps = 15, secs = 6, fade = 0.6;
-const colors = 90, dither = "bayer:bayer_scale=4";
-// The page's day is 400 s (4 scenes of 100); here it passes in secs.
-const day = 400 / secs;
+// again.
+const fps = 20, secs = 6, fade = 0.6;
+const colors = 112, dither = "bayer:bayer_scale=4";
 
 const browser = [
   process.env.CHROME,
@@ -68,37 +70,40 @@ try {
   await cdp("Page.enable");
   await cdp("Emulation.setDeviceMetricsOverride", { width: W, height: H, deviceScaleFactor: dpr, mobile: false });
   await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }, { name: "prefers-reduced-motion", value: "no-preference" }] });
-  // The clock: animation frames run only when tick says, at its time; the
-  // page's day reads performance.now, which runs day times as fast. The
-  // swan is grown, and the card holds only the name and its line, large
-  // enough to read at the size a chat shows it.
+  // The clock: animation frames run only when tick says, at its time. The
+  // page's day reads performance.now, which jumps to the scene once the
+  // page has started its day. The swan is grown, and the card holds only
+  // the name and its line, large enough to read at the size a chat shows
+  // it, which is about half of this.
   await cdp("Page.addScriptToEvaluateOnNewDocument", {
     source: `
       localStorage.setItem("swan", "1");
       let ms = 0;
       const queue = [];
-      performance.now = () => ms * ${day};
+      window.skip = 0;
+      performance.now = () => ms + skip;
       requestAnimationFrame = (f) => queue.push(f);
       window.tick = (dt) => { ms += dt; for (const f of queue.splice(0)) f(ms); };
       // The page has measured itself by then: the resize has it measure again.
       addEventListener("DOMContentLoaded", () => (document.head.append(Object.assign(document.createElement("style"), { textContent: \`
         .soon, .fine, footer, button.theme, .ring, canvas.field { display: none !important; }
         main { display: block; min-height: 0; height: 100vh; padding: 0; }
-        .hero { position: absolute; left: -40px; width: 790px; top: 0; height: 100%; }
-        .card { position: absolute; right: 28px; bottom: 84px; width: 268px; text-align: center; padding: 20px 16px 22px; }
-        .card header { display: block; margin: 0 0 10px; }
+        .hero { position: absolute; left: -130px; width: 720px; top: 0; height: 100%; }
+        .card { position: absolute; right: 22px; bottom: 84px; width: 392px; text-align: center; padding: 18px 10px 24px; }
+        .card header { display: block; margin: 0 0 8px; }
         .card .kicker { display: none; }
-        .card h1 { font-size: 54px; line-height: 1; }
-        .card .line { font-size: 13px; margin: 0; white-space: nowrap; }
+        .card h1 { font-size: 92px; line-height: 1; letter-spacing: -0.02em; }
+        .card .line { white-space: nowrap; font-size: 20px; line-height: 1.3; height: 1.3em; overflow: hidden; margin: 0; color: var(--text); opacity: .8; }
       \` })), dispatchEvent(new Event("resize"))));
     `,
   });
   await cdp("Page.navigate", { url });
   while (!events.includes("Page.loadEventFired")) await new Promise((r) => setTimeout(r, 100));
   await cdp("Runtime.evaluate", { expression: "document.fonts.ready", awaitPromise: true });
+  await cdp("Runtime.evaluate", { expression: `skip = ${at * 1000}` });
 
   const dt = 1000 / fps;
-  // A whole day first, so the scene's easing has settled into the loop.
+  // Six seconds first, so the scene has settled.
   for (let i = 0; i < fps * secs; i++) await cdp("Runtime.evaluate", { expression: `tick(${dt})` });
   const n = Math.round(fps * (secs + fade));
   for (let i = 0; i < n; i++) {

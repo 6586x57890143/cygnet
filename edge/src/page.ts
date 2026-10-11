@@ -229,7 +229,7 @@ ${refresh}
 <meta property="og:image:type" content="image/gif">
 <meta property="og:image:width" content="800">
 <meta property="og:image:height" content="420">
-<meta property="og:image:alt" content="an ASCII swan on the water as a day goes by, beside the name cygnet">
+<meta property="og:image:alt" content="an ASCII swan on the water at night, beside the name cygnet">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="/art/cygnet.png">
 <link rel="stylesheet" href="/app.css">
