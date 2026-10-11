@@ -30,7 +30,10 @@ import { Store, type DB, type Hashes } from "./store.ts";
 
 interface Env {
   DB: D1Database;
-  EMAIL: SendEmail;
+  // Scaleway's Transactional Email sends the links: the secret key's
+  // token, and the project it bills.
+  SCW_SECRET_KEY: string;
+  SCW_PROJECT_ID: string;
   DISCORD_CLIENT_ID: string;
   DISCORD_CLIENT_SECRET: string;
   TURNSTILE_SITEKEY: string;
@@ -252,9 +255,8 @@ async function start(env: Env, l: Launch, url: URL, c: { purpose: "issue" | "red
   const what = c.purpose === "issue" ? "make your invite" : "take your invite";
   const href = `https://${url.host}/v/${link}`;
   try {
-    await env.EMAIL.send({
+    await mail(env, {
       to: c.address,
-      from,
       subject: `your ${l.name} link`,
       text: `hey\n\nclick this to ${what} on ${l.name}\n${href}\n\nit works once and only for 30 minutes\nif you didnt ask for this you can ignore it and nothing happens\n\ncygnet`,
       html: `<p>hey</p><p>click this to ${what} on ${l.name}<br><a href="${href}">${href}</a></p><p>it works once and only for 30 minutes<br>if you didnt ask for this you can ignore it and nothing happens</p><p>cygnet</p>`,
@@ -265,6 +267,16 @@ async function start(env: Env, l: Launch, url: URL, c: { purpose: "issue" | "red
   }
   const value = await sign(env, `${t}.${btoa(masked(c.address)).replaceAll("=", "")}`);
   return new Response(null, { status: 303, headers: secure({ location: `https://${url.host}/${l.name}/wait`, "set-cookie": cookie("cy_proof", value, proofLife / 1000) }) });
+}
+
+// mail sends one email through Scaleway's Transactional Email, in Paris.
+async function mail(env: Env, m: { to: string; subject: string; text: string; html: string }): Promise<void> {
+  const r = await fetch("https://api.scaleway.com/transactional-email/v1alpha1/regions/fr-par/emails", {
+    method: "POST",
+    headers: { "x-auth-token": env.SCW_SECRET_KEY, "content-type": "application/json" },
+    body: JSON.stringify({ from: { email: from.email, name: from.name }, to: [{ email: m.to }], subject: m.subject, text: m.text, html: m.html, project_id: env.SCW_PROJECT_ID }),
+  });
+  if (!r.ok) throw new Error(`scaleway ${r.status}`);
 }
 
 // confirm is an emailed link: a page whose one button marks it clicked,

@@ -87,10 +87,10 @@ through Turnstile and Discord (`identify email`), one place per Discord account 
 verified email. Admins release invites to the front of the line; a member makes one
 after a fresh Discord sign in and an email proof, and the person it's for takes it with
 their own, which links them to their sponsor in one D1 batch. An email is proven by a
-link emailed to it (Email Sending, so Workers Paid), opened on any device and acted on
-only in the browser that asked; a page that confirms itself with `confirm.js` keeps
-mail scanners from clicking it for them. Sends are capped at 2,900 in any 31 days, so
-the bill stays at the plan's $5.
+link emailed to it (Scaleway Transactional Email, pay per use), opened on any device and
+acted on only in the browser that asked; a page that confirms itself keeps mail scanners
+from clicking it for them. Sends are capped at 2,900 in any 31 days, about €0.65 at
+worst, and the rest runs on Cloudflare's free plan.
 Every change lands in a keyed, chained, append only ledger in the same batch, and
 `/admin/verify` checks it. Identifiers are HMACs under `HMAC_KEY`, forgotten by a daily
 cron. The copy is a person texting: lowercase, no punctuation, one thought a line, and

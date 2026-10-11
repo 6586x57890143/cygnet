@@ -40,12 +40,12 @@ opens nothing on foundry, and emails only the one link a person asks for.
 ## Proving an email with a link
 
 Making or taking an invite emails a link to the address on the person's Discord account
-(`cygnet@cygnet.lol`, through Email Sending). The address is used for that send and
+(`cygnet@cygnet.lol`, through Scaleway's Transactional Email in Paris). The address is used for that send and
 never stored; the page shows it masked (`st***@gm***.com`) from a signed cookie.
 
 - The link is `cygnet.lol/v/<32 random bytes>`, good once, for 30 minutes. Its token and
   the browser's cookie token are stored as SHA-256 digests.
-- Opening it shows a page with one button that `confirm.js` presses, so a person clicks
+- Opening it shows a page with one button that `app.js` presses, so a person clicks
   once while a mail scanner that only fetches links confirms nothing.
 - It can be opened on any device. What it was for (minting the invite, or taking it)
   happens only in the browser that started it, which waits on `/silcord/wait` and moves
@@ -53,11 +53,11 @@ never stored; the page shows it masked (`st***@gm***.com`) from a signed cookie.
 - Five links an hour per Discord account, each behind Turnstile and a fresh Discord
   sign in.
 
-**The bill stays at $5.** Email Sending needs Workers Paid ($5 a month), which includes
-3,000 emails a month. Every send first takes a slot in `sends`, one atomic statement:
-no more than 2,900 go out in any 31 days, so no billing month (at most 31 days) goes over
-what's included. Past it the page says so and nothing is sent. Everything else this uses
-(Workers, D1, Turnstile, static assets) is well inside the plan's included usage.
+**What it costs.** Scaleway sends 300 emails a month free, then €0.25 per 1,000, with no
+plan to buy. Every send first takes a slot in `sends`, one atomic statement: no more
+than 2,900 go out in any 31 days, so the worst month costs about €0.65 whatever anyone
+tries. Past it the page says so and nothing is sent. Everything else (Workers, D1,
+Turnstile, static assets) runs on Cloudflare's free plan.
 
 ## The ledger
 
@@ -97,19 +97,21 @@ keys always pass: site key `1x00000000000000000000AA`, secret
 
 ## Going live
 
-On the Cloudflare account that holds `cygnet.lol`, on Workers Paid ($5 a month):
+On the Cloudflare account that holds `cygnet.lol` (the free plan is enough):
 
 1. `npx wrangler d1 create cygnet-edge`, and put its `database_id` in `wrangler.jsonc`.
 2. A Turnstile widget for `cygnet.lol` (managed); its site key goes in `wrangler.jsonc`
    as `TURNSTILE_SITEKEY`.
-3. Email Sending on `cygnet.lol` (`npx wrangler email sending enable cygnet.lol`, then
-   the DNS records it lists). New accounts start with a low daily sending quota that
-   grows, so do this well before announcing.
+3. Scaleway, console, Transactional Email: add the domain `cygnet.lol` in Paris and add
+   the SPF, DKIM and DMARC records it lists to Cloudflare DNS, then wait for it to check
+   out. Its project ID goes in `wrangler.jsonc` as `SCW_PROJECT_ID`; an IAM API key whose
+   policy allows only Transactional Email in that project is `SCW_SECRET_KEY`.
+   Do this well before invites go out: a new domain sends slowly at first.
 4. In the Discord developer portal, cygnet's app, OAuth2: add the redirect
    `https://cygnet.lol/auth/discord`. Its application ID goes in `wrangler.jsonc` as
    `DISCORD_CLIENT_ID`.
 5. The secrets, each typed in, never in a file: `npx wrangler secret put` for
-   `DISCORD_CLIENT_SECRET`, `TURNSTILE_SECRET`, `HMAC_KEY` and `ADMIN_TOKEN` (both
+   `DISCORD_CLIENT_SECRET`, `TURNSTILE_SECRET`, `SCW_SECRET_KEY`, `HMAC_KEY` and `ADMIN_TOKEN` (the last two
    `openssl rand -base64 32`). Changing `HMAC_KEY` later makes every stored hash and the
    ledger's chain unverifiable, so set it once.
 6. `npm run deploy` applies the migrations and deploys to the `cygnet.lol` custom

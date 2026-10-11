@@ -41,9 +41,9 @@ export const inviteLife = 48 * hour;
 export const proofLife = 30 * minute;
 export const proofs = 5;
 
-// budget is the most emails sent in any window days long. The paid plan
-// includes 3,000 a month and a billing month is at most 31 days, so no
-// month can go over and the bill stays at the plan's price.
+// budget is the most emails sent in any window days long. Scaleway sends
+// 300 a month free and then charges per 1,000, so this caps the worst
+// month at well under a euro, whatever anyone tries.
 export const budget = { emails: 2_900, days: 31 };
 // keepNetwork is how long the network and area hashes are kept; keepEmail,
 // how long after a launch opens its email hashes are.
