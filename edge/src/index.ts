@@ -35,8 +35,6 @@ interface Env {
   DISCORD_CLIENT_SECRET: string;
   TURNSTILE_SITEKEY: string;
   TURNSTILE_SECRET: string;
-  // ICON is the launch server's picture, a cdn.discordapp.com URL, or "".
-  ICON: string;
   HMAC_KEY: string;
   ADMIN_TOKEN: string;
 }
@@ -80,7 +78,7 @@ export default {
   async fetch(req, env, ctx): Promise<Response> {
     const url = new URL(req.url);
     const [, first, second, third] = url.pathname.split("/");
-    const l = launches[first];
+    const l = first ? await store(env).launch(first) : undefined;
     try {
       if (first === "auth" && second === "discord" && req.method === "GET") return await callback(req, env, ctx, url);
       if (first === "i" && second) return await invited(req, env, url, second);
@@ -105,7 +103,8 @@ export default {
   // Forgets what was only kept to stop double sign ups once it's done that
   // job, links nobody clicked, and old send counts.
   async scheduled(_event, env): Promise<void> {
-    await store(env).forget(Date.now(), keepNetwork, Object.values(launches), keepEmail);
+    const s = store(env);
+    await s.forget(Date.now(), keepNetwork, await s.launches(), keepEmail);
   },
 } satisfies ExportedHandler<Env>;
 
@@ -158,7 +157,7 @@ async function issueStart(req: Request, env: Env, l: Launch, url: URL): Promise<
 async function invited(req: Request, env: Env, url: URL, code: string): Promise<Response> {
   const hash = await digest(code);
   const row = await env.DB.prepare("SELECT launch FROM invite WHERE hash = ?1").bind(hash).first<{ launch: string }>();
-  const l = row ? launches[row.launch] : undefined;
+  const l = row ? await store(env).launch(row.launch) : undefined;
   if (!l) return new Response("nothing here", { status: 404, headers: secure(text) });
   const now = Date.now();
   const open = await store(env).open(l, hash, now);
@@ -170,7 +169,7 @@ async function invited(req: Request, env: Env, url: URL, code: string): Promise<
 async function callback(req: Request, env: Env, ctx: ExecutionContext, url: URL): Promise<Response> {
   const state = (await unsign(env, read(req, "cy_state")))?.split(".") ?? [];
   const [purpose, launch, nonce, invite] = state as [Purpose, string, string, string];
-  const l = launches[launch];
+  const l = launch ? await store(env).launch(launch) : undefined;
   if (!l) return new Response("nothing here", { status: 404, headers: secure(text) });
   if (!nonce || !same(nonce, url.searchParams.get("state") ?? "")) return html(env, l, { kind: "error", why: say.elsewhere }, 400);
   const code = url.searchParams.get("code");
@@ -275,7 +274,7 @@ async function confirm(req: Request, env: Env, link: string): Promise<Response> 
   const s = store(env);
   const hash = await digest(link);
   const row = await env.DB.prepare("SELECT launch FROM challenge WHERE link = ?1").bind(hash).first<{ launch: string }>();
-  const l = (row && launches[row.launch]) || launches.silcord;
+  const l = (row && (await s.launch(row.launch))) || launches.silcord;
   if (req.method === "GET") return html(env, l, row ? { kind: "confirm", token: link } : { kind: "error", why: say.linkGone }, row ? 200 : 410);
   if (req.method !== "POST") return new Response("not allowed", { status: 405, headers: secure(text) });
   if (!(await s.prove(hash, Date.now()))) return html(env, l, { kind: "error", why: say.linkGone }, 410);
@@ -335,7 +334,20 @@ async function admin(req: Request, env: Env, launch?: string, action?: string): 
   const s = store(env);
   const json = (v: unknown) => new Response(JSON.stringify(v, null, 2), { headers: secure({ "content-type": "application/json", "cache-control": "no-store" }) });
   if (launch === "verify" && req.method === "GET") return json(await s.verify());
-  const l = launch ? launches[launch] : undefined;
+  // cygnet registers a launch, or refreshes it, with its server's id, name
+  // and picture.
+  if (launch && !action && req.method === "PUT") {
+    const b = await req.json<{ guild?: string; title?: string; icon?: string }>();
+    const ok =
+      /^[a-z0-9-]{2,32}$/.test(launch) &&
+      /^\d{17,20}$/.test(b.guild ?? "") &&
+      typeof b.title === "string" && b.title.length > 0 && b.title.length <= 100 &&
+      typeof b.icon === "string" && (b.icon === "" || b.icon.startsWith("https://cdn.discordapp.com/icons/"));
+    if (!ok) return new Response("bad launch", { status: 400, headers: secure(text) });
+    const kept = await s.register(launch, b.guild!, b.title!, b.icon!, Date.now());
+    return kept ? json({ launch, page: `/${launch}` }) : new Response("that name is another server's", { status: 409, headers: secure(text) });
+  }
+  const l = launch ? await s.launch(launch) : undefined;
   if (!l) return new Response("no such launch", { status: 404, headers: secure(text) });
   if (action === "tree" && req.method === "GET") return json(await s.tree(l));
   if (req.method === "POST") {
@@ -361,7 +373,7 @@ function withCookie(res: Response, c: string): Response {
 }
 
 async function html(env: Env, l: Launch, view: View, status = 200): Promise<Response> {
-  return new Response(page(l, await store(env).total(l), view, env.TURNSTILE_SITEKEY, env.ICON), {
+  return new Response(page(l, await store(env).total(l), view, env.TURNSTILE_SITEKEY, l.icon ?? ""), {
     status,
     headers: secure({ "content-type": "text/html; charset=utf-8", "cache-control": "no-store" }),
   });

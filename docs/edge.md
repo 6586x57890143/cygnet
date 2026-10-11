@@ -114,5 +114,10 @@ On the Cloudflare account that holds `cygnet.lol`, on Workers Paid ($5 a month):
    ledger's chain unverifiable, so set it once.
 6. `npm run deploy` applies the migrations and deploys to the `cygnet.lol` custom
    domain.
-7. Before announcing it: one real link each to Gmail, Outlook and a custom domain, to
+7. On foundry, in `~/cygnet/.env`: `CYGNET_EDGE_URL=https://cygnet.lol` and
+   `CYGNET_EDGE_TOKEN` set to the same value as the Worker's `ADMIN_TOKEN`, then restart
+   cygnet. In the launch's server, run `/provision launch name:silcord`: cygnet reads the
+   server's name and picture with its own token and registers them, and keeps them current.
+   Any server can launch this way; a name the code doesn't know gets the default line.
+8. Before announcing it: one real link each to Gmail, Outlook and a custom domain, to
    see it lands in the inbox and not spam.

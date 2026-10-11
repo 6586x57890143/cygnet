@@ -8,6 +8,11 @@ export interface Launch {
   line: string;
   // minAgeDays turns away Discord accounts made just to sign up again.
   minAgeDays: number;
+  // guild is the server's id; title and icon its name and picture, as
+  // cygnet last sent them (store.ts, launch).
+  guild?: string;
+  title?: string;
+  icon?: string;
   // opens is when the server opens, in ms, once it's set. Email hashes are
   // kept until keepEmail after it.
   opens?: number;
@@ -16,10 +21,15 @@ export interface Launch {
 export const launches: Record<string, Launch> = {
   silcord: {
     name: "silcord",
+    guild: "1558585698712293378",
     line: "a new discord server is on the way\nget on the list and when invites go out to the front of the line you can bring your friends in",
     minAgeDays: 30,
   },
 };
+
+// fallback is what a launch cygnet registered but the code doesn't name
+// says, and how old an account has to be.
+export const fallback = { line: "a new discord server is on the way\nget on the list and when invites go out to the front of the line you can bring your friends in", minAgeDays: 30 };
 
 export const minute = 60_000;
 export const hour = 60 * minute;

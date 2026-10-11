@@ -2,6 +2,7 @@ package provision
 
 import (
 	"context"
+	"fmt"
 	"errors"
 	"log/slog"
 	"strings"
@@ -50,6 +51,12 @@ func (m *Module) OnEvent(ev bot.Event) {
 	var guild snowflake.ID
 	var client *bot.Client
 	switch e := ev.(type) {
+	case *events.GuildUpdate:
+		// A launch's page follows its server's name and picture.
+		if e.Guild.Name != e.OldGuild.Name || fmt.Sprint(e.Guild.Icon) != fmt.Sprint(e.OldGuild.Icon) {
+			go m.refresh(e.Guild)
+		}
+		return
 	case *events.RoleCreate:
 		// A bot joining makes its role, which wants the bots' colour, and
 		// a bird its overwrites.

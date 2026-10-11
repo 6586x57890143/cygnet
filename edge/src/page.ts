@@ -184,9 +184,9 @@ export function page(l: Launch, total: number, view: View, sitekey: string, icon
 <meta name="theme-color" content="#0c0f13" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#f2efe8" media="(prefers-color-scheme: light)">
 ${refresh}
-<title>${esc(l.name)}</title>
+<title>${esc(l.title ?? l.name)}</title>
 <meta name="description" content="${esc(l.line.replaceAll("\n", " "))}">
-<meta property="og:title" content="${esc(l.name)}">
+<meta property="og:title" content="${esc(l.title ?? l.name)}">
 <meta property="og:description" content="${esc(l.line.replaceAll("\n", " "))}">
 <link rel="icon" href="/art/cygnet.png">
 <link rel="stylesheet" href="/app.css">
@@ -203,7 +203,7 @@ ${refresh}
   <section class="card">
     <header>
       <span class="ring">${mark}</span>
-      <span><span class="kicker">coming soon</span><h1>${esc(l.name)}</h1></span>
+      <span><span class="kicker">coming soon</span><h1>${esc(l.title ?? l.name)}</h1></span>
     </header>
     <p class="line">${lines(l.line)}</p>
     <p class="count"><b data-count="${total}">${total}</b> ${total === 1 ? "person" : "people"} on the list</p>

@@ -61,6 +61,11 @@ type Module struct {
 	// drift last reported there, so one drift is reported once.
 	timers, posted sync.Map
 	settle         time.Duration
+
+	// edge is the Worker launches are registered with, and launches each
+	// launch server's name there.
+	edge     *Edge
+	launches sync.Map
 }
 
 func New(fleet Fleet, want func() discord.Permissions, admin func(discord.Interaction) bool, g *guard.Guard) *Module {
@@ -86,7 +91,7 @@ func (*Module) Help() core.Help {
 	return core.Help{
 		Color: brand.ColorPrimary,
 		Line:  "sets this server up for the flock",
-		About: "/provision fleet shows every bird linked to her, whether it's in this server and whether it holds what it asks for. each one that isn't in yet or is missing something gets a button that adds it or grants the rest. what a bird asks for comes from the bird itself, so the card follows each one as it changes. /provision layout shows what a layout would change here before anything happens: roles, channels and who may post where, birds included. apply makes exactly those changes and nothing else, and leaves whatever the layout doesn't name alone. every role gets its colour: the layout's own, and one for all the bots. with fresh, whatever the layout doesn't name goes too: replace deletes it, archive keeps the old channels hidden in an archive category, and nothing is deleted before you confirm what goes. once a layout is applied she keeps an eye on it, and when the server drifts from it she says so in the layout's staff channel. /provision mode sets how far she goes: watch only says so, propose adds a button to put it back, and act puts it back and then says what she did",
+		About: "/provision fleet shows every bird linked to her, whether it's in this server and whether it holds what it asks for. each one that isn't in yet or is missing something gets a button that adds it or grants the rest. what a bird asks for comes from the bird itself, so the card follows each one as it changes. /provision layout shows what a layout would change here before anything happens: roles, channels and who may post where, birds included. apply makes exactly those changes and nothing else, and leaves whatever the layout doesn't name alone. every role gets its colour: the layout's own, and one for all the bots. with fresh, whatever the layout doesn't name goes too: replace deletes it, archive keeps the old channels hidden in an archive category, and nothing is deleted before you confirm what goes. once a layout is applied she keeps an eye on it, and when the server drifts from it she says so in the layout's staff channel. /provision launch gives this server a page at cygnet.lol where people get in line: she sends the server's name and picture there herself and keeps them current. /provision mode sets how far she goes: watch only says so, propose adds a button to put it back, and act puts it back and then says what she did",
 	}
 }
 
@@ -101,6 +106,9 @@ func (m *Module) Commands() []core.Command {
 				discord.ApplicationCommandOptionSubCommand{Name: "layout", Description: "what a layout would change here, then apply it", Options: []discord.ApplicationCommandOption{
 					discord.ApplicationCommandOptionString{Name: "name", Description: "which layout", Choices: choices()},
 					discord.ApplicationCommandOptionBool{Name: "fresh", Description: "start over: delete or archive what the layout doesn't name, once you confirm"},
+				}},
+				discord.ApplicationCommandOptionSubCommand{Name: "launch", Description: "give this server a page at cygnet.lol where people get in line", Options: []discord.ApplicationCommandOption{
+					discord.ApplicationCommandOptionString{Name: "name", Description: "the page's name, as in cygnet.lol/name", Required: true},
 				}},
 				discord.ApplicationCommandOptionSubCommand{Name: "mode", Description: "how far she goes on her own when this server drifts", Options: []discord.ApplicationCommandOption{
 					discord.ApplicationCommandOptionString{Name: "level", Description: "watch, propose or act", Required: true, Choices: modeChoices()},
@@ -139,6 +147,8 @@ func (m *Module) run(ctx context.Context, e *events.ApplicationCommandInteractio
 			return m.layoutCmd(ctx, e)
 		case "mode":
 			return m.modeCmd(ctx, e)
+		case "launch":
+			return m.launchCmd(ctx, e)
 		}
 	}
 	card := m.card(ctx, e.Client().Rest, *e.GuildID(), e.ApplicationID())

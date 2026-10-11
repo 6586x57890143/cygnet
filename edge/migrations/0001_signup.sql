@@ -91,3 +91,14 @@ CREATE TABLE ledger (
 );
 CREATE TRIGGER ledger_no_update BEFORE UPDATE ON ledger BEGIN SELECT RAISE(ABORT, 'the ledger is append only'); END;
 CREATE TRIGGER ledger_no_delete BEFORE DELETE ON ledger BEGIN SELECT RAISE(ABORT, 'the ledger is append only'); END;
+
+-- launch is a launch cygnet registered from its server, by name: the
+-- server's id, name and picture, as cygnet read them with its own token.
+-- A launch here has a page without a change to the code.
+CREATE TABLE launch (
+  name  TEXT    PRIMARY KEY,
+  guild TEXT    NOT NULL,
+  title TEXT    NOT NULL,
+  icon  TEXT    NOT NULL,
+  at    INTEGER NOT NULL
+);

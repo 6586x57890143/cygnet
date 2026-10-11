@@ -309,3 +309,20 @@ test("the swan model grows, and draws inside its frame", async () => {
   assert.ok(!rows[0].trim(), "the head clears the top of the frame");
   assert.match(rows[f.horizon], /^[~-]{10}/, "the water line");
 });
+
+test("cygnet registers a launch from its server, and can't take another's name", async () => {
+  const { s } = fresh();
+  assert.equal(await s.launch("nope"), undefined);
+  // silcord is the code's: only its own server can refresh it.
+  assert.ok(!(await s.register("silcord", "175928847299117063", "x", "", t0)));
+  assert.ok(await s.register("silcord", "1558585698712293378", "silcord", "https://cdn.discordapp.com/icons/1/a.webp", t0));
+  const sil = await s.launch("silcord");
+  assert.equal(sil?.icon, "https://cdn.discordapp.com/icons/1/a.webp");
+  assert.match(sil?.line ?? "", /bring your friends/);
+  // A new one needs no code, and keeps its name to its server.
+  assert.ok(await s.register("wren", "175928847299117063", "Wren Club", "", t0));
+  assert.equal((await s.launch("wren"))?.title, "Wren Club");
+  assert.equal((await s.launch("wren"))?.minAgeDays, 30);
+  assert.ok(!(await s.register("wren", "175928847299117064", "other", "", t0)));
+  assert.deepEqual((await s.launches()).map((l) => l.name).sort(), ["silcord", "wren"]);
+});

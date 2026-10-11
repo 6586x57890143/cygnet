@@ -3,7 +3,7 @@
 // transaction, and each statement after the first is guarded on the first
 // having done what it should, so nothing changes without its entry.
 
-import { digest, inviteCode, inviteLife, keyed, type Launch } from "./signup.ts";
+import { digest, fallback, inviteCode, inviteLife, keyed, launches, type Launch } from "./signup.ts";
 
 // DB is what this needs of D1, so a test can hand it SQLite.
 export interface DB {
@@ -45,6 +45,35 @@ export class Store {
   constructor(db: DB, key: string) {
     this.db = db;
     this.key = key;
+  }
+
+  // launch is the launch called name: the code's, with what cygnet sent
+  // for it, or one cygnet registered alone.
+  async launch(name: string): Promise<Launch | undefined> {
+    const row = await this.db.prepare("SELECT guild, title, icon FROM launch WHERE name = ?1").bind(name).first<{ guild: string; title: string; icon: string }>();
+    const known = launches[name];
+    if (!row) return known;
+    return { ...fallback, ...known, name, guild: row.guild, title: row.title, icon: row.icon };
+  }
+
+  async launches(): Promise<Launch[]> {
+    const { results } = await this.db.prepare("SELECT name FROM launch").all<{ name: string }>();
+    const names = new Set([...Object.keys(launches), ...results.map((r) => r.name)]);
+    return (await Promise.all([...names].map((n) => this.launch(n)))).filter((l): l is Launch => !!l);
+  }
+
+  // register keeps what cygnet read of a launch's server. A launch the
+  // code names keeps its server: another can't take its name.
+  async register(name: string, guild: string, title: string, icon: string, now: number): Promise<boolean> {
+    const known = launches[name];
+    if (known?.guild && known.guild !== guild) return false;
+    const taken = await this.db.prepare("SELECT guild FROM launch WHERE name = ?1").bind(name).first<{ guild: string }>();
+    if (taken && taken.guild !== guild) return false;
+    await this.db
+      .prepare("INSERT INTO launch (name, guild, title, icon, at) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT (name) DO UPDATE SET title = ?3, icon = ?4, at = ?5")
+      .bind(name, guild, title, icon, now)
+      .run();
+    return true;
   }
 
   // who is a Discord ID as the ledger names it.
