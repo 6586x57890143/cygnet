@@ -252,7 +252,12 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
   function draw(now, pts) {
     const s = now / 1000;
     lean += (aim - lean) * 0.04;
-    const f = frame(pts, cols, rows, -0.55 + Math.sin(s * 0.23) * 0.22 + lean, 0.13 + Math.sin(s * 0.41) * 0.025, cw / ch);
+    // Lit from where the moon or the sun is on the page, a little toward
+    // the viewer: whichever side faces it is bright and the far side falls
+    // into shadow.
+    const sx = bx + (cols * cw) / 2, sy = cy - cols * cw * 0.2;
+    const light = [mx - sx, sy - my, Math.hypot(mx - sx, sy - my) * (night ? 0.45 : 0.6)];
+    const f = frame(pts, cols, rows, -0.55 + Math.sin(s * 0.23) * 0.22 + lean, 0.13 + Math.sin(s * 0.41) * 0.025, cw / ch, light);
     x.clearRect(0, 0, w, h);
     // The card floats on the water line itself: its bottom corners sit on
     // the line where they are, so it rises by the water's height under its
@@ -272,14 +277,14 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
     g.addColorStop(1, `rgba(${deep},${depth})`);
     x.fillStyle = g;
     x.fillRect(0, cy - 8, w, h - cy + 8);
-    // The water's surface across the whole page: rows of ripples moving
-    // with the wave, brightest at the waterline and fading with depth, a
-    // few faint rows above it for the far water behind the bird. Drawn
-    // first, so the swan and its reflection sit in it.
-    for (let r = -3; r <= 9; r++) {
-      const gap = r < 0 ? ch * 0.55 : ch * (0.7 + r * 0.12);
-      const ry = cy + Math.sign(r) * Math.abs(r) * gap;
-      const fade = r < 0 ? 0.1 + 0.03 * (3 + r) : 0.32 * (1 - r / 10);
+    // The water's surface across the whole page, all of it below the
+    // water line: rows of ripples moving with the wave, brightest at the
+    // line and fading with depth. Drawn first, so the swan and its
+    // reflection sit in it.
+    for (let r = 0; r <= 9; r++) {
+      const gap = ch * (0.7 + r * 0.12);
+      const ry = cy + r * gap;
+      const fade = 0.32 * (1 - r / 10);
       for (let gx = (r * 13) % 11; gx < w; gx += cw * 1.25) {
         const v = Math.sin(gx * 0.021 + r * 1.7 + s * 0.9) + Math.sin(gx * 0.053 - s * 1.3 + r * 2.3) * 0.7;
         if (v < 0.55) continue;
@@ -299,7 +304,10 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
         const v = f.shade[q];
         if (v >= 0 && f.water[q]) ripples.push(i, j, v);
         else if (v >= 0 && f.edge[q]) rims.push(i, j, v);
-        else if (v >= 0) lanes[Math.min(bands - 1, Math.floor(v * bands))].push(i, j);
+        // Drawn in light ink at night and dark ink by day: by day the side in
+        // the sun takes the least ink, so the light still falls where it's
+        // lit.
+        else if (v >= 0) lanes[Math.min(bands - 1, Math.floor((night ? v : 1 - v * 0.85) * bands))].push(i, j);
         else if (f.refl[q] > 0.03) glints.push(i, j, f.refl[q]);
       }
     }
@@ -317,7 +325,10 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
     // water is: the same strokes, centred on the same line, riding the same
     // wave, fainter outward.
     for (let n = 0; n < ripples.length; n += 3) {
-      const i = ripples[n], j = ripples[n + 1];
+      const i = ripples[n];
+      // The rings' far side folds to the near side of the line: the line
+      // is the water's edge, and nothing on the water sits above it.
+      const j = f.horizon + Math.abs(ripples[n + 1] - f.horizon);
       // Each stroke drifts and flickers on its own, a little.
       const r1 = hash(i, j), r2 = hash(j, i + 31);
       const gx = bx + i * cw + Math.sin(s * (0.7 + r1) + r2 * 6) * cw * 0.6;

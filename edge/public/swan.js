@@ -241,7 +241,9 @@ export function model(t, density = 1, pose = 0, sway = 0) {
 // by rows character cells, a cell aspect wide for each one tall. Each cell
 // holds the shade of its nearest point (0 to 1), or -1; the reflection
 // below the water is drawn into refl where nothing else is.
-export function frame(pts, cols, rows, yaw, pitch, aspect = 0.55) {
+// light is where the light comes from, in the view: x right, y up, z out
+// of the screen. By default, above, a little left and toward the viewer.
+export function frame(pts, cols, rows, yaw, pitch, aspect = 0.55, light = [-0.45, 0.75, 0.5]) {
   const shade = new Float32Array(cols * rows).fill(-1);
   const refl = new Float32Array(cols * rows).fill(-1);
   const depth = new Float32Array(cols * rows).fill(-1e9);
@@ -254,7 +256,8 @@ export function frame(pts, cols, rows, yaw, pitch, aspect = 0.55) {
   const ox = cols / 2 - k * 0.06;
   const deep = rows - horizon;
   // The light: above, a little left and toward the viewer.
-  const lx = -0.45, ly = 0.75, lz = 0.5;
+  const ll = Math.hypot(light[0], light[1], light[2]) || 1;
+  const lx = light[0] / ll, ly = light[1] / ll, lz = light[2] / ll;
   for (let p = 0; p < pts.length; p += 7) {
     const x = pts[p], y = pts[p + 1], z = pts[p + 2];
     let nx = pts[p + 3], ny = pts[p + 4], nz = pts[p + 5];
