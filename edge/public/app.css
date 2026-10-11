@@ -202,3 +202,13 @@ header { flex-direction: column; gap: 10px; }
 .leave { display: flex; justify-content: center; gap: 18px; flex-wrap: wrap; }
 .leave a.quiet { color: var(--muted); font: 13px var(--mono); text-decoration: underline 1px dotted; text-underline-offset: 3px; padding: 4px 0; }
 .privacy a { color: inherit; text-decoration: underline 1px dotted; text-underline-offset: 3px; }
+
+/* The full notice is a document: a wider card, its terms in two columns
+   on a wide screen, one on a phone. */
+@media (min-width: 900px) {
+  .doc main { grid-template-columns: minmax(0, 1fr) minmax(560px, 820px); }
+  .doc .notice { display: grid; grid-template-columns: 1fr 1fr; column-gap: 28px; }
+}
+/* The notice page is the full notice: the compact one under it would only
+   repeat it. */
+.doc .privacy p:not(.by) { display: none; }

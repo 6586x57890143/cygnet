@@ -196,7 +196,7 @@ ${refresh}
 <link rel="stylesheet" href="/app.css">
 <script src="/theme.js"></script>
 </head>
-<body${wait}>
+<body${wait}${view.kind === "privacy" ? ' class="doc"' : ""}>
 <canvas class="field" aria-hidden="true"></canvas>
 <button type="button" class="theme" hidden aria-label="switch theme"></button>
 <main>
