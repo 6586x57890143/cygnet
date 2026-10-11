@@ -1,14 +1,11 @@
 // The rules of a launch's list, kept apart from the Worker so a test can
-// run them: who may join, what counts as the same person, and what is
-// forgotten when.
+// run them: who may join, what counts as the same person, how long a code
+// lasts, and what is forgotten when.
 
 // A Launch is compiled in, as cygnet's layouts are.
 export interface Launch {
   name: string;
   line: string;
-  // invites is how many invites each person on the list has reserved for
-  // after the launch.
-  invites: number;
   // minAgeDays turns away Discord accounts made just to sign up again.
   minAgeDays: number;
   // opens is when the server opens, in ms, once it's set. Email hashes are
@@ -19,13 +16,21 @@ export interface Launch {
 export const launches: Record<string, Launch> = {
   silcord: {
     name: "silcord",
-    line: "a new discord server, opening soon; get in line now and you'll have invites of your own to bring friends when it opens",
-    invites: 3,
+    line: "a new discord server, opening soon; get in line now, and when invites are released to the front of the line you can bring friends",
     minAgeDays: 30,
   },
 };
 
-export const day = 86_400_000;
+export const minute = 60_000;
+export const hour = 60 * minute;
+export const day = 24 * hour;
+// inviteLife is how long an invite link works before it's back in its
+// issuer's hands; proofLife, how long someone has to send the email that
+// proves their address. proofs is how many of those one Discord account
+// can start in an hour.
+export const inviteLife = 48 * hour;
+export const proofLife = 30 * minute;
+export const proofs = 5;
 // keepNetwork is how long the network and area hashes are kept; keepEmail,
 // how long after a launch opens its email hashes are.
 export const keepNetwork = 30 * day;
@@ -104,37 +109,62 @@ export function base64url(bytes: Uint8Array): string {
   return btoa(String.fromCharCode(...bytes)).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 }
 
-// held is why a new person's invites wait for an admin: someone already in
-// line signed up from the same connection, or from the same network in the
-// same area. They still get their place.
+// held is why a new person's invites wait for an admin: someone already on
+// the list signed up from the same connection, or from the same network in
+// the same area. They still get their place.
 export function held(sameIp: boolean, sameNetArea: boolean): string | null {
-  if (sameIp) return "someone on your connection is already in line";
-  if (sameNetArea) return "someone on your network nearby is already in line";
+  if (sameIp) return "someone on your connection is already on the list";
+  if (sameNetArea) return "someone on your network nearby is already on the list";
   return null;
 }
 
-// The statements, kept here so the test runs the same SQL as D1.
-export const sql = {
-  // join takes the next place, or nothing if this Discord account or this
-  // email is already in line. One statement, so two at once can't take the
-  // same place.
-  join: `INSERT INTO signup (launch, place, user, email, ip, net, geo, invites, held, at)
-    SELECT ?1, COALESCE(MAX(place), 0) + 1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9 FROM signup WHERE launch = ?1
-    ON CONFLICT DO NOTHING
-    RETURNING place`,
-  // seen is whether anyone in line shares this connection, or this network
-  // and area.
-  seen: `SELECT
-    EXISTS (SELECT 1 FROM signup WHERE launch = ?1 AND ip = ?2) AS ip,
-    EXISTS (SELECT 1 FROM signup WHERE launch = ?1 AND net = ?3 AND geo = ?4) AS area`,
-  // mine is a person's place as it is now, counting only who's still in
-  // line ahead of them.
-  mine: `SELECT s.invites, s.held,
-    (SELECT COUNT(*) FROM signup t WHERE t.launch = s.launch AND t.place <= s.place) AS rank
-    FROM signup s WHERE s.launch = ?1 AND s.user = ?2`,
-  total: `SELECT COUNT(*) AS n FROM signup WHERE launch = ?1`,
-  leave: `DELETE FROM signup WHERE launch = ?1 AND user = ?2`,
-  forgetNetwork: `UPDATE signup SET ip = NULL, net = NULL, geo = NULL
-    WHERE at < ?1 AND (ip IS NOT NULL OR net IS NOT NULL OR geo IS NOT NULL)`,
-  forgetEmail: `UPDATE signup SET email = NULL WHERE launch = ?1 AND email IS NOT NULL`,
-};
+// inviteCode is a new invite's code: 20 random bytes, base32, 32
+// characters. Only its digest is stored.
+export function inviteCode(): string {
+  return base32(crypto.getRandomValues(new Uint8Array(20)));
+}
+
+// token is a random value for a cookie or a state: 32 bytes, base64url.
+export function token(): string {
+  return base64url(crypto.getRandomValues(new Uint8Array(32)));
+}
+
+// mailbox is a one time address's local part: "v-" and 16 random bytes,
+// base32, so it can't be guessed and fits any mail client.
+export function mailbox(): string {
+  return "v-" + base32(crypto.getRandomValues(new Uint8Array(16)));
+}
+
+// digest is value's SHA-256, hex: for a code with entropy of its own, which
+// needs no key to stay unguessable.
+export async function digest(value: string): Promise<string> {
+  const h = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return [...new Uint8Array(h)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// same compares two strings in time that doesn't depend on where they
+// differ.
+export function same(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let d = 0;
+  for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return d === 0;
+}
+
+const alphabet = "abcdefghijklmnopqrstuvwxyz234567";
+
+function base32(bytes: Uint8Array): string {
+  let out = "";
+  let bits = 0;
+  let acc = 0;
+  for (const b of bytes) {
+    acc = (acc << 8) | b;
+    bits += 8;
+    while (bits >= 5) {
+      out += alphabet[(acc >>> (bits - 5)) & 31];
+      bits -= 5;
+    }
+  }
+  if (bits > 0) out += alphabet[(acc << (5 - bits)) & 31];
+  return out;
+}

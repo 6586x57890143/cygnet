@@ -21,11 +21,15 @@ performance claim measured, safety that costs nothing measurable. She adds one m
 
 1. **Interest.** A launch has a page at `cygnet.lol/<launch>`: the server's art, one line
    about it, and *count me in*. Signing in with Discord (and a Turnstile check nobody
-   has to click) puts them on the list and shows their place in it, with the invites
-   they have reserved for after it opens. Nothing else is asked for: Discord's
-   verified email (the `email` scope) is what makes them one person, kept only as a
-   keyed hash, with their connection and rough area hashed the same way to hold the
-   invites of a second sign up from one household for an admin (`docs/edge.md`).
+   has to click) puts them on the list and shows their place in it. Nothing else is
+   asked for: Discord's verified email (the `email` scope) is what makes them one
+   person, kept only as a keyed hash, with their connection and rough area hashed the
+   same way to hold the invites of a second sign up from one household for an admin.
+   Invites are released to the front of the line in contingents; each one a member
+   gives is made only after they prove their email, and taken only by someone who
+   proves theirs, so every member hangs from whoever vouched for them. An email is
+   proven by the person sending one to a one time address, never by cygnet sending
+   one (`docs/edge.md`).
 2. **A way in that is theirs.** When their wave opens, cygnet adds them to the server
    herself: no invite link exists for anyone to forward. Someone who would rather not
    grant that gets a Discord invite made for them alone: one use, gone in minutes.
@@ -207,7 +211,7 @@ about activity.
 | 1 | `internal/hub` and the public `link` module: hello, calls, events, deadlines, backpressure, goaway, manifests; the fleet on `/status`; skua linked | done; skua linked in production |
 | 2 | `/provision`: compiled-in layouts applied by diff with a preview, the live install card from each bird's manifest, role order, onboarding; drift cards at `watch`, `propose` or `act` | built: `/provision fleet`, `layout` (with role colours and a confirmed fresh start) and `mode`, with drift reports; onboarding and the live install card open |
 | 3 | Codes: `/invite` (in the server and user-installed), the Worker's redemption page, direct add with the one-use invite fallback, attribution, the tree | open |
-| 4 | Launches: interest pages, places in line, sealed tokens, the valve and its waves | started: `cygnet.lol/silcord`, places in line with reserved invites, one per account and email; sealed tokens, the valve and the hand-off to cygnet open |
+| 4 | Launches: interest pages, places in line, sealed tokens, the valve and its waves | started: `cygnet.lol/silcord`, places in line, contingents released to the front, invites issued and taken with an email proof, the tree and its ledger; sealed tokens, the valve and the hand-off to cygnet open |
 | 5 | Earning: rules in the layout, `skua.check` for activity, progress on `/invite`, sponsor standing | open |
 
 Not planned: leases, failover between birds and sharding. The birds do different jobs

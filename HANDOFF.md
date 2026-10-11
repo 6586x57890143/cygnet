@@ -83,20 +83,26 @@ Decisions worth keeping:
 ## The edge (M4, started)
 
 `edge/` is the Worker at `cygnet.lol` (`docs/edge.md`): `/silcord` takes sign ups
-through Turnstile and Discord (`identify email`), gives each a place in line and
-`invites` (3) reserved, and keeps one place per Discord account and per verified email.
-A second sign up from the same connection, or the same /24 and area, keeps its place
-with its invites held. Identifiers are HMACs under `HMAC_KEY`, forgotten by a daily
-cron. Tested with `node --test` against `node:sqlite`, typed with `wrangler types`, in
-CI's `edge` job. Not live until the steps in `docs/edge.md` are done.
+through Turnstile and Discord (`identify email`), one place per Discord account and per
+verified email. Admins release invites to the front of the line; a member makes one
+after a fresh Discord sign in and an email proof, and the person it's for takes it with
+their own, which links them to their sponsor in one D1 batch. An email is proven by the
+person sending one to a one time address: the Worker's `email` handler checks its DKIM
+itself (`dkim.ts`), because Email Routing's own check doesn't tie a signature to `From`.
+Every change lands in a keyed, chained, append only ledger in the same batch, and
+`/admin/verify` checks it. Identifiers are HMACs under `HMAC_KEY`, forgotten by a daily
+cron. Tested with `node --test` against `node:sqlite`, including tampering and spoofed
+mail, typed with `wrangler types`, in CI's `edge` job. Free plan only: nothing is sent.
+Not live until the steps in `docs/edge.md` are done.
 
 ## Not done yet, deliberately
 
 - Onboarding in layouts.
 - More layouts than `flock`, and a way to choose channel positions.
 - The live install card: needs `GUILD_MEMBERS`.
-- M3 to M5 in `SPEC.md`. For M4: sealed tokens, the valve, releasing held invites, and
-  how cygnet reads the list (through the tunnel, as the spec says).
+- M3 to M5 in `SPEC.md`. For M4: sealed tokens, the valve, standing for sponsors whose
+  invitees are removed, and how cygnet reads the list and the tree (through the tunnel,
+  as the spec says; the admin endpoints are a bearer token until then).
 
 ## From M0 and M1, still true
 

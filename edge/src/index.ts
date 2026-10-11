@@ -1,10 +1,13 @@
 // cygnet.lol: the one public surface cygnet has (SPEC.md, Principles 6).
-// A launch's page, its sign-in with Discord, and the list it keeps in D1.
-// The bot token never comes here; the Discord app's OAuth secret does, to
-// read who signed in, and their token is revoked as soon as it's read.
+// A launch's page, its sign in with Discord, the invites its members give,
+// and the email that proves an address, which comes to us: we never send
+// one. The bot token never comes here; the Discord app's OAuth secret does,
+// to read who signed in, and their token is revoked as soon as it's read.
 
+import { doh, signer } from "./dkim.ts";
 import { page, type View } from "./page.ts";
-import { area, created, day, held, keepEmail, keepNetwork, keyed, launches, networks, normalEmail, sql, type Launch } from "./signup.ts";
+import { area, created, day, digest, held, inviteLife, keepEmail, keepNetwork, keyed, launches, mailbox, networks, normalEmail, proofLife, proofs, same, token, type Launch } from "./signup.ts";
+import { Store, type DB, type Hashes } from "./store.ts";
 
 interface Env {
   DB: D1Database;
@@ -13,54 +16,80 @@ interface Env {
   TURNSTILE_SITEKEY: string;
   TURNSTILE_SECRET: string;
   HMAC_KEY: string;
+  ADMIN_TOKEN: string;
 }
+
+type Purpose = "join" | "issue" | "redeem";
 
 const api = "https://discord.com/api/v10";
 // stay is how long the page remembers who you are.
 const stay = 30 * day;
+const text = { "content-type": "text/plain; charset=utf-8" };
+
+const store = (env: Env) => new Store(env.DB as unknown as DB, env.HMAC_KEY);
 
 export default {
   async fetch(req, env, ctx): Promise<Response> {
     const url = new URL(req.url);
-    const [, first, second] = url.pathname.split("/");
+    const [, first, second, third] = url.pathname.split("/");
+    const l = launches[first];
     try {
       if (first === "auth" && second === "discord" && req.method === "GET") return await callback(req, env, ctx, url);
-      const l = launches[first];
-      if (!l) return new Response("nothing here", { status: 404, headers: secure({ "content-type": "text/plain; charset=utf-8" }) });
+      if (first === "i" && second) return await invited(req, env, url, second);
+      if (first === "admin") return await admin(req, env, second, third);
+      if (!l) return new Response("nothing here", { status: 404, headers: secure(text) });
       if (second === undefined && req.method === "GET") return await landing(req, env, l);
-      if (second === "join" && req.method === "POST") return await join(req, env, l, url);
-      if (second === "leave" && req.method === "POST") return await leave(req, env, l);
-      return new Response("not allowed", { status: 405, headers: secure({ "content-type": "text/plain; charset=utf-8" }) });
+      if (second === "prove" && req.method === "GET") return await prove(req, env, l, url);
+      if (req.method === "POST") {
+        if (second === "join") return await human(req, env, l, () => oauth(env, url, "join", l));
+        if (second === "issue") return await issueStart(req, env, l, url);
+        if (second === "revoke") return await revoke(req, env, l);
+        if (second === "leave") return await leave(req, env, l);
+      }
+      return new Response("not allowed", { status: 405, headers: secure(text) });
     } catch (err) {
-      console.error("signup", err instanceof Error ? err.message : "unknown");
-      const l = launches[first] ?? launches.silcord;
-      return html(env, l, { kind: "error", why: "something went wrong on cygnet's side; try again in a moment" }, 500);
+      console.error("edge", err instanceof Error ? err.message : "unknown");
+      return html(env, l ?? launches.silcord, { kind: "error", why: "something went wrong on cygnet's side; try again in a moment" }, 500);
     }
   },
 
-  // Forgets what was only kept to stop double sign ups, once it's done
-  // that job.
-  async scheduled(_event, env): Promise<void> {
-    const now = Date.now();
-    await env.DB.prepare(sql.forgetNetwork).bind(now - keepNetwork).run();
-    for (const l of Object.values(launches)) {
-      if (l.opens && now > l.opens + keepEmail) await env.DB.prepare(sql.forgetEmail).bind(l.name).run();
+  // An email to a one time address: if it's signed by the domain of the
+  // address it's from, and that address is the one the challenge waits
+  // for, the challenge is proven. The email itself is read only for that
+  // and never kept.
+  async email(message, env): Promise<void> {
+    const local = message.to.toLowerCase().split("@")[0];
+    if (!/^v-[a-z2-7]{26}$/.test(local) || message.rawSize > 512 * 1024) {
+      message.setReject("there's no one at this address");
+      return;
     }
+    const now = Date.now();
+    const from = await signer(await new Response(message.raw).text(), doh, now);
+    if (!from) {
+      message.setReject("this email isn't signed by your address's own provider, so it can't show the address is yours");
+      return;
+    }
+    const proven = await store(env).prove(await digest(local), await keyed(env.HMAC_KEY, "email", normalEmail(from)), now);
+    if (!proven) message.setReject("this isn't the email on your discord account, or the address ran out; start again on the page");
+  },
+
+  // Forgets what was only kept to stop double sign ups once it's done that
+  // job, and proofs nobody finished.
+  async scheduled(_event, env): Promise<void> {
+    await store(env).forget(Date.now(), keepNetwork, Object.values(launches), keepEmail);
   },
 } satisfies ExportedHandler<Env>;
 
 async function landing(req: Request, env: Env, l: Launch): Promise<Response> {
   const user = await who(req, env, l);
-  if (user) {
-    const row = await env.DB.prepare(sql.mine).bind(l.name, user).first<{ invites: number; held: string | null; rank: number }>();
-    if (row) return html(env, l, { kind: "in", rank: row.rank, invites: row.invites, held: row.held });
-  }
+  const now = Date.now();
+  const v = user ? await store(env).view(l, user, now) : null;
+  if (v) return html(env, l, { kind: "in", rank: v.rank, held: v.held, released: v.released, left: v.left, invites: v.invites, now });
   return html(env, l, { kind: "open" });
 }
 
-// join checks Turnstile, then sends the person to Discord with a state
-// only this browser holds.
-async function join(req: Request, env: Env, l: Launch, url: URL): Promise<Response> {
+// human runs next once Turnstile says a person sent the form.
+async function human(req: Request, env: Env, l: Launch, next: () => Promise<Response>): Promise<Response> {
   const form = await req.formData();
   const ok = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
     method: "POST",
@@ -71,27 +100,50 @@ async function join(req: Request, env: Env, l: Launch, url: URL): Promise<Respon
     }),
   }).then((r) => r.json<{ success: boolean }>());
   if (!ok.success) return html(env, l, { kind: "error", why: "the check that you're a person didn't go through; try again" }, 403);
-  const state = `${l.name}.${crypto.randomUUID()}`;
+  return next();
+}
+
+// oauth sends the person to Discord with a state only this browser holds,
+// which says what the sign in is for.
+async function oauth(env: Env, url: URL, purpose: Purpose, l: Launch, invite = "-"): Promise<Response> {
+  const nonce = token();
   const to = new URL("https://discord.com/oauth2/authorize");
   to.search = new URLSearchParams({
     client_id: env.DISCORD_CLIENT_ID,
     response_type: "code",
     redirect_uri: `https://${url.host}/auth/discord`,
     scope: "identify email",
-    state,
+    state: nonce,
     prompt: "none",
   }).toString();
-  return new Response(null, {
-    status: 303,
-    headers: secure({ location: to.toString(), "set-cookie": cookie("cy_state", await sign(env, state), 600) }),
-  });
+  const state = await sign(env, [purpose, l.name, nonce, invite].join("."));
+  return new Response(null, { status: 303, headers: secure({ location: to.toString(), "set-cookie": cookie("cy_state", state, 600) }) });
+}
+
+async function issueStart(req: Request, env: Env, l: Launch, url: URL): Promise<Response> {
+  if (!(await who(req, env, l))) return back(l);
+  return human(req, env, l, () => oauth(env, url, "issue", l));
+}
+
+// invited is an invite's page, and taking it.
+async function invited(req: Request, env: Env, url: URL, code: string): Promise<Response> {
+  const hash = await digest(code);
+  const row = await env.DB.prepare("SELECT launch FROM invite WHERE hash = ?1").bind(hash).first<{ launch: string }>();
+  const l = row ? launches[row.launch] : undefined;
+  if (!l) return new Response("nothing here", { status: 404, headers: secure(text) });
+  const now = Date.now();
+  const open = await store(env).open(l, hash, now);
+  if (!open) return html(env, l, { kind: "error", why: "this invite was used, taken back or ran out; ask whoever sent it for a new one" }, 410);
+  if (req.method === "POST") return human(req, env, l, () => oauth(env, url, "redeem", l, hash));
+  return html(env, l, { kind: "invited", code, expires: open.expires, now });
 }
 
 async function callback(req: Request, env: Env, ctx: ExecutionContext, url: URL): Promise<Response> {
-  const state = url.searchParams.get("state") ?? "";
-  const l = launches[state.split(".")[0]];
-  if (!l) return new Response("nothing here", { status: 404, headers: secure({ "content-type": "text/plain; charset=utf-8" }) });
-  if ((await unsign(env, read(req, "cy_state"))) !== state) {
+  const state = (await unsign(env, read(req, "cy_state")))?.split(".") ?? [];
+  const [purpose, launch, nonce, invite] = state as [Purpose, string, string, string];
+  const l = launches[launch];
+  if (!l) return new Response("nothing here", { status: 404, headers: secure(text) });
+  if (!nonce || !same(nonce, url.searchParams.get("state") ?? "")) {
     return html(env, l, { kind: "error", why: "that sign in started in another browser or took too long; start again here" }, 400);
   }
   const code = url.searchParams.get("code");
@@ -116,47 +168,148 @@ async function callback(req: Request, env: Env, ctx: ExecutionContext, url: URL)
   );
   if (!me.ok) return html(env, l, { kind: "error", why: "discord didn't say who you are; try again in a moment" }, 502);
   const user = await me.json<{ id: string; email?: string | null; verified?: boolean }>();
-
-  const signedIn = async () =>
-    new Response(null, { status: 303, headers: secure({ location: `/${l.name}`, "set-cookie": cookie(`cy_${l.name}`, await sign(env, `${l.name}.${user.id}.${Date.now() + stay}`), stay / 1000) }) });
-  if (await env.DB.prepare(sql.mine).bind(l.name, user.id).first()) return signedIn();
-
   if (!user.email || !user.verified) {
     return html(env, l, { kind: "error", why: "your discord account needs a verified email first; verify it in discord's settings, then try again" }, 403);
   }
-  if (Date.now() - created(user.id) < l.minAgeDays * day) {
-    return html(env, l, { kind: "error", why: `discord accounts have to be at least ${l.minAgeDays} days old to get in line` }, 403);
+  const s = store(env);
+  const now = Date.now();
+  const email = await keyed(env.HMAC_KEY, "email", normalEmail(user.email));
+
+  if (purpose === "issue") {
+    if ((await who(req, env, l)) !== user.id) return html(env, l, { kind: "error", why: "that's a different discord account than the one on the list here" }, 403);
+    const m = await s.member(l, user.id);
+    const v = await s.view(l, user.id, now);
+    if (!m || !v || v.held || !v.left) return html(env, l, { kind: "error", why: "you don't have an invite to give right now" }, 403);
+    if (m.email && !same(m.email, email)) {
+      return html(env, l, { kind: "error", why: "the email on your discord account changed since you joined, so it can't vouch for you; ask an admin" }, 403);
+    }
+    return start(env, l, url, { purpose: "issue", user: user.id, email, now });
   }
 
+  if (await s.member(l, user.id)) {
+    if (purpose === "join") return signedIn(env, l, user.id);
+    return html(env, l, { kind: "error", why: "you're already on the list, so this invite is still free for someone else" }, 409);
+  }
+  if (now - created(user.id) < l.minAgeDays * day) {
+    return html(env, l, { kind: "error", why: `discord accounts have to be at least ${l.minAgeDays} days old to get on the list` }, 403);
+  }
+  if (await s.emailTaken(l, email)) {
+    return html(env, l, { kind: "error", why: "this email is already on the list; sign in with the discord account that holds it" }, 409);
+  }
   const net = networks(req.headers.get("cf-connecting-ip") ?? "");
   const where = area(req.cf as { country?: string; region?: string; latitude?: string; longitude?: string } | undefined);
-  const [email, ip, near, geo] = await Promise.all([
-    keyed(env.HMAC_KEY, "email", normalEmail(user.email)),
-    keyed(env.HMAC_KEY, "ip", net.ip),
-    keyed(env.HMAC_KEY, "net", net.net),
-    where ? keyed(env.HMAC_KEY, "geo", where) : Promise.resolve(null),
-  ]);
-  // ponytail: seen then join is two statements, so two sign ups from one
-  // connection in the same instant can both keep their invites; a batch
-  // if that's ever seen.
-  const seen = await env.DB.prepare(sql.seen).bind(l.name, ip, near, geo).first<{ ip: number; area: number }>();
-  const why = held(!!seen?.ip, !!seen?.area);
-  const placed = await env.DB.prepare(sql.join).bind(l.name, user.id, email, ip, near, geo, l.invites, why, Date.now()).first();
-  if (placed || (await env.DB.prepare(sql.mine).bind(l.name, user.id).first())) return signedIn();
-  return html(env, l, { kind: "error", why: "this email already has a place in line; sign in with the discord account that holds it" }, 409);
+  const h: Hashes = {
+    email,
+    ip: await keyed(env.HMAC_KEY, "ip", net.ip),
+    net: await keyed(env.HMAC_KEY, "net", net.net),
+    geo: where ? await keyed(env.HMAC_KEY, "geo", where) : null,
+  };
+  const seen = await s.seen(l, h);
+  const why = held(seen.ip, seen.area);
+
+  if (purpose === "join") {
+    if (await s.join(l, user.id, h, why, now)) return signedIn(env, l, user.id);
+    return html(env, l, { kind: "error", why: "this email is already on the list; sign in with the discord account that holds it" }, 409);
+  }
+
+  const open = await s.open(l, invite, now);
+  if (!open) return html(env, l, { kind: "error", why: "this invite was used, taken back or ran out; ask whoever sent it for a new one" }, 410);
+  if (open.issuer === user.id) return html(env, l, { kind: "error", why: "that's your own invite; send it to the person it's for" }, 403);
+  return start(env, l, url, { purpose: "redeem", user: user.id, email, now, invite, hashes: h, held: why });
+}
+
+// start begins a proof of the person's email and shows them where to
+// send it.
+async function start(env: Env, l: Launch, url: URL, c: { purpose: "issue" | "redeem"; user: string; email: string; now: number; invite?: string; hashes?: Hashes; held?: string | null }): Promise<Response> {
+  const t = token();
+  const box = mailbox();
+  const ok = await store(env).challenge(
+    { id: await digest(t), addr: await digest(box), launch: l.name, user: c.user, purpose: c.purpose, made: c.now, expires: c.now + proofLife, email: c.email, invite: c.invite, hashes: c.hashes, held: c.held },
+    proofs,
+  );
+  if (!ok) return html(env, l, { kind: "error", why: "you've started this too many times this hour; try again in an hour" }, 429);
+  const proof = await sign(env, `${t}.${box}`);
+  return new Response(null, { status: 303, headers: secure({ location: `https://${url.host}/${l.name}/prove`, "set-cookie": cookie("cy_proof", proof, proofLife / 1000) }) });
+}
+
+// prove waits for the email, then does what it was for, once.
+async function prove(req: Request, env: Env, l: Launch, url: URL): Promise<Response> {
+  const [t, box] = (await unsign(env, read(req, "cy_proof")))?.split(".") ?? [];
+  const now = Date.now();
+  const s = store(env);
+  const id = t ? await digest(t) : "";
+  const w = id ? await s.waiting(id, now) : null;
+  if (!w || w.launch !== l.name) return html(env, l, { kind: "error", why: "that was already used, or ran out before the email came in; start again from your page" }, 410);
+  const what = w.purpose === "issue" ? "make your invite" : "take your invite";
+  if (!w.verified) return html(env, l, { kind: "prove", address: `${box}@${url.host}`, expires: w.expires, now, what });
+  const c = await s.consume(id, now);
+  if (!c) return back(l);
+  const done = cookie("cy_proof", "", 0);
+  if (c.purpose === "issue") {
+    const code = await s.issue(l, c.user, now);
+    if (!code) return html(env, l, { kind: "error", why: "you don't have an invite to give right now" }, 403);
+    const res = html(env, l, { kind: "minted", link: `https://${url.host}/i/${code}`, expires: now + inviteLife, now });
+    return withCookie(await res, done);
+  }
+  const r = await s.redeem(l, c.invite ?? "", c.user, { email: c.email, ip: c.ip, net: c.net, geo: c.geo }, c.held, now);
+  if (r === "taken") return withCookie(await html(env, l, { kind: "error", why: "this email or account got on the list another way meanwhile" }, 409), done);
+  if (r === "gone") return withCookie(await html(env, l, { kind: "error", why: "this invite was used, taken back or ran out before you finished; ask for a new one" }, 410), done);
+  const res = await signedIn(env, l, c.user);
+  res.headers.append("set-cookie", done);
+  return res;
+}
+
+async function revoke(req: Request, env: Env, l: Launch): Promise<Response> {
+  const user = await who(req, env, l);
+  const form = await req.formData();
+  if (user) await store(env).revoke(l, user, String(form.get("invite") ?? ""), Date.now());
+  return back(l);
 }
 
 async function leave(req: Request, env: Env, l: Launch): Promise<Response> {
   const user = await who(req, env, l);
-  if (user) await env.DB.prepare(sql.leave).bind(l.name, user).run();
+  if (user) await store(env).leave(l, user, Date.now());
   return new Response(null, { status: 303, headers: secure({ location: `/${l.name}`, "set-cookie": cookie(`cy_${l.name}`, "", 0) }) });
+}
+
+// admin is what an admin does, with ADMIN_TOKEN as a bearer: release
+// invites to the front of a line, lift a hold, read the tree, and check
+// the ledger. Without the token set, none of it exists.
+async function admin(req: Request, env: Env, launch?: string, action?: string): Promise<Response> {
+  const given = (req.headers.get("authorization") ?? "").replace(/^Bearer /, "");
+  if (!env.ADMIN_TOKEN || !given || !same(await digest(given), await digest(env.ADMIN_TOKEN))) {
+    return new Response("nothing here", { status: 404, headers: secure(text) });
+  }
+  const s = store(env);
+  const json = (v: unknown) => new Response(JSON.stringify(v, null, 2), { headers: secure({ "content-type": "application/json", "cache-control": "no-store" }) });
+  if (launch === "verify" && req.method === "GET") return json(await s.verify());
+  const l = launch ? launches[launch] : undefined;
+  if (!l) return new Response("no such launch", { status: 404, headers: secure(text) });
+  if (action === "tree" && req.method === "GET") return json(await s.tree(l));
+  if (req.method === "POST") {
+    const body = await req.json<{ count?: number; invites?: number; user?: string }>();
+    if (action === "release" && Number.isInteger(body.count) && Number.isInteger(body.invites) && body.count! > 0 && body.invites! > 0 && body.invites! <= 10) {
+      return json({ released: await s.release(l, body.count!, body.invites!, Date.now()) });
+    }
+    if (action === "lift" && body.user && /^\d{17,20}$/.test(body.user)) return json({ lifted: await s.lift(l, body.user, Date.now()) });
+  }
+  return new Response("not allowed", { status: 405, headers: secure(text) });
 }
 
 const back = (l: Launch) => new Response(null, { status: 303, headers: secure({ location: `/${l.name}` }) });
 
+async function signedIn(env: Env, l: Launch, user: string): Promise<Response> {
+  const c = cookie(`cy_${l.name}`, await sign(env, `${l.name}.${user}.${Date.now() + stay}`), stay / 1000);
+  return new Response(null, { status: 303, headers: secure({ location: `/${l.name}`, "set-cookie": c }) });
+}
+
+function withCookie(res: Response, c: string): Response {
+  res.headers.append("set-cookie", c);
+  return res;
+}
+
 async function html(env: Env, l: Launch, view: View, status = 200): Promise<Response> {
-  const total = (await env.DB.prepare(sql.total).bind(l.name).first<{ n: number }>())?.n ?? 0;
-  return new Response(page(l, total, view, env.TURNSTILE_SITEKEY), {
+  return new Response(page(l, await store(env).total(l), view, env.TURNSTILE_SITEKEY), {
     status,
     headers: secure({ "content-type": "text/html; charset=utf-8", "cache-control": "no-store" }),
   });
@@ -178,8 +331,7 @@ function secure(h: Record<string, string>): Headers {
 // who is the Discord ID this browser signed in as for l, if its cookie is
 // ours and still good.
 async function who(req: Request, env: Env, l: Launch): Promise<string | null> {
-  const v = await unsign(env, read(req, `cy_${l.name}`));
-  const [name, user, until] = v?.split(".") ?? [];
+  const [name, user, until] = (await unsign(env, read(req, `cy_${l.name}`)))?.split(".") ?? [];
   return name === l.name && Number(until) > Date.now() ? user : null;
 }
 
@@ -206,10 +358,3 @@ async function unsign(env: Env, signed: string): Promise<string | null> {
   return same(signed.slice(at + 1), await keyed(env.HMAC_KEY, "cookie", value)) ? value : null;
 }
 
-// same compares two MACs in time that doesn't depend on where they differ.
-function same(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let d = 0;
-  for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return d === 0;
-}
