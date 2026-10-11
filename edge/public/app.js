@@ -1,3 +1,22 @@
+// fit sizes a canvas to the window, only when it has to: a canvas given
+// a size is wiped, even the same one, and a phone's address bar coming and
+// going changes the height on every scroll. It keeps the tallest height a
+// width has had, so the bar going away never leaves a gap.
+function fitter(c, x, set) {
+  let fw = 0, fh = 0, fd = 0;
+  return () => {
+    const dpr = Math.min(devicePixelRatio || 1, 2);
+    const nw = innerWidth, nh = nw === fw && dpr === fd ? Math.max(fh, innerHeight) : innerHeight;
+    if (nw !== fw || nh !== fh || dpr !== fd) {
+      [fw, fh, fd] = [nw, nh, dpr];
+      c.width = nw * dpr;
+      c.height = nh * dpr;
+      x.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    set(fw, fh);
+  };
+}
+
 // cygnet.lol's moving parts. Each is an extra: every page works without
 // this file, and with reduced motion nothing here moves.
 import { frame, model, ramp } from "./swan.js";
@@ -11,17 +30,13 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const c = document.querySelector("canvas.field");
   if (!c) return;
   const x = c.getContext("2d");
+  const fit = fitter(c, x, (a, b) => ((w = a), (h = b)));
   const glyphs = " .:-=+*<>/{}01#";
   const bands = 6;
   let w = 0, h = 0, cell = 14, cols = 0, rows = 0, rgb = "96,118,150";
   let px = -1e4, py = -1e4;
   function size() {
-    const dpr = Math.min(devicePixelRatio || 1, 2);
-    w = innerWidth;
-    h = innerHeight;
-    c.width = w * dpr;
-    c.height = h * dpr;
-    x.setTransform(dpr, 0, 0, dpr, 0, 0);
+    fit();
     cell = w < 600 ? 12 : 14;
     cols = Math.ceil(w / (cell * 0.9));
     rows = Math.ceil(h / cell);
@@ -92,6 +107,7 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
   if (still) t = to;
   const from = t;
   let w = 0, h = 0, cy = 0, bx = 0, by = 0, cw = 6, ch = 10, cols = 0, rows = 0;
+  const fit = fitter(c, x, (a, b) => ((w = a), (h = b)));
   // The scene, blended over time: base is where it starts (night in dark
   // mode, day in light), cycle when the cycle started, sc the scene as
   // drawn, eased toward where the cycle is. ax and aw are the stretch of
@@ -123,12 +139,7 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
   let mx = 0, my = 0, sunX = 0, sunY = 0, moonX = 0, moonY = 0, sunUp = 0, moonUp = 0;
   let lean = 0, aim = 0, float = 0, span = 400;
   function place() {
-    const dpr = Math.min(devicePixelRatio || 1, 2);
-    w = innerWidth;
-    h = innerHeight;
-    c.width = w * dpr;
-    c.height = h * dpr;
-    x.setTransform(dpr, 0, 0, dpr, 0, 0);
+    fit();
     const r = hero.getBoundingClientRect();
     // Measured without its bob, or the water would chase the card.
     const held = card.style.transform;

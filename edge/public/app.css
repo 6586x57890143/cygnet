@@ -170,8 +170,10 @@ button.quiet:hover { color: var(--text); transform: none; }
 .card, .privacy { text-align: center; }
 header { flex-direction: column; gap: 10px; }
 .place { flex-direction: column; align-items: center; gap: 6px; }
-.row { grid-template-columns: auto auto auto; justify-content: center; gap: 14px; }
-.row > :last-child { justify-self: center; text-align: center; }
+/* A row wraps whole parts onto a new line, centered, rather than squeezing
+   them into columns a phone has no room for. */
+.row { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 14px; }
+.row > :last-child { text-align: center; }
 .invites li { justify-content: center; gap: 18px; }
 .leave { text-align: center; }
 .link code { text-align: center; }
