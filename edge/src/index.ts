@@ -96,6 +96,7 @@ export default {
       if (first === "v" && second) return await confirm(req, env, second);
       if (first === "admin") return await admin(req, env, second, third);
       if (first === "privacy" && !second) return await privacy(env);
+      if (!first && req.method === "GET") return await home(env);
       if (!l) return new Response("nothing here", { status: 404, headers: secure(text) });
       if (second === undefined && req.method === "GET") return await landing(req, env, l);
       if (second === "wait" && req.method === "GET") return await wait(req, env, l, url);
@@ -380,6 +381,13 @@ async function liftPressed(req: Request, env: Env, l: Launch): Promise<Response>
   return new Response(null, { status: 303, headers: secure({ location: `/${l.name}/list` }) });
 }
 
+// home is cygnet.lol itself: the swan, the name, a line, and later the
+// launches people can get in line for. Nothing to fill in, nothing to
+// scrape, and no search engine is asked in.
+async function home(env: Env): Promise<Response> {
+  return html(env, { name: "cygnet", title: "cygnet", line: "discord servers that open by invitation\none launch at a time", minAgeDays: 30, icon: "/art/cygnet.png" }, { kind: "home" });
+}
+
 // privacy is the full privacy notice, for every launch.
 async function privacy(env: Env): Promise<Response> {
   const l = launches.silcord;
@@ -476,6 +484,8 @@ function secure(h: Record<string, string>): Headers {
       "default-src 'none'; img-src 'self' https://cdn.discordapp.com; style-src 'self' 'unsafe-inline'; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; connect-src 'self' https://challenges.cloudflare.com; form-action 'self' https://discord.com; base-uri 'none'; frame-ancestors 'none'",
     "referrer-policy": "no-referrer",
     "x-content-type-options": "nosniff",
+    // Shared by people, never found by search or taken for training.
+    "x-robots-tag": "noindex, nofollow, noarchive, noai, noimageai",
     "strict-transport-security": "max-age=31536000",
   });
 }

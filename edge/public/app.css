@@ -222,3 +222,13 @@ header { flex-direction: column; gap: 10px; }
 .tree b { font-weight: 500; text-transform: none; }
 .tree form { margin-left: auto; }
 .tree li > span:last-child { margin-left: auto; }
+
+/* The home page: the name and the line, and a quiet note where launches
+   will be. */
+.soon { margin: 18px 0 4px; font: 13px var(--mono); color: var(--muted); letter-spacing: .04em; }
+.soon .pulse { vertical-align: middle; }
+/* Home collects nothing, so it carries only the byline and a link to the
+   notice; the link sits in the byline only there. */
+.home .privacy p:not(.by) { display: none; }
+.privacy .plink { display: none; margin-left: 10px; }
+.home .privacy .plink { display: inline; }

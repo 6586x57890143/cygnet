@@ -31,6 +31,7 @@ export type View =
   | { kind: "minted"; link: string; expires: number; now: number }
   | { kind: "error"; why: string }
   | { kind: "list"; rows: Row[] }
+  | { kind: "home" }
   | { kind: "privacy"; controller: string; contact: string };
 
 // esc escapes text for HTML; lines also turns each line into its own.
@@ -71,6 +72,7 @@ function stage(view: View): number {
     case "in":
       return view.rank === null || view.released > 0 ? 2 : 1;
     case "minted":
+    case "home":
       return 2;
     case "sent":
     case "confirm":
@@ -192,6 +194,11 @@ export function page(l: Launch, total: number, view: View, sitekey: string, icon
     case "list":
       body = list(l, view.rows);
       break;
+    case "home":
+      body = `
+      <p class="soon"><span class="pulse"></span>nothing launching just yet</p>
+      <p class="fine">when a server opens its doors it shows up here<br>until then the swan keeps watch</p>`;
+      break;
     case "error":
       body = `
       <p class="note err">${lines(view.why)}</p>
@@ -206,6 +213,7 @@ export function page(l: Launch, total: number, view: View, sitekey: string, icon
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="robots" content="noindex, nofollow, noarchive, noai, noimageai">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0c0f13" media="(prefers-color-scheme: dark)">
@@ -219,7 +227,7 @@ ${refresh}
 <link rel="stylesheet" href="/app.css">
 <script src="/theme.js"></script>
 </head>
-<body${wait}${view.kind === "privacy" || view.kind === "list" ? ' class="doc"' : ""}>
+<body${wait}${view.kind === "privacy" || view.kind === "list" ? ' class="doc"' : view.kind === "home" ? ' class="home"' : ""}>
 <canvas class="field" aria-hidden="true"></canvas>
 <button type="button" class="theme" hidden aria-label="switch theme"></button>
 <main>
@@ -230,11 +238,13 @@ ${refresh}
   <section class="card">
     <header>
       <span class="ring">${mark}</span>
-      <span><span class="kicker">${view.kind === "privacy" ? "cygnet lol" : view.kind === "list" ? "the list" : l.stage === "open" ? "open now" : "coming soon"}</span><h1>${esc(l.title ?? l.name)}</h1></span>
+      <span><span class="kicker">${view.kind === "privacy" ? "cygnet lol" : view.kind === "list" ? "the list" : view.kind === "home" ? "by invitation" : l.stage === "open" ? "open now" : "coming soon"}</span><h1>${esc(l.title ?? l.name)}</h1></span>
     </header>
     ${
       view.kind === "privacy" || view.kind === "list"
         ? ""
+        : view.kind === "home"
+          ? `<p class="line">${lines(l.line)}</p>`
         : `<p class="line">${lines(l.line)}</p>
     <p class="count"><b data-count="${total}">${total}</b> ${total === 1 ? "person" : "people"} on the list</p>`
     }
@@ -247,7 +257,7 @@ ${refresh}
     <p>shared with<br>cloudflare who hosts this<br>discord for sign in<br>scaleway who sends the link emails<br>nobody else and never sold</p>
     <p>no tracking no ads no profiling<br>cookies only to keep you signed in</p>
     <p>you can see download or delete your data any time<br><a href="/privacy">full privacy notice</a></p>
-    <p class="by"><img src="/art/cygnet.png" alt="" width="14" height="14"><img src="/art/skua.png" alt="" width="14" height="14">kept by cygnet with skua</p>
+    <p class="by"><img src="/art/cygnet.png" alt="" width="14" height="14"><img src="/art/skua.png" alt="" width="14" height="14">kept by cygnet with skua<a class="plink" href="/privacy">privacy</a></p>
   </footer>
 </main>
 ${scripts}

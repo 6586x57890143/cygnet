@@ -429,3 +429,13 @@ test("the list: only its owner, as a tree, with holds to lift", async () => {
   assert.match(after, /invited by someone who left/);
   assert.doesNotMatch(visible(after), /[,;:!?'"A-Z]/);
 });
+
+test("the home page: the name, a line, nothing to fill in, nothing for robots", () => {
+  const home = page({ name: "cygnet", title: "cygnet", line: "discord servers that open by invitation\none launch at a time", minAgeDays: 30, icon: "/art/cygnet.png" }, 0, { kind: "home" }, "k");
+  assert.match(home, /<h1>cygnet<\/h1>/);
+  assert.match(home, /nothing launching just yet/);
+  assert.match(home, /<meta name="robots" content="noindex, nofollow, noarchive, noai, noimageai">/);
+  assert.doesNotMatch(home, /<form|turnstile\/v0|on the list/);
+  assert.doesNotMatch(visible(home), /[.,;:!?'"A-Z]/);
+  assert.equal(readFileSync(new URL("../public/robots.txt", import.meta.url), "utf8"), "User-agent: *\nDisallow: /\n");
+});
