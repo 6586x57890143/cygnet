@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cygnet-edge",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": false,
+  "routes": [{ "pattern": "cygnet.lol", "custom_domain": true }],
+  "assets": { "directory": "./public" },
+  "d1_databases": [
+    // database_id comes from `wrangler d1 create cygnet-edge` (docs/edge.md).
+    { "binding": "DB", "database_name": "cygnet-edge", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "migrations" }
+  ],
+  // Forgets the hashes that have done their job (src/signup.ts).
+  "triggers": { "crons": ["17 4 * * *"] },
+  "vars": {
+    // cygnet's application ID and the Turnstile widget's site key, both
+    // public. The secrets are DISCORD_CLIENT_SECRET, TURNSTILE_SECRET and
+    // HMAC_KEY, set with `wrangler secret put`.
+    "DISCORD_CLIENT_ID": "",
+    "TURNSTILE_SITEKEY": ""
+  },
+  "observability": { "enabled": true }
+}

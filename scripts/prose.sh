@@ -5,7 +5,7 @@
 set -euo pipefail
 em=$'\342\200\224' ell=$'\342\200\246'
 ldq=$'\342\200\234' rdq=$'\342\200\235'
-if grep -rnI --exclude-dir=.git -e "$em" -e "$ell" -e "$ldq" -e "$rdq" . ; then
+if grep -rnI --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=.wrangler --exclude=worker-configuration.d.ts -e "$em" -e "$ell" -e "$ldq" -e "$rdq" . ; then
 	echo "::error::Found em dashes, ellipsis characters or curly quotes. Use plain punctuation."
 	exit 1
 fi

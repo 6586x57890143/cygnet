@@ -80,12 +80,23 @@ Decisions worth keeping:
 - **The glyph is drawn here**, three sliders on pixelarticons' grid, not traced from a
   pixelarticons icon like the others.
 
+## The edge (M4, started)
+
+`edge/` is the Worker at `cygnet.lol` (`docs/edge.md`): `/silcord` takes sign ups
+through Turnstile and Discord (`identify email`), gives each a place in line and
+`invites` (3) reserved, and keeps one place per Discord account and per verified email.
+A second sign up from the same connection, or the same /24 and area, keeps its place
+with its invites held. Identifiers are HMACs under `HMAC_KEY`, forgotten by a daily
+cron. Tested with `node --test` against `node:sqlite`, typed with `wrangler types`, in
+CI's `edge` job. Not live until the steps in `docs/edge.md` are done.
+
 ## Not done yet, deliberately
 
 - Onboarding in layouts.
 - More layouts than `flock`, and a way to choose channel positions.
 - The live install card: needs `GUILD_MEMBERS`.
-- M3 to M5 in `SPEC.md`.
+- M3 to M5 in `SPEC.md`. For M4: sealed tokens, the valve, releasing held invites, and
+  how cygnet reads the list (through the tunnel, as the spec says).
 
 ## From M0 and M1, still true
 

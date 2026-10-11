@@ -47,6 +47,7 @@ cp .env.example .env && docker compose up --build   # local bot + Postgres
 go run ./cmd/cygnet                                 # native, DB optional
 go run ./tools/setup                                # go live / rotate the token
 scripts/deploy.sh                                   # manual deploy of HEAD to foundry
+npm -C edge ci && npm -C edge run check && npm -C edge test   # the Worker at cygnet.lol (docs/edge.md)
 ```
 
 `store` reaches its coverage floor only with `CYGNET_TEST_DATABASE_URL` set, as in CI.
