@@ -39,6 +39,7 @@ scripts/coverage.sh                    # race tests + 85% floor per internal/ pa
 scripts/prose.sh                       # no em dashes, ellipses or curly quotes
 go -C link vet ./... && go -C link test -race ./...   # the client module
 go test ./internal/hub -run x -bench Call             # a call's round trip through the hub
+go run ./tools/hubbench                               # live: cygnet.ping through the running hub, as bird `bench`
 govulncheck ./...
 go run ./tools/sprites                 # regenerate internal/brand/assets and emoji
 

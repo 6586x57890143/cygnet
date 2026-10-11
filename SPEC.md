@@ -189,7 +189,7 @@ about activity.
 
 | # | Experiment | State |
 |---|---|---|
-| 1 | Hub frame encoding: JSON against a fixed binary header with a raw body, round trip and allocations per call between two `link` clients | open. JSON baseline (`go test ./internal/hub -bench Call`): 97 us and 122 allocs a call and reply, two WebSocket hops on Windows loopback |
+| 1 | Hub frame encoding: JSON against a fixed binary header with a raw body, round trip and allocations per call between two `link` clients | open. JSON baseline (`go test ./internal/hub -bench Call`): 97 us and 122 allocs a call and reply, two WebSocket hops on Windows loopback. Live on foundry (1 vCPU, `tools/hubbench`, one hop to the hub and back): p50 123 us, p99 854 us one at a time; 13k calls/s at 8 in flight, p50 617 us, queueing on the one core |
 | 2 | Redemption round trip, sign-in return to member added, p50 and p99 from the Worker's clock: direct add against minted invite | open |
 | 3 | Code spend under a race: 1000 concurrent redemptions of one code, exactly one wins, and the cost of the conditional `UPDATE` | open |
 | 4 | Invites restricted to chosen users by Discord itself, if the API offers it, against cygnet's own one-use binding | open; verify the API first |
