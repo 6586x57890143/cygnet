@@ -303,7 +303,10 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
         else if (f.refl[q] > 0.03) glints.push(i, j, f.refl[q]);
       }
     }
-    const lift = (by + f.horizon * ch) - cy; // so the bird's water is the card's
+    // The swan rides the water where it floats, as the card does: its
+    // whole box rises and falls with the line under its middle.
+    const ride = wave(bx + (cols * cw) / 2, s) * 0.6;
+    const lift = by + f.horizon * ch - cy - ride; // so the bird's water is the card's
     for (let b = 0; b < bands; b++) {
       x.fillStyle = `rgba(${ink},${0.3 + (b / (bands - 1)) * 0.7})`;
       const g = ramp[1 + Math.round((b / (bands - 1)) * (ramp.length - 2))];
@@ -321,7 +324,9 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
       const a = (0.06 + ripples[n + 2] * 0.42) * (0.6 + 0.4 * Math.sin(s * (1.1 + r2 * 1.7) + r1 * 9));
       if (a < 0.04) continue;
       x.fillStyle = `rgba(${ink},${a.toFixed(3)})`;
-      x.fillText(r1 > 0.72 ? "~" : r1 > 0.12 ? "-" : ".", gx, by - lift + j * ch - ch * 0.5 + (r2 - 0.5) * 2 + wave(gx, s) * (0.6 - Math.min(0.4, Math.abs(j - f.horizon) * 0.05)));
+      // On the water line exactly: the bird's lift (which carries the swan's
+      // own ride) taken back out, and the line's wave where the stroke is.
+      x.fillText(r1 > 0.72 ? "~" : r1 > 0.12 ? "-" : ".", gx, by - lift - ride + j * ch - ch * 0.5 + wave(gx, s) * 0.6);
     }
     // The outline: every cell at the edge of the bird, bright and solid.
     x.fillStyle = `rgba(${ink},0.95)`;
@@ -342,7 +347,7 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
       if (a < 0.03) continue;
       x.fillStyle = `rgba(${ink},${a.toFixed(3)})`;
       const r = hash(j, i * 3);
-      x.fillText(band > 0.9 && r > 0.4 ? "=" : r > 0.8 ? "~" : r > 0.1 ? "-" : ".", rx, by - lift + j * ch + wave(gx, s) * 0.8);
+      x.fillText(band > 0.9 && r > 0.4 ? "=" : r > 0.8 ? "~" : r > 0.1 ? "-" : ".", rx, by - lift - ride + j * ch + wave(gx, s) * 0.6);
     }
     // The water: a fine dashed line across the screen on a slow wave,
     // brightest under the swan.
