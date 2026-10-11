@@ -28,7 +28,7 @@ const W = 900, H = 473, dpr = 4 / 3;
 // blended over the first so the swan's sway doesn't jump where it starts
 // again.
 const fps = 20, secs = 6, fade = 0.6;
-const colors = 112, dither = "bayer:bayer_scale=4";
+const colors = 108, dither = "bayer:bayer_scale=4";
 
 const browser = [
   process.env.CHROME,
@@ -93,7 +93,7 @@ try {
         .card header { display: block; margin: 0 0 8px; }
         .card .kicker { display: none; }
         .card h1 { font-size: 92px; line-height: 1; letter-spacing: -0.02em; }
-        .card .line { white-space: nowrap; font-size: 20px; line-height: 1.3; height: 1.3em; overflow: hidden; margin: 0; color: var(--text); opacity: .8; }
+        .card .line { white-space: nowrap; font-size: 20px; line-height: 1.3; height: 1.3em; overflow: hidden; margin: 18px 0 0; color: var(--text); opacity: .8; }
       \` })), dispatchEvent(new Event("resize"))));
     `,
   });

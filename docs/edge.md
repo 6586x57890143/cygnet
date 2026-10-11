@@ -137,6 +137,9 @@ looping. Discord plays it; apps that don't animate show its first frame. It is d
 from what's deployed, so redraw it after the scene changes and deploy again. Another
 scene is `node tools/og.mjs evening`.
 
+Discord keeps a picture by its URL, whatever page it came from, so a redrawn GIF needs
+the `?v=` on `og:image` in `src/page.ts` bumped, or Discord shows the old one.
+
 The name is sized for the preview Discord shows, about half the GIF's width. A
 GIF's compressed bytes can spell a word by chance, so check it with the pre-push grep
 and redraw at a different palette size if it matches.

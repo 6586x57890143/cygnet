@@ -225,7 +225,7 @@ ${refresh}
 <meta property="og:description" content="${esc(l.line.replaceAll("\n", " "))}">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="cygnet.lol">
-<meta property="og:image" content="https://cygnet.lol/art/og.gif">
+<meta property="og:image" content="https://cygnet.lol/art/og.gif?v=3">
 <meta property="og:image:type" content="image/gif">
 <meta property="og:image:width" content="800">
 <meta property="og:image:height" content="420">
