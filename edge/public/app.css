@@ -32,8 +32,10 @@
   --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   color-scheme: dark;
 }
+/* Light: by the system's choice unless the toggle says dark, or by the
+   toggle's. */
 @media (prefers-color-scheme: light) {
-  :root {
+  :root:not([data-theme="dark"]) {
     --bg: #f2efe8;
     --glass: rgba(255, 253, 248, 0.8);
     --edge: rgba(40, 52, 74, 0.14);
@@ -60,6 +62,33 @@
     --sea: 150, 160, 178;
     color-scheme: light;
   }
+}
+:root[data-theme="light"] {
+  --bg: #f2efe8;
+  --glass: rgba(255, 253, 248, 0.8);
+  --edge: rgba(40, 52, 74, 0.14);
+  --text: #161a20;
+  --muted: #5b6574;
+  --accent: #2b3756;
+  --on-accent: #f2efe8;
+  --swan: #1a1f27;
+  --glow: rgba(43, 55, 86, 0.16);
+  --water: #a3adbd;
+  --ok: #4b7a5a;
+  --warn: #9a6a3d;
+  --err: #a8424a;
+  --field: 120, 112, 98;
+  --ink: 26, 31, 39;
+  --deep: 34, 58, 92;
+  --deep-a: .15;
+  --scene: day;
+  --sky-top: 128, 182, 236, .55;
+  --sky-low: 255, 236, 204, .42;
+  --orb: 255, 188, 76;
+  --glint: 188, 118, 22;
+  --star: 255, 255, 255;
+  --sea: 150, 160, 178;
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; }
@@ -175,3 +204,17 @@ header { flex-direction: column; gap: 10px; }
 .link code { text-align: center; }
 .privacy { margin-left: auto; margin-right: auto; }
 .privacy .by { justify-content: center; }
+
+/* The theme toggle, top left. Hidden until app.js shows it. */
+.theme {
+  position: fixed; z-index: 3; top: max(14px, env(safe-area-inset-top)); left: max(14px, env(safe-area-inset-left));
+  width: 38px; height: 38px; padding: 0; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--glass); color: var(--text); border: 1px solid var(--edge);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  font: 18px/1 var(--mono); box-shadow: none;
+}
+.theme:hover { transform: none; box-shadow: 0 0 0 4px var(--edge); filter: none; }
+
+/* The privacy notes hang from the water line as the card's reflection. */
+.privacy { transform-origin: 50% 0; will-change: transform; }

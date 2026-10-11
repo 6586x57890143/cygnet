@@ -81,6 +81,7 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
   if (!c) return;
   const hero = c.parentElement;
   const card = document.querySelector(".card");
+  const notes = document.querySelector(".privacy");
   const x = c.getContext("2d");
   const to = Number(c.dataset.t);
   let t = to;
@@ -267,6 +268,9 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
       const lift = (left + right) / 2;
       const tip = (Math.atan2(right - left, span) * 180) / Math.PI;
       card.style.transform = `translateY(${lift.toFixed(2)}px) rotate(${tip.toFixed(3)}deg)`;
+      // The privacy notes are its reflection: mirrored at the water line,
+      // they sink as it rises and tip the other way, with a slight shimmer.
+      if (notes) notes.style.transform = `translateY(${(-lift).toFixed(2)}px) rotate(${(-tip).toFixed(3)}deg) skewX(${(Math.sin(s * 1.3) * 0.6).toFixed(3)}deg)`;
     }
     sky(s);
     // Below the surface the water is darker than the night above it, and
@@ -407,6 +411,30 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (!still) requestAnimationFrame(loop);
   };
   requestAnimationFrame(loop);
+})();
+
+// The theme toggle: dark or light, whichever isn't showing, kept here for
+// next time. The canvases read their colours again when it changes.
+(() => {
+  const b = document.querySelector("button.theme");
+  if (!b) return;
+  const root = document.documentElement;
+  const dark = () => (root.dataset.theme ? root.dataset.theme === "dark" : !matchMedia("(prefers-color-scheme: light)").matches);
+  const show = () => {
+    b.textContent = dark() ? "☾" : "☼";
+    b.setAttribute("aria-label", dark() ? "switch to light mode" : "switch to dark mode");
+  };
+  b.hidden = false;
+  show();
+  b.addEventListener("click", () => {
+    root.dataset.theme = dark() ? "light" : "dark";
+    try {
+      localStorage.setItem("theme", root.dataset.theme);
+    } catch {}
+    show();
+    dispatchEvent(new Event("resize"));
+  });
+  matchMedia("(prefers-color-scheme: light)").addEventListener("change", show);
 })();
 
 // The server's picture comes in once it has loaded, and goes if it can't.

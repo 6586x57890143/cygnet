@@ -190,9 +190,11 @@ ${refresh}
 <meta property="og:description" content="${esc(l.line.replaceAll("\n", " "))}">
 <link rel="icon" href="/art/cygnet.png">
 <link rel="stylesheet" href="/app.css">
+<script src="/theme.js"></script>
 </head>
 <body${wait}>
 <canvas class="field" aria-hidden="true"></canvas>
+<button type="button" class="theme" hidden aria-label="switch theme"></button>
 <main>
   <figure class="hero" role="img" aria-label="a swan on the water">
     <pre class="ascii" aria-hidden="true">${still(grown(view))}</pre>
