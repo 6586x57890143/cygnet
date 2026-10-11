@@ -44,6 +44,13 @@ function shape(t, pose, sway) {
   const L = (a, b) => lerp(a, b, t);
   return {
     scale: L(0.6, 1),
+    // The body: an egg, low in the water and rising to a lifted tail, the
+    // folded wings raised a little toward the rear.
+    ry: L(0.46, 0.34),
+    rz: L(0.52, 0.46),
+    lift: L(0.04, 0.22),
+    wing: [L(0.4, 0.66), L(0.12, 0.2), L(0.1, 0.12)],
+    wingLift: L(0.02, 0.13),
     len: L(0.86, 1.05),
     // How high the back stands above the water along the body, and how
     // wide it is, from the chest (-1) to the tail (1).
@@ -90,90 +97,54 @@ export function model(t, density = 1, pose = 0, sway = 0) {
   };
   const n = (a) => Math.max(4, Math.round(a * density));
 
-  // The body: each slice across it a hull standing in the water, as high
-  // and as wide as the profiles say there, fullest at the waterline. It
-  // rides a little nose down, deeper at the chest and higher at the stern,
-  // and the water cuts it where it meets y 0.
-  const trim = (u) => -0.07 * Math.max(0, -u) + 0.04 * Math.max(0, u);
-  const surface = (u, th) => {
-    const hh = profile(m.height, u), ww = profile(m.width, u);
-    return [u * m.len, hh * Math.pow(Math.sin(th), 0.85) + trim(u), ww * Math.cos(th), hh, ww];
-  };
-  const bu = n(120), bv = n(120);
+  const cy = 0.12;
+
+  // The body: an egg along x, fuller at the chest, rising to the tail,
+  // cut at the water.
+  const bu = n(190), bv = n(90);
   for (let j = 0; j < bv; j++) {
-    const u = -1 + 2 * ((j + jit()) / bv);
-    const dh = (profile(m.height, u + 0.01) - profile(m.height, u - 0.01)) / 0.02;
+    const s = (j + jit()) / bv;
+    const x0 = -Math.cos(Math.PI * s);
+    const r = Math.pow(Math.sin(Math.PI * s), 0.72) * (1 - 0.16 * x0);
+    const rise = m.lift * Math.max(0, x0) ** 2;
     for (let i = 0; i < bu; i++) {
-      const th = ((i + jit()) / bu) * Math.PI;
-      const [x, y, z, hh, ww] = surface(u, th);
-      if (y < -0.005) continue;
-      add(x, y, z, -dh * Math.sin(th) * 0.4, Math.sin(th) / hh, Math.cos(th) / ww, 0);
+      const th = ((i + jit()) / bu) * TAU;
+      const y = cy + m.ry * r * Math.sin(th) + rise;
+      if (y < -0.02) continue;
+      const z = m.rz * r * Math.cos(th);
+      add(x0 * m.len, y, z, Math.cos(Math.PI * s) * -0.3, Math.sin(th) / m.ry, Math.cos(th) / m.rz, 0);
     }
   }
 
-  // The folded wings: a panel a side lying over the body like a roof, the
-  // two meeting in a ridge along the back. Each runs from the shoulder to
-  // past the tail, its lower edge a clean line along the flank. Toward the
-  // rear the long inner feathers (the tertials) lift off the back in a
-  // soft hump and end in layered, scalloped tips that overhang the tail.
-  // The feathers show as overlapping rows of scales.
-  // wing is a point on a side's panel, at u along the body and v from the
-  // ridge (0) down to the flank (1).
-  const wing = (side, u, v) => {
-    const back = Math.min(1, u);
-    const edge = lerp(0.62, 0.9, Math.max(0, (u - 0.6) / 0.5)); // the flank line rises toward the rear
-    const th = side > 0 ? lerp(Math.PI / 2 - 0.03, edge, v) : lerp(Math.PI / 2 + 0.03, Math.PI - edge, v);
-    const [, y0, z0] = surface(back, th);
-    // The long inner feathers lift at the rear in a few overlapping lobes,
-    // highest along the ridge.
-    const lobes = 0.8 + 0.2 * Math.cos(v * Math.PI * 3.2 + u * 4);
-    const rise = m.plumes * smooth(0.42, 1.04, u) * (1 - 0.55 * v) * lobes + 0.025 * (1 - v);
-    // The feathers lie in rows, each overlapping the one behind it: a
-    // sawtooth of relief along the wing, so every row catches the light at
-    // its edge and shades the one under it. Along the lower wing the long
-    // flight feathers run back in shallow grooves.
-    const across = u * 10 + 0.35 * Math.sin(v * Math.PI * 2);
-    // Swan plumage is smooth: each row only a soft swell, not a step.
-    const rows = 0.006 * Math.sin(Math.PI * (across - Math.floor(across))) ** 2 * (1 - 0.3 * v) * smooth(-0.3, -0.1, u);
-    const grooves = 0.004 * Math.sin(v * Math.PI * 7) ** 2 * smooth(0.5, 0.75, v) * smooth(-0.1, 0.2, u);
-    const out = 0.035 + rows + grooves;
-    return [u * m.len, y0 + rise + out * Math.sin(th), z0 * 1.04 + out * Math.cos(th) * 0.8];
-  };
-  for (const side of [1, -1]) {
-    const wu = n(150), wv = n(48);
-    for (let j = 0; j < wu; j++) {
-      const u = -0.38 + 1.52 * ((j + jit()) / wu);
-      for (let i = 0; i < wv; i++) {
-        const v = (i + jit()) / wv;
-        // Past the body's end only the upper feathers go on, and their tips
-        // are scalloped, longest at the ridge.
-        if (u > 1 && (v > 0.55 || u - 1 > 0.14 * (1 - v) * (0.55 + 0.45 * Math.abs(Math.sin(v * Math.PI * 4))))) continue;
-        const [x, y, z] = wing(side, u, v);
-        // The normal from the panel's own shape, the lift included: the two
-        // directions across it crossed, turned to face out from the body.
-        const [ax, ay, az] = wing(side, u + 0.01, v), [bx2, by2, bz] = wing(side, u, v + 0.01);
-        const e1 = [ax - x, ay - y, az - z], e2 = [bx2 - x, by2 - y, bz - z];
-        let nx = e1[1] * e2[2] - e1[2] * e2[1], ny = e1[2] * e2[0] - e1[0] * e2[2], nz = e1[0] * e2[1] - e1[1] * e2[0];
-        if (ny * y + nz * z < 0) (nx = -nx), (ny = -ny), (nz = -nz);
-        // Scales: the edge of each feather, a short arc, row on row.
-        const row = (u * 11 + Math.abs(Math.sin(v * Math.PI * 5)) * 0.45) % 1;
-        const kind = row < 0.05 && u > -0.2 ? 3 : 0;
-        add(x, y, z, nx, ny, nz, kind);
+  // The wings, folded and raised a little along the back, one a side: the
+  // upper shell only, since a folded wing shows its top. lift raises them
+  // a touch off the back, as a swan does when it settles its feathers.
+  for (const side of [-1, 1]) {
+    const wu = n(76), wv = n(40);
+    const [rx, ry, rz] = m.wing;
+    const raise = m.wingLift;
+    for (let j = 0; j < wv; j++) {
+      const ph = ((j + jit()) / wv) * Math.PI;
+      for (let i = 0; i < wu; i++) {
+        const th = ((i + jit()) / wu) * Math.PI;
+        const lx = rx * Math.cos(th) * Math.sin(ph), ly = ry * Math.sin(th) * Math.sin(ph), lz = rz * Math.cos(ph);
+        const x = 0.16 * m.len + lx;
+        const y = cy + m.ry * 0.5 + ly + raise * Math.max(0, lx / rx + 0.3) ** 2;
+        const z = side * (m.rz * 0.5) + lz;
+        add(x, y, z, lx / (rx * rx), ly / (ry * ry), lz / (rz * rz), 0);
       }
     }
   }
 
-  // The tail: short, flat and pointed, under the wing tips and turned a
-  // little up, a thin slab with a face up and a face down.
-  const tu = n(30), tv = n(16);
-  for (let j = 0; j < tu; j++) {
-    const s = (j + jit()) / tu;
-    const half = 0.16 * (1 - s) * (0.4 + t * 0.6);
-    for (let i = 0; i < tv; i++) {
-      const v = -1 + 2 * ((i + jit()) / tv);
-      const x = (0.9 + m.tail * s) * m.len, z = half * v;
-      const y = profile(m.height, 0.9) * 0.62 + trim(0.9) + m.tail * 0.55 * s * s;
-      for (const face of [1, -1]) add(x, y + face * 0.012, z, -0.3 * face, face, 0, 0);
+  // The tail, a short point lifted at the back.
+  const tx = m.len * 0.94, ty = cy + m.lift + 0.06;
+  const tu = n(14), tv = n(20);
+  for (let j = 0; j < tv; j++) {
+    const s = (j + 0.5) / tv;
+    const r = lerp(0.1, 0.01, s);
+    for (let i = 0; i < tu; i++) {
+      const th = ((i + 0.5) / tu) * TAU;
+      add(tx + m.tail * s, ty + m.tail * 0.8 * s + r * Math.sin(th), r * Math.cos(th) * 1.6, 0.4, Math.sin(th), Math.cos(th), 0);
     }
   }
 
