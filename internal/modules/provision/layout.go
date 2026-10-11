@@ -9,7 +9,8 @@ import (
 
 // A Layout is a server as cygnet builds it: roles top to bottom, then
 // categories and their channels. Applying one only adds and changes what it
-// names; anything else in the server is left alone.
+// names; anything else in the server is left alone, unless the admin asks
+// for a fresh start.
 type Layout struct {
 	Name, About string
 	Roles       []Role
@@ -17,6 +18,9 @@ type Layout struct {
 	// Reports is the text channel, one the layout makes, where cygnet posts
 	// when the server drifts from it.
 	Reports string
+	// BotColor is every bot's role, the birds' first, so the bots read as
+	// one in the member list beside the layout's own colours.
+	BotColor int
 }
 
 // Role is one role the layout keeps. Perms are its server-wide permissions.
@@ -80,9 +84,10 @@ var layouts = []Layout{flock}
 // announcements skua's notify can still post to, a place to talk, a room to
 // hang out in, and a staff channel where cygnet reports drift.
 var flock = Layout{
-	Name:    "flock",
-	About:   "a small community: announcements, chatter, a voice room, and a nest where staff and the birds report",
-	Reports: "cygnet",
+	Name:     "flock",
+	About:    "a small community: announcements, chatter, a voice room, and a nest where staff and the birds report",
+	Reports:  "cygnet",
+	BotColor: 0x8F96B8,
 	Roles: []Role{
 		{Name: "mod", Color: 0xD1A06A, Perms: moderate, Hoist: true},
 		{Name: "member", Color: 0x7FA08C},
@@ -116,6 +121,12 @@ var flock = Layout{
 		}},
 	},
 }
+
+// archived is the category a fresh start moves the old channels into, when
+// the admin keeps them. Its mark sits outside the tree.
+const archived = "archive"
+
+const archiveName = "┄ " + archived
 
 // full is c's name on Discord.
 func (c Channel) full() string {
