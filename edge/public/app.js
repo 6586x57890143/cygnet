@@ -90,7 +90,7 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
   } catch {}
   if (still) t = to;
   const from = t;
-  let w = 0, h = 0, cy = 0, bx = 0, by = 0, cw = 6, ch = 10, cols = 0, rows = 0, ink = "236,230,218";
+  let w = 0, h = 0, cy = 0, bx = 0, by = 0, cw = 6, ch = 10, cols = 0, rows = 0, ink = "236,230,218", deep = "3,5,8", depth = 0.55;
   let lean = 0, aim = 0;
   function place() {
     const dpr = Math.min(devicePixelRatio || 1, 2);
@@ -115,7 +115,10 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
     rows = Math.floor(bh / ch);
     x.font = `${ch}px ui-monospace, Menlo, Consolas, monospace`;
     x.textBaseline = "top";
-    ink = getComputedStyle(document.documentElement).getPropertyValue("--ink").trim() || ink;
+    const css = getComputedStyle(document.documentElement);
+    ink = css.getPropertyValue("--ink").trim() || ink;
+    deep = css.getPropertyValue("--deep").trim() || deep;
+    depth = Number(css.getPropertyValue("--deep-a").trim()) || depth;
   }
   // wave is the water's height at a point along it.
   const wave = (gx, s) => Math.sin(gx * 0.012 + s * 1.1) * 4 + Math.sin(gx * 0.041 - s * 0.7) * 1.4;
@@ -129,6 +132,14 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
     lean += (aim - lean) * 0.04;
     const f = frame(pts, cols, rows, -0.55 + Math.sin(s * 0.23) * 0.22 + lean, 0.13 + Math.sin(s * 0.41) * 0.025, cw / ch);
     x.clearRect(0, 0, w, h);
+    // Below the surface the water is darker than the night above it, and
+    // deeper toward the bottom of the page, so it reads as a body of water.
+    const g = x.createLinearGradient(0, cy - 8, 0, h);
+    g.addColorStop(0, `rgba(${deep},0)`);
+    g.addColorStop(Math.min(0.2, 22 / Math.max(1, h - cy)), `rgba(${deep},${depth * 0.7})`);
+    g.addColorStop(1, `rgba(${deep},${depth})`);
+    x.fillStyle = g;
+    x.fillRect(0, cy - 8, w, h - cy + 8);
     // The water's surface across the whole page: rows of ripples moving
     // with the wave, brightest at the waterline and fading with depth, a
     // few faint rows above it for the far water behind the bird. Drawn
@@ -166,10 +177,14 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
       const lane = lanes[b];
       for (let n = 0; n < lane.length; n += 2) x.fillText(g, bx + lane[n] * cw, by - lift + lane[n + 1] * ch);
     }
-    // The rings on the water round the hull: dashes, fainter outward.
+    // The rings on the water round the hull, drawn as the rest of the
+    // water is: the same strokes, centred on the same line, riding the same
+    // wave, fainter outward.
     for (let n = 0; n < ripples.length; n += 3) {
-      x.fillStyle = `rgba(${ink},${(ripples[n + 2] * 0.9).toFixed(3)})`;
-      x.fillText((ripples[n] + ripples[n + 1]) % 3 ? "-" : "~", bx + ripples[n] * cw, by - lift + ripples[n + 1] * ch);
+      const gx = bx + ripples[n] * cw;
+      const j = ripples[n + 1];
+      x.fillStyle = `rgba(${ink},${(0.08 + ripples[n + 2] * 0.42).toFixed(3)})`;
+      x.fillText((ripples[n] + j) % 3 ? "-" : "~", gx, by - lift + j * ch - ch * 0.5 + wave(gx, s) * (0.6 - Math.min(0.4, Math.abs(j - f.horizon) * 0.05)));
     }
     // The outline: every cell at the edge of the bird, bright and solid.
     x.fillStyle = `rgba(${ink},0.95)`;

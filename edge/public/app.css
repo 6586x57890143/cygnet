@@ -19,6 +19,8 @@
   --err: #d98088;
   --field: 96, 118, 150;
   --ink: 243, 237, 225;
+  --deep: 2, 4, 7;
+  --deep-a: .62;
   --sea: 74, 92, 120;
   --mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -41,6 +43,8 @@
     --err: #a8424a;
     --field: 120, 112, 98;
     --ink: 26, 31, 39;
+    --deep: 38, 52, 78;
+    --deep-a: .14;
     --sea: 150, 160, 178;
     color-scheme: light;
   }
@@ -74,7 +78,7 @@ main {
   position: absolute; inset: 0; margin: 0; display: grid; place-items: center; overflow: hidden; white-space: pre;
   color: var(--swan); opacity: .8; font: calc(min(100vw - 32px, 560px) / 62)/1.1 var(--mono); text-transform: none;
 }
-.swan { position: fixed; inset: 0; width: 100%; height: 100%; z-index: -1; opacity: 0; transition: opacity 1.2s ease; filter: drop-shadow(0 0 6px var(--glow)); }
+.swan { position: fixed; inset: 0; width: 100%; height: 100%; z-index: -1; opacity: 0; transition: opacity 1.2s ease; }
 .hero.live .swan { opacity: 1; }
 .hero.live .ascii { opacity: 0; transition: opacity .8s ease; }
 
