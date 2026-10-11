@@ -115,25 +115,36 @@ export function model(t, density = 1, pose = 0, sway = 0) {
   // rear the long inner feathers (the tertials) lift off the back in a
   // soft hump and end in layered, scalloped tips that overhang the tail.
   // The feathers show as overlapping rows of scales.
+  // wing is a point on a side's panel, at u along the body and v from the
+  // ridge (0) down to the flank (1).
+  const wing = (side, u, v) => {
+    const back = Math.min(1, u);
+    const edge = lerp(0.62, 0.9, Math.max(0, (u - 0.6) / 0.5)); // the flank line rises toward the rear
+    const th = side > 0 ? lerp(Math.PI / 2 - 0.03, edge, v) : lerp(Math.PI / 2 + 0.03, Math.PI - edge, v);
+    const [, y0, z0] = surface(back, th);
+    const rise = m.plumes * smooth(0.45, 1.05, u) * (1 - 0.6 * v) + 0.025 * (1 - v);
+    return [u * m.len, y0 + 0.035 + rise, z0 * 1.04];
+  };
   for (const side of [1, -1]) {
     const wu = n(150), wv = n(48);
     for (let j = 0; j < wu; j++) {
       const u = -0.38 + 1.52 * ((j + jit()) / wu);
-      const back = Math.min(1, u);
-      const edge = lerp(0.62, 0.9, Math.max(0, (u - 0.6) / 0.5)); // the flank line rises toward the rear
       for (let i = 0; i < wv; i++) {
         const v = (i + jit()) / wv;
         // Past the body's end only the upper feathers go on, and their tips
         // are scalloped, longest at the ridge.
         if (u > 1 && (v > 0.55 || u - 1 > 0.14 * (1 - v) * (0.55 + 0.45 * Math.abs(Math.sin(v * Math.PI * 4))))) continue;
-        const th = side > 0 ? lerp(Math.PI / 2 - 0.03, edge, v) : lerp(Math.PI / 2 + 0.03, Math.PI - edge, v);
-        const [x0, y0, z0, hh, ww] = surface(back, th);
-        const rise = m.plumes * smooth(0.45, 1.05, u) * (1 - 0.6 * v) + 0.025 * (1 - v);
-        const x = u * m.len, y = y0 + 0.035 + rise, z = z0 * 1.04;
+        const [x, y, z] = wing(side, u, v);
+        // The normal from the panel's own shape, the lift included: the two
+        // directions across it crossed, turned to face out from the body.
+        const [ax, ay, az] = wing(side, u + 0.01, v), [bx2, by2, bz] = wing(side, u, v + 0.01);
+        const e1 = [ax - x, ay - y, az - z], e2 = [bx2 - x, by2 - y, bz - z];
+        let nx = e1[1] * e2[2] - e1[2] * e2[1], ny = e1[2] * e2[0] - e1[0] * e2[2], nz = e1[0] * e2[1] - e1[1] * e2[0];
+        if (ny * y + nz * z < 0) (nx = -nx), (ny = -ny), (nz = -nz);
         // Scales: the edge of each feather, a short arc, row on row.
         const row = (u * 11 + Math.abs(Math.sin(v * Math.PI * 5)) * 0.45) % 1;
         const kind = row < 0.07 && u > -0.2 ? 3 : 0;
-        add(x, y, z, 0.15 * smooth(0.5, 1, u), Math.sin(th) / hh, (Math.cos(th) / ww) * 0.8, kind);
+        add(x, y, z, nx, ny, nz, kind);
       }
     }
   }
@@ -270,7 +281,7 @@ export function frame(pts, cols, rows, yaw, pitch, aspect = 0.55, light = [-0.45
     let l = n1x * lx + n2y * ly + n2z * lz;
     // Light, a little ambient, and a rim where the surface turns away.
     const rim = Math.max(0, 1 - Math.abs(n2z)) ** 3 * 0.3;
-    l = kind >= 4 ? [0.62, 0.42, 0.26][kind - 4] : kind === 1 ? 0.02 : kind === 2 ? 0.3 + 0.5 * Math.max(0, l) : kind === 3 ? 0.06 + 0.4 * Math.max(0, l) : Math.min(1, 0.12 + 0.82 * Math.max(0, l) ** 0.85 + rim);
+    l = kind >= 4 ? [0.62, 0.42, 0.26][kind - 4] : kind === 1 ? 0.02 : kind === 2 ? 0.3 + 0.5 * Math.max(0, l) : kind === 3 ? (0.1 + 0.82 * Math.max(0, l) ** 0.85) * 0.72 : Math.min(1, 0.12 + 0.82 * Math.max(0, l) ** 0.85 + rim);
     const cx = Math.round(ox + x1 * k);
     const cyy = Math.round(horizon - y2 * k * aspect);
     if (cx >= 0 && cx < cols && cyy >= 0 && cyy < rows) {
