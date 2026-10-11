@@ -9,6 +9,7 @@ import (
 
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/rest"
+	"github.com/disgoorg/omit"
 	"github.com/disgoorg/snowflake/v2"
 
 	"github.com/6586x57890143/cygnet/internal/core"
@@ -24,6 +25,9 @@ type Writes interface {
 	CreateGuildChannel(guildID snowflake.ID, guildChannelCreate discord.GuildChannelCreate, opts ...rest.RequestOpt) (discord.GuildChannel, error)
 	UpdatePermissionOverwrite(channelID, overwriteID snowflake.ID, permissionOverwrite discord.PermissionOverwriteUpdate, opts ...rest.RequestOpt) error
 	UpdateChannel(channelID snowflake.ID, channelUpdate discord.ChannelUpdate, opts ...rest.RequestOpt) (discord.Channel, error)
+	UpdateChannelPositions(guildID snowflake.ID, guildChannelPositionUpdates []discord.GuildChannelPositionUpdate, opts ...rest.RequestOpt) error
+	DeleteChannel(channelID snowflake.ID, opts ...rest.RequestOpt) error
+	DeleteRole(guildID snowflake.ID, roleID snowflake.ID, opts ...rest.RequestOpt) error
 }
 
 // apply makes changes in order, skipping the blocked ones, and stops at the
@@ -35,6 +39,9 @@ func apply(ctx context.Context, w Writes, g *guard.Guard, s state, l Layout, cha
 		if c, ok := s.channel(cat.Name, discord.ChannelTypeGuildCategory, 0); ok {
 			cats[cat.Name] = c.ID()
 		}
+	}
+	if c, ok := s.channel(archived, discord.ChannelTypeGuildCategory, 0); ok {
+		cats[archived] = c.ID()
 	}
 	target := func(name string) (snowflake.ID, bool) {
 		if id, ok := roles[name]; ok {
@@ -48,7 +55,7 @@ func apply(ctx context.Context, w Writes, g *guard.Guard, s state, l Layout, cha
 			continue
 		}
 		op := guard.ChannelEdit
-		if c.kind == roleCreate || c.kind == roleUpdate || c.kind == roleOrder {
+		if c.kind == roleCreate || c.kind == roleUpdate || c.kind == roleOrder || c.kind == roleColor || (c.kind == remove && c.role.Name != "") {
 			op = guard.RoleEdit
 		}
 		if err := g.Allow(s.guild, op); err != nil {
@@ -80,6 +87,17 @@ func (c change) do(guild snowflake.ID, w Writes, opts []rest.RequestOpt, l Layou
 		return err
 	case roleOrder:
 		return order(guild, w, opts, l)
+	case roleColor:
+		color := c.role.Color
+		_, err := w.UpdateRole(guild, c.id, discord.RoleUpdate{Color: &color}, opts...)
+		return err
+	case remove:
+		if c.role.Name != "" {
+			return w.DeleteRole(guild, c.id, opts...)
+		}
+		return w.DeleteChannel(c.id, opts...)
+	case archive:
+		return moveToArchive(guild, w, opts, c.ids, cats)
 	case categoryCreate:
 		ch, err := w.CreateGuildChannel(guild, discord.GuildCategoryChannelCreate{Name: c.name}, opts...)
 		if err == nil {
@@ -122,6 +140,30 @@ func (c change) do(guild snowflake.ID, w Writes, opts []rest.RequestOpt, l Layou
 	}
 	allow, deny := c.ow.Allow, c.ow.Deny
 	return w.UpdatePermissionOverwrite(c.id, id, discord.RolePermissionOverwriteUpdate{Allow: &allow, Deny: &deny}, opts...)
+}
+
+// moveToArchive moves ids into the archive in one write, making it first if
+// it isn't here, hidden from @everyone. Each channel takes the archive's
+// permissions, so what's in it is hidden too and kept for the admins.
+//
+// ponytail: Discord holds 50 channels a category; a server with more to
+// archive stops there, a second archive when one comes up.
+func moveToArchive(guild snowflake.ID, w Writes, opts []rest.RequestOpt, ids []snowflake.ID, cats map[string]snowflake.ID) error {
+	attic, ok := cats[archived]
+	if !ok {
+		hide := []discord.PermissionOverwrite{discord.RolePermissionOverwrite{RoleID: guild, Deny: see}}
+		ch, err := w.CreateGuildChannel(guild, discord.GuildCategoryChannelCreate{Name: archiveName, PermissionOverwrites: hide}, opts...)
+		if err != nil {
+			return err
+		}
+		attic = ch.ID()
+		cats[archived] = attic
+	}
+	moves := make([]discord.GuildChannelPositionUpdate, len(ids))
+	for i, id := range ids {
+		moves[i] = discord.GuildChannelPositionUpdate{ID: id, ParentID: &attic, LockPermissions: omit.NewPtr(true)}
+	}
+	return w.UpdateChannelPositions(guild, moves, opts...)
 }
 
 // order hands l's roles the positions they hold between them, highest to
