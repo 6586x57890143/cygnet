@@ -162,6 +162,14 @@ The contract every bird speaks, the same over the WebSocket and `POST /v1/call`.
   `/provision` reads these, never a copy.
 - **Checks.** `<bot>.check {guild, user, rule}` answers `{met, have, need}`. A bird
   lists the rules it can answer in its manifest; cygnet asks only those.
+- **One permission model.** `link/perms` is Discord's permissions as data, shared by
+  every bird: the bits, what each operation needs (`message.send`, `member.timeout`...)
+  and Discord's own algorithm for what a member may do in a channel. A bird Discord
+  refuses for want of a permission calls `cygnet.missing {guild, channel, op}`; cygnet
+  works out from its roles what it lacks and grants it, by the server's drift mode, on
+  the bird's role or, when only a channel takes it away, on that channel. Each manifest
+  says the intents a bird wants beside those it was granted, and the fleet card links
+  a gap to that bird's portal.
 - **cygnet authenticates, the callee authorizes.** Every frame's `from` is stamped by
   cygnet from the connection's token. What a bot will do for whom is its own decision.
 - **Bots never talk to each other through Discord.** A bird ignores other bots'

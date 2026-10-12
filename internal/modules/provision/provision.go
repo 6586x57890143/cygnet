@@ -65,6 +65,8 @@ type Module struct {
 
 	// live is the fleet cards that tick themselves off as birds join.
 	live live
+	// grants is what answering the birds' refusals keeps.
+	grants granting
 }
 
 func New(fleet Fleet, want func() discord.Permissions, admin func(discord.Interaction) bool, g *guard.Guard) *Module {
@@ -111,7 +113,7 @@ func (m *Module) Commands() []core.Command {
 }
 
 func (m *Module) Components() []core.Component {
-	return []core.Component{{ID: refresh, Run: m.again}, {ID: previewID, Run: m.previewAgain}, {ID: applyID, Run: m.applyPressed}, {ID: confirmID, Run: m.confirmPressed}, {ID: homeID, Run: m.home}, {ID: leaveID, Run: m.leavePressed}}
+	return []core.Component{{ID: refresh, Run: m.again}, {ID: previewID, Run: m.previewAgain}, {ID: applyID, Run: m.applyPressed}, {ID: confirmID, Run: m.confirmPressed}, {ID: homeID, Run: m.home}, {ID: leaveID, Run: m.leavePressed}, {ID: grantID, Run: m.grantPressed}}
 }
 
 // again redraws the card in place, for whoever may run /provision.
@@ -171,6 +173,9 @@ type row struct {
 	App         snowflake.ID
 	In          bool
 	Have, Want  discord.Permissions
+	// Wants is the intents its modules ask for, and Intents the ones it
+	// identified with: the difference waits on its portal.
+	Wants, Intents gateway.Intents
 	// Err is why it couldn't be read, in a member's words.
 	Err string
 }
@@ -194,6 +199,7 @@ func (b *row) manifest(ctx context.Context, f Fleet) {
 		return
 	}
 	b.App, b.Want = app, discord.Permissions(want)
+	b.Wants, b.Intents = gateway.Intents(mf.Wants), gateway.Intents(mf.Intents)
 	if mf.Build != "" {
 		b.Build = mf.Build
 	}
@@ -279,6 +285,13 @@ func render(guild snowflake.ID, birds []row, hubOn bool, notes ...discord.Contai
 		default:
 			lines = append(lines, "✓ "+head+"\n-# "+holds(b.Want))
 		}
+		// Only a person can switch a privileged intent on, in the bird's
+		// own portal: the card says which and links there.
+		if gap := b.Wants &^ b.Intents; gap != 0 && b.Err == "" {
+			color = worse(color, brand.ColorWarn)
+			lines[len(lines)-1] += "\n-# its portal hasn't granted " + intentNames(gap)
+			fix = append(fix, discord.NewLinkButton(b.Name+" portal", "https://discord.com/developers/applications/"+b.App.String()+"/bot"))
+		}
 	}
 	if !hubOn {
 		color = worse(color, brand.ColorWarn)
@@ -292,6 +305,24 @@ func render(guild snowflake.ID, birds []row, hubOn bool, notes ...discord.Contai
 	}
 	extra = append(extra, discord.NewActionRow(append(fix, discord.NewSecondaryButton("check again", refresh))...))
 	return withBack(brand.Card(color, "provision", "fleet", body, extra...))
+}
+
+// intentNames is the privileged intents in g, the only ones a portal
+// holds back, as the portal names them.
+func intentNames(g gateway.Intents) string {
+	var out []string
+	for _, i := range []struct {
+		bit  gateway.Intents
+		name string
+	}{{gateway.IntentGuildMembers, "server members"}, {gateway.IntentGuildPresences, "presence"}, {gateway.IntentMessageContent, "message content"}} {
+		if g.Has(i.bit) {
+			out = append(out, i.name)
+		}
+	}
+	if len(out) == 0 {
+		return "an intent it asks for"
+	}
+	return strings.Join(out, ", ")
 }
 
 // worse keeps whichever mood says more is wrong.

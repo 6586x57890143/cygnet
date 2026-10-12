@@ -59,6 +59,13 @@ func (m *Module) OnEvent(ev bot.Event) {
 	var guild snowflake.ID
 	var client *bot.Client
 	switch e := ev.(type) {
+	case *events.Ready:
+		// Reports from the birds come in over the hub, not an interaction:
+		// they're answered with the client cygnet connected with.
+		m.grants.mu.Lock()
+		m.grants.rest = e.Client().Rest
+		m.grants.mu.Unlock()
+		return
 	case *events.RoleCreate:
 		// A bot joining makes its role, which wants the bots' colour, and
 		// a bird its overwrites.
@@ -165,7 +172,12 @@ func (m *Module) report(ctx context.Context, r rest.Rest, guild snowflake.ID, l 
 	}
 }
 
-func (m *Module) post(ctx context.Context, r rest.Rest, guild, channel snowflake.ID, card discord.ContainerComponent) error {
+// Poster is what posting a report takes.
+type Poster interface {
+	CreateMessage(channelID snowflake.ID, messageCreate discord.MessageCreate, opts ...rest.RequestOpt) (*discord.Message, error)
+}
+
+func (m *Module) post(ctx context.Context, r Poster, guild, channel snowflake.ID, card discord.ContainerComponent) error {
 	if err := m.guard.Allow(guild, guard.MessageSend); err != nil {
 		return err
 	}

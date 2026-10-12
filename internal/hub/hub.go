@@ -12,6 +12,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -51,6 +52,23 @@ type Hub struct {
 	peers   map[string]*peer
 	pending map[key]*pend
 	closed  bool
+	// serves is the verbs cygnet answers herself beyond ping and fleet,
+	// each a module's handler.
+	serves map[string]Handler
+}
+
+// Handler answers a call to cygnet herself: who called, and the call's
+// body. Its answer goes back as the reply's body; an error that isn't a
+// *link.Error is sent as internal, its words kept here.
+type Handler func(ctx context.Context, caller string, body json.RawMessage) (any, error)
+
+// Serve has cygnet answer "cygnet.<verb>" with fn. Call it before the hub
+// serves anyone.
+func (h *Hub) Serve(verb string, fn Handler) {
+	if h.serves == nil {
+		h.serves = map[string]Handler{}
+	}
+	h.serves[verb] = fn
 }
 
 type peer struct {
@@ -280,8 +298,30 @@ func (h *Hub) route(ctx context.Context, caller string, f link.Frame, deliver fu
 		return // already late: nobody is waiting for the answer
 	}
 	if to == Self {
-		body, err := h.builtin(verb)
-		reply(err, body)
+		fn, ok := h.serves[verb]
+		if !ok {
+			body, err := h.builtin(verb)
+			reply(err, body)
+			return
+		}
+		// A module's answer can take Discord's time, so it runs off this
+		// link's reader, inside the call's deadline.
+		go func() {
+			ctx, cancel := context.WithDeadline(context.WithoutCancel(ctx), deadline)
+			defer cancel()
+			out, err := fn(ctx, caller, f.Body)
+			if err != nil {
+				le, ok := errors.AsType[*link.Error](err)
+				if !ok {
+					h.log.Warn("answering a call", "method", f.Method, "from", caller, "err", err)
+					le = link.Err(link.Internal)
+				}
+				reply(le, nil)
+				return
+			}
+			body, _ := json.Marshal(out)
+			reply(nil, body)
+		}()
 		return
 	}
 

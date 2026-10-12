@@ -55,6 +55,8 @@ type guildFake struct {
 	sent map[snowflake.ID][]discord.MessageCreate
 	// rules is the channel a community server can't delete, or 0.
 	rules snowflake.ID
+	// members is who else is here, by their roles: the birds.
+	members map[snowflake.ID][]snowflake.ID
 	// community is whether it's one, and onboarding what it has.
 	community  bool
 	onboarding discord.GuildOnboarding
@@ -113,10 +115,22 @@ func (g *guildFake) GetRoles(snowflake.ID, ...rest.RequestOpt) ([]discord.Role, 
 }
 
 func (g *guildFake) GetMember(_, user snowflake.ID, _ ...rest.RequestOpt) (*discord.Member, error) {
+	if roles, ok := g.members[user]; ok {
+		return &discord.Member{RoleIDs: roles}, g.fail["member"]
+	}
 	if user != self {
 		return nil, &rest.Error{Code: rest.JSONErrorCodeUnknownMember}
 	}
 	return &discord.Member{RoleIDs: g.me}, g.fail["member"]
+}
+
+func (g *guildFake) GetChannel(id snowflake.ID, _ ...rest.RequestOpt) (discord.Channel, error) {
+	for _, c := range g.chans {
+		if c.id == id {
+			return c.guildChannel(), g.fail["channel read"]
+		}
+	}
+	return nil, &rest.Error{Code: rest.JSONErrorCodeUnknownChannel}
 }
 
 func (g *guildFake) GetGuildChannels(snowflake.ID, ...rest.RequestOpt) ([]discord.GuildChannel, error) {
@@ -168,9 +182,14 @@ func (g *guildFake) CreateRole(_ snowflake.ID, c discord.RoleCreate, _ ...rest.R
 func (g *guildFake) UpdateRole(_, id snowflake.ID, u discord.RoleUpdate, _ ...rest.RequestOpt) (*discord.Role, error) {
 	for i, r := range g.roles {
 		if r.ID == id {
-			g.roles[i].Color = *u.Color
+			if u.Color != nil {
+				g.roles[i].Color = *u.Color
+			}
 			if u.Permissions != nil {
-				g.roles[i].Permissions, g.roles[i].Hoist = *u.Permissions, *u.Hoist
+				g.roles[i].Permissions = *u.Permissions
+			}
+			if u.Hoist != nil {
+				g.roles[i].Hoist = *u.Hoist
 			}
 			g.writes = append(g.writes, "update role "+r.Name)
 			return &g.roles[i], nil
@@ -596,6 +615,9 @@ func pressOn(t *testing.T, m *Module, g *guildFake, customID, user string) (*[]d
 	}
 	if strings.HasPrefix(customID, confirmID) {
 		return &got, m.confirmPressed(context.Background(), e)
+	}
+	if strings.HasPrefix(customID, grantID) {
+		return &got, m.grantPressed(context.Background(), e)
 	}
 	if strings.HasPrefix(customID, homeID+":") || customID == homeID {
 		return &got, m.home(context.Background(), e)

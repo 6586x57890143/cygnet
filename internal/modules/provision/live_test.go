@@ -87,7 +87,9 @@ func TestFleetOpensLive(t *testing.T) {
 	m := module(nil).Live(func() bool { return true })
 	e, _ := coretest.Button(t, refresh, nil)
 	e.Client().Rest = server()
-	e.Respond = func(discord.InteractionResponseType, discord.InteractionResponseData, ...rest.RequestOpt) error { return nil }
+	e.Respond = func(discord.InteractionResponseType, discord.InteractionResponseData, ...rest.RequestOpt) error {
+		return nil
+	}
 	if err := m.again(context.Background(), e); err != nil {
 		t.Fatal(err)
 	}
