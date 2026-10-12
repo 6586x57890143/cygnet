@@ -3,7 +3,14 @@
 // transaction, and each statement after the first is guarded on the first
 // having done what it should, so nothing changes without its entry.
 
-import { digest, fallback, inviteCode, inviteLife, keyed, launches, type Launch, type Stage } from "./signup.ts";
+import { day, digest, fallback, inviteCode, inviteLife, keyed, launches, type Launch, type Stage } from "./signup.ts";
+
+// Bird is one bird of the flock in the footer: its name, and the version
+// of its picture.
+export interface Bird {
+  name: string;
+  v: string;
+}
 
 // DB is what this needs of D1, so a test can hand it SQLite.
 export interface DB {
@@ -203,6 +210,27 @@ export class Store {
 
   async emailTaken(l: Launch, email: string): Promise<boolean> {
     return !!(await this.db.prepare("SELECT 1 FROM member WHERE launch = ?1 AND email = ?2").bind(l.name, email).first());
+  }
+
+  // bird keeps a linked bird's picture, as cygnet sends it, and that it was
+  // seen now.
+  async bird(name: string, png: string, v: string, now: number): Promise<void> {
+    await this.db
+      .prepare("INSERT INTO bird (name, png, v, first, seen) VALUES (?1, ?2, ?3, ?4, ?4) ON CONFLICT (name) DO UPDATE SET png = excluded.png, v = excluded.v, seen = excluded.seen")
+      .bind(name, png, v, now)
+      .run();
+  }
+
+  // flock is the birds seen in the last day, cygnet first, then in the
+  // order they first linked.
+  async flock(now: number): Promise<Bird[]> {
+    const rows = await this.db.prepare("SELECT name, v FROM bird WHERE seen > ?1 ORDER BY name = 'cygnet' DESC, first, name").bind(now - day).all<Bird>();
+    return rows.results;
+  }
+
+  // art is a bird's picture, base64, if it has one.
+  async art(name: string): Promise<string | null> {
+    return (await this.db.prepare("SELECT png FROM bird WHERE name = ?1").bind(name).first<{ png: string }>())?.png ?? null;
   }
 
   async total(l: Launch): Promise<number> {

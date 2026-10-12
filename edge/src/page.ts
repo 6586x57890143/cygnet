@@ -9,6 +9,7 @@
 // line. A line break does what a full stop would.
 
 import type { Launch } from "./signup.ts";
+import type { Bird } from "./store.ts";
 import { frame, model, text } from "../public/swan.js";
 
 export interface Invite {
@@ -119,7 +120,7 @@ function invites(l: Launch, v: Extract<View, { kind: "in" }>, sitekey: string): 
     ${make}`;
 }
 
-export function page(l: Launch, total: number, view: View, sitekey: string, icon = ""): string {
+export function page(l: Launch, total: number, view: View, sitekey: string, icon = "", birds: Bird[] = []): string {
   let body = "";
   let turnstile = false;
   let refresh = "";
@@ -260,18 +261,23 @@ ${refresh}
     ${body}
   </section>
   <footer class="privacy">
-    <p>privacy</p>
-    <p>kept<br>your discord id and your place in line and who invited you<br>your email and ip and rough location only as keyed hashes so nobody signs up twice</p>
-    <p>deleted<br>ip and location hashes after 30 days<br>email hashes 30 days after launch<br>everything 12 months after launch or when you leave</p>
-    <p>shared with<br>cloudflare who hosts this<br>discord for sign in<br>scaleway who sends the link emails<br>nobody else and never sold</p>
-    <p>no tracking no ads no profiling<br>cookies only to keep you signed in</p>
-    <p>you can see download or delete your data any time<br><a href="/privacy">full privacy notice</a></p>
-    <p class="by"><img src="/art/cygnet.png" alt="" width="14" height="14"><img src="/art/skua.png" alt="" width="14" height="14">kept by cygnet with skua<a class="plink" href="/privacy">privacy</a></p>
+    <p class="by">${byline(birds)}<a class="plink" href="/privacy">privacy</a></p>
   </footer>
 </main>
 ${scripts}
 </body>
 </html>`;
+}
+
+// byline is the flock that keeps the site, each bird's picture and then
+// who they are: cygnet, with whichever birds linked to her in the last
+// day. Until she has sent her own picture, she wears the one shipped here.
+export function byline(birds: Bird[]): string {
+  if (!birds.some((b) => b.name === "cygnet")) birds = [{ name: "cygnet", v: "" }, ...birds];
+  const img = (b: Bird) => `<img src="${b.v ? `/bird/${esc(b.name)}.png?v=${esc(b.v)}` : "/art/cygnet.png"}" alt="" width="14" height="14">`;
+  const others = birds.filter((b) => b.name !== "cygnet").map((b) => esc(b.name));
+  const with_ = others.length === 0 ? "" : others.length === 1 ? ` with ${others[0]}` : ` with ${others.slice(0, -1).join(" ")} and ${others.at(-1)}`;
+  return `${birds.map(img).join("")}kept by cygnet${with_}`;
 }
 
 // notice is the full privacy notice: what the GDPR asks a notice to say

@@ -170,7 +170,6 @@ button.quiet:hover { color: var(--text); transform: none; }
 .privacy { grid-area: privacy; align-self: start; margin-top: 30px; max-width: 52ch; color: var(--muted); opacity: .55; font: 11.5px/1.6 var(--mono); transition: opacity .3s ease; }
 .privacy:hover, .privacy:focus-within { opacity: .85; }
 .privacy p { margin: 0 0 10px; }
-.privacy p:first-child { letter-spacing: .2em; }
 .privacy .by { display: flex; align-items: center; gap: 6px; margin-top: 14px; }
 .privacy .by img { border-radius: 3px; image-rendering: pixelated; }
 
@@ -211,7 +210,7 @@ header { flex-direction: column; gap: 10px; }
 
 /* The privacy notice: one term a row, label then text, greyed like the
    compact one but readable at length. */
-.notice { text-align: left; font: 12.5px/1.6 var(--mono); color: var(--muted); }
+.notice { text-align: center; font: 12.5px/1.6 var(--mono); color: var(--muted); }
 .notice .term { padding: 10px 0; border-bottom: 1px dashed var(--edge); }
 .notice .term p { margin: 4px 0 0; color: var(--text); opacity: .82; }
 .notice b { color: var(--text); font-weight: 600; text-transform: none; }
@@ -225,9 +224,6 @@ header { flex-direction: column; gap: 10px; }
   .doc main { grid-template-columns: minmax(0, 1fr) minmax(560px, 820px); }
   .doc .notice { display: grid; grid-template-columns: 1fr 1fr; column-gap: 28px; }
 }
-/* The notice page is the full notice: the compact one under it would only
-   repeat it. */
-.doc .privacy p:not(.by) { display: none; }
 
 /* The owner's list: a tree, one member a row. */
 .tree { list-style: none; margin: 8px 0 0; padding: 0; text-align: left; font: 12.5px var(--mono); }
@@ -243,8 +239,6 @@ header { flex-direction: column; gap: 10px; }
    will be. */
 .soon { margin: 18px 0 4px; font: 13px var(--mono); color: var(--muted); letter-spacing: .04em; }
 .soon .pulse { vertical-align: middle; }
-/* Home collects nothing, so it carries only the byline and a link to the
-   notice; the link sits in the byline only there. */
-.home .privacy p:not(.by) { display: none; }
-.privacy .plink { display: none; margin-left: 10px; }
-.home .privacy .plink { display: inline; }
+/* Every page carries only the byline, the flock that keeps the site, and
+   a link to the notice. */
+.privacy .plink { margin-left: 10px; }

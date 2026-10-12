@@ -55,6 +55,8 @@ type Module struct {
 	edge  *Edge
 	admin func(discord.Interaction) bool
 	log   *slog.Logger
+	// flock is the birds sent to cygnet.lol's footer; nil without the hub.
+	flock *flock
 }
 
 func New(edge *Edge, admin func(discord.Interaction) bool, log *slog.Logger) *Module {
@@ -97,10 +99,16 @@ func (m *Module) Modals() []core.Modal {
 	return []core.Modal{{ID: nameID, Run: m.named}}
 }
 
-// OnEvent sends a launch's server again when its name or picture changes.
+// OnEvent sends a launch's server again when its name or picture changes,
+// and starts sending the flock once cygnet is connected.
 func (m *Module) OnEvent(ev bot.Event) {
-	if e, ok := ev.(*events.GuildUpdate); ok && (e.Guild.Name != e.OldGuild.Name || fmt.Sprint(e.Guild.Icon) != fmt.Sprint(e.OldGuild.Icon)) {
-		go m.refresh(e.Guild)
+	switch e := ev.(type) {
+	case *events.Ready:
+		m.fly(e.Client().Rest, e.Client().ApplicationID)
+	case *events.GuildUpdate:
+		if e.Guild.Name != e.OldGuild.Name || fmt.Sprint(e.Guild.Icon) != fmt.Sprint(e.OldGuild.Icon) {
+			go m.refresh(e.Guild)
+		}
 	}
 }
 

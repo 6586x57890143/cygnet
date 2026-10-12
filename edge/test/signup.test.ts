@@ -6,8 +6,8 @@ import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 
-import { esc, page, span, type Row } from "../src/page.ts";
-import { area, budget, created, digest, held, inviteCode, inviteLife, keyed, launches, masked, networks, normalEmail, same } from "../src/signup.ts";
+import { byline, esc, page, span, type Row } from "../src/page.ts";
+import { area, budget, isPNG, created, digest, held, inviteCode, inviteLife, keyed, launches, masked, networks, normalEmail, same } from "../src/signup.ts";
 import { Store, type DB, type Stmt } from "../src/store.ts";
 
 const l = launches.silcord;
@@ -322,7 +322,8 @@ test("every page, in the voice", () => {
   assert.match(views.invitee, /youre in through a friend/);
   for (const right of ["download", "delete", "complain", "cloudflare", "scaleway", "12 months"]) assert.match(views.privacy, new RegExp(right));
   assert.match(views.mine, /href="\/silcord\/mine">download my data/);
-  assert.match(views.open, /href="\/privacy">full privacy notice/);
+  assert.match(views.open, /href="\/privacy">privacy<\/a>/);
+  assert.doesNotMatch(views.open, /your discord id and your place in line/, "the notice is linked, not repeated");
   assert.doesNotMatch(views.held, /turnstile\/v0|make an invite/);
   assert.match(views.sent, /<b>st\*\*\*@gm\*\*\*\.com<\/b>/);
   assert.match(views.confirm, /action="\/v\/t" class="auto"/);
@@ -438,4 +439,28 @@ test("the home page: the name, a line, nothing to fill in, nothing for robots", 
   assert.doesNotMatch(home, /<form|turnstile\/v0|on the list/);
   assert.doesNotMatch(visible(home), /[.,;:!?'"A-Z]/);
   assert.equal(readFileSync(new URL("../public/robots.txt", import.meta.url), "utf8"), "User-agent: *\nDisallow: /\n");
+});
+
+test("the flock in the footer: whoever linked in the last day, cygnet first", async () => {
+  const { s } = fresh();
+  const png = "iVBORw0KGgoAAAANSUhEUg";
+  await s.bird("skua", png, "aaaa", t0);
+  await s.bird("cygnet", png, "bbbb", t0 + 1);
+  await s.bird("merlin", png, "cccc", t0 + 2);
+  await s.bird("kite", png, "dddd", t0 - 2 * 86_400_000);
+  assert.deepEqual((await s.flock(t0 + 3)).map((b) => b.name), ["cygnet", "skua", "merlin"]);
+  // A bird sending again keeps its place and takes its new picture.
+  await s.bird("skua", png + "A", "eeee", t0 + 4);
+  assert.deepEqual((await s.flock(t0 + 5)).map((b) => `${b.name}:${b.v}`), ["cygnet:bbbb", "skua:eeee", "merlin:cccc"]);
+  assert.equal(await s.art("skua"), png + "A");
+  assert.equal(await s.art("wren"), null);
+
+  assert.equal(byline([]), '<img src="/art/cygnet.png" alt="" width="14" height="14">kept by cygnet');
+  assert.match(byline([{ name: "skua", v: "e" }]), /^<img src="\/art\/cygnet\.png"[^>]*><img src="\/bird\/skua\.png\?v=e"[^>]*>kept by cygnet with skua$/);
+  assert.match(byline(await s.flock(t0 + 5)), /kept by cygnet with skua and merlin$/);
+  assert.match(byline([{ name: "cygnet", v: "b" }, { name: "a", v: "1" }, { name: "b", v: "2" }, { name: "c", v: "3" }]), /with a b and c$/);
+  assert.match(page(l, 0, { kind: "open" }, "k", "", await s.flock(t0 + 5)), /kept by cygnet with skua and merlin<a class="plink" href="\/privacy">privacy<\/a>/);
+
+  assert.ok(isPNG(png));
+  assert.ok(!isPNG("R0lGODlh") && !isPNG(""));
 });
