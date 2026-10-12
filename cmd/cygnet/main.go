@@ -31,6 +31,7 @@ import (
 	"github.com/6586x57890143/cygnet/internal/hub"
 	"github.com/6586x57890143/cygnet/internal/intents"
 	"github.com/6586x57890143/cygnet/internal/modules/help"
+	"github.com/6586x57890143/cygnet/internal/modules/launch"
 	"github.com/6586x57890143/cygnet/internal/modules/perf"
 	"github.com/6586x57890143/cygnet/internal/modules/provision"
 	"github.com/6586x57890143/cygnet/internal/modules/status"
@@ -175,7 +176,8 @@ func run(log *slog.Logger) error {
 	all := []core.Module{
 		st,
 		perf.New(obs.Default),
-		provision.New(fleet, func() discord.Permissions { return core.Install(running).Permissions }, func(i discord.Interaction) bool { return router.Admin(i) }, g).Keep(kept, saveKept, log).Launch(edge()),
+		provision.New(fleet, func() discord.Permissions { return core.Install(running).Permissions }, func(i discord.Interaction) bool { return router.Admin(i) }, g).Keep(kept, saveKept, log),
+		launch.New(edge(), func(i discord.Interaction) bool { return router.Admin(i) }, log),
 		help.New(func() []core.Module { return running }, func(i discord.Interaction) bool { return router.Admin(i) }, toggles),
 	}
 
@@ -342,14 +344,14 @@ func env(k, def string) string {
 	return def
 }
 
-// edge is the Worker at cygnet.lol that /provision launch registers with,
+// edge is the Worker at cygnet.lol that /launch registers with,
 // if CYGNET_EDGE_URL and CYGNET_EDGE_TOKEN (the Worker's ADMIN_TOKEN) are set.
-func edge() *provision.Edge {
+func edge() *launch.Edge {
 	u, t := os.Getenv("CYGNET_EDGE_URL"), os.Getenv("CYGNET_EDGE_TOKEN")
 	if u == "" || t == "" {
 		return nil
 	}
-	e := &provision.Edge{URL: u, Token: t}
+	e := &launch.Edge{URL: u, Token: t}
 	if id, err := snowflake.Parse(os.Getenv("CYGNET_BOOTSTRAP_ADMIN_USER_ID")); err == nil {
 		e.Breakglass = id
 	}

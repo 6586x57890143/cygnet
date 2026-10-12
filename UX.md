@@ -40,6 +40,12 @@ The rules every bird shares, which `brand/voice_test.go` holds the status lines 
   member gets, not only the error the handler returns.
 - An embed comes from `brand.Embed`, with its mood file attached. The title is one
   lowercase word.
+- **A module has one command, and it opens a panel.** Everything else the module does is
+  a button, a select or a form on that panel or on a card it leads to, and each of those
+  has `◂ back` to the panel. A new feature is a button on a panel, not a new subcommand:
+  options typed into a command are guessed at, a panel shows what is set and what each
+  choice does. `/help`, `/provision` and `/launch` are panels; `/status`, `/ping` and
+  `/perf` are readouts with nothing to set.
 - A page built from components (`/help`) is one Components V2 container, accented in
   a brand colour, wearing its mood icon (`brand.Icon`) as a section thumbnail, with any
   footer as `-#` subtext. It points at synced app emoji, attaching only what hasn't

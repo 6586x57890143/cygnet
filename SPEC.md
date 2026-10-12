@@ -51,6 +51,9 @@ or server without leaving the conversation they're in.
   only that. For a new server, a guild template to start from, then a live install card
   with one button per bird that ticks itself off as each one joins, with exactly the
   permissions that bird's manifest asks for.
+- **`/launch`.** The server's page at `cygnet.lol` and its campaign on one panel: the
+  numbers, the stage, releases to the front of the line, and the valve's waves when
+  they come.
 - **Drift.** A role or overwrite changed by hand shows up as a card with the diff and a
   *put it back* button. Each server picks how far cygnet goes on her own: `watch`
   (tell), `propose` (the card, the default) or `act` (put it back and say so).
@@ -208,7 +211,7 @@ about activity.
 |---|---|---|
 | 0 | Scaffold from skua: core, guard, intents, obs, ratelimit, store, brand, `/status` `/perf` `/help`, CI, deploy, setup | done |
 | 1 | `internal/hub` and the public `link` module: hello, calls, events, deadlines, backpressure, goaway, manifests; the fleet on `/status`; skua linked | done; skua linked in production |
-| 2 | `/provision`: compiled-in layouts applied by diff with a preview, the live install card from each bird's manifest, role order, onboarding; drift cards at `watch`, `propose` or `act` | built: `/provision fleet`, `layout` (with role colours and a confirmed fresh start) and `mode`, with drift reports; onboarding and the live install card open |
+| 2 | `/provision`: compiled-in layouts applied by diff with a preview, the live install card from each bird's manifest, role order, onboarding; drift cards at `watch`, `propose` or `act` | built: the `/provision` panel, with the fleet card, the layout preview (role colours, a confirmed fresh start) and the drift mode, with drift reports; onboarding and the live install card open |
 | 3 | Codes: `/invite` (in the server and user-installed), the Worker's redemption page, direct add with the one-use invite fallback, attribution, the tree | open |
 | 4 | Launches: interest pages, places in line, sealed tokens, the valve and its waves | started: `cygnet.lol/silcord`, places in line, contingents released to the front, invites issued and taken with an email proof, the tree and its ledger; sealed tokens, the valve and the hand-off to cygnet open |
 | 5 | Earning: rules in the layout, `skua.check` for activity, progress on `/invite`, sponsor standing | open |

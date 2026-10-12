@@ -121,22 +121,6 @@ func (m *Module) birds(ctx context.Context) map[string]snowflake.ID {
 	return out
 }
 
-func (m *Module) layoutCmd(ctx context.Context, e *events.ApplicationCommandInteractionCreate) error {
-	l, ok := layout(e.SlashCommandInteractionData().String("name"))
-	if !ok {
-		l = layouts[0]
-	}
-	p, err := m.read(ctx, e.Client().Rest, *e.GuildID(), e.ApplicationID(), l, e.SlashCommandInteractionData().Bool("fresh"))
-	if err != nil {
-		return fmt.Errorf("%w: %w", core.Tell("couldn't read this server; try again in a moment"), err)
-	}
-	return e.CreateMessage(discord.MessageCreate{
-		Components:      []discord.LayoutComponent{p.preview("")},
-		Flags:           discord.MessageFlagEphemeral | discord.MessageFlagIsComponentsV2,
-		AllowedMentions: core.NoPings(),
-	})
-}
-
 // previewAgain redraws the preview from the server as it is now.
 func (m *Module) previewAgain(ctx context.Context, e *events.ComponentInteractionCreate) error {
 	l, err := m.pressed(e)
@@ -247,7 +231,7 @@ func (m *Module) pressed(e *events.ComponentInteractionCreate) (Layout, error) {
 	}
 	parts := strings.Split(e.Data.CustomID(), ":")
 	if len(parts) < 2 {
-		return Layout{}, core.Tell("that button is from an older cygnet; run /provision layout again")
+		return Layout{}, core.Tell("that button is from an older cygnet; run /provision again")
 	}
 	l, ok := layout(parts[1])
 	if !ok {
@@ -270,7 +254,7 @@ func (p planned) todo() int {
 // preview is the plan as a card: a diff block of what changes, the
 // overwrites spelled out below it, what's blocked or waiting, and apply.
 func (p planned) preview(note string) discord.ContainerComponent {
-	return p.card(note, true)
+	return withBack(p.card(note, true))
 }
 
 // card is the plan below note: with the buttons that grant cygnet what
@@ -444,14 +428,14 @@ func (p planned) result(done, total int, err error) discord.ContainerComponent {
 		for _, w := range p.waiting {
 			body += "\n-# " + w
 		}
-		return brand.Card(brand.ColorOK, "provision", p.l.Name, body, sep, again)
+		return withBack(brand.Card(brand.ColorOK, "provision", p.l.Name, body, sep, again))
 	}
 	why := refusal(err)
 	if tell, ok := asTell(err); ok {
 		why = tell
 	}
 	body := fmt.Sprintf("✗ stopped after %d of %d\n%s\n-# %s", done, total, bar(done, total), why)
-	return brand.Card(brand.ColorError, "provision", p.l.Name, body, sep, again)
+	return withBack(brand.Card(brand.ColorError, "provision", p.l.Name, body, sep, again))
 }
 
 func asTell(err error) (string, bool) {
