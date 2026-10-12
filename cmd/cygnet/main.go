@@ -243,10 +243,15 @@ func run(log *slog.Logger) error {
 	// follows every module added, removed or skipped. A failure only leaves
 	// the link stale, which is no reason not to boot.
 	install := core.Install(running)
-	if wrote, err := core.SyncInstall(probeRest, app, install); err != nil {
+	if wrote, err := core.SyncInstall(probeRest, app, install, core.UserInstall(running)); err != nil {
 		log.Warn("updating the install settings", "err", err)
 	} else if wrote {
 		log.Info("install settings updated", "permissions", install.Permissions)
+	}
+	// The commands a user installs live in the global list, the rest in
+	// each guild's. Overwritten whole, so one dropped from the code goes.
+	if _, err := probeRest.SetGlobalCommands(app.ID, router.Global()); err != nil {
+		log.Warn("registering the global commands", "err", err)
 	}
 
 	register := func(c *bot.Client, guild snowflake.ID) {

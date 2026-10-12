@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"time"
 
@@ -192,15 +193,44 @@ func claim(kind, id, module string, hasRun, taken bool) error {
 func (r *Router) Creates() []discord.ApplicationCommandCreate { return r.creates }
 
 // CreatesFor is the command set to bulk-overwrite into guild: the commands
-// of the modules it has on.
+// of the modules it has on, but for the global ones.
 func (r *Router) CreatesFor(guild snowflake.ID) []discord.ApplicationCommandCreate {
 	out := make([]discord.ApplicationCommandCreate, 0, len(r.creates))
 	for i, c := range r.creates {
-		if r.toggles.On(guild, r.createdBy[i]) {
+		if !UserInstalled(c) && r.toggles.On(guild, r.createdBy[i]) {
 			out = append(out, c)
 		}
 	}
 	return out
+}
+
+// Global is the command set to bulk-overwrite globally: every command a
+// user can install, which Discord serves only from the global list. A
+// guild that turned its module off still lists it; dispatch refuses it
+// there.
+func (r *Router) Global() []discord.ApplicationCommandCreate {
+	out := []discord.ApplicationCommandCreate{}
+	for _, c := range r.creates {
+		if UserInstalled(c) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// UserInstalled is whether c can be installed by a user, to run from any
+// DM or server, as its integration types say.
+func UserInstalled(c discord.ApplicationCommandCreate) bool {
+	var types []discord.ApplicationIntegrationType
+	switch c := c.(type) {
+	case discord.SlashCommandCreate:
+		types = c.IntegrationTypes
+	case discord.UserCommandCreate:
+		types = c.IntegrationTypes
+	case discord.MessageCommandCreate:
+		types = c.IntegrationTypes
+	}
+	return slices.Contains(types, discord.ApplicationIntegrationTypeUserInstall)
 }
 
 // Gate makes dispatch refuse the commands, modals and components of a
