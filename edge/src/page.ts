@@ -196,8 +196,8 @@ export function page(l: Launch, total: number, view: View, sitekey: string, icon
       break;
     case "home":
       body = `
-      <p class="soon"><span class="pulse"></span>nothing launching just yet</p>
-      <p class="fine">when a server opens its doors it shows up here<br>until then the swan keeps watch</p>`;
+      <p class="soon"><span class="pulse"></span>nothing is open tonight</p>
+      <p class="fine">the water is still and the swan keeps watch</p>`;
       break;
     case "error":
       body = `

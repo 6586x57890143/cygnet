@@ -27,18 +27,22 @@ export interface Launch {
 export type Stage = "gathering" | "closed" | "open";
 export const stages: Stage[] = ["gathering", "closed", "open"];
 
+// line is a launch's line on its page: the list, invites to the front of
+// it, and the friends they bring, said the way cygnet says things.
+const line = "something is gathering at the edge of the light\nput your name on the water\nwhen the tide turns the front of the line\nbrings the ones they love";
+
 export const launches: Record<string, Launch> = {
   silcord: {
     name: "silcord",
     guild: "1558585698712293378",
-    line: "a new discord server is on the way\nget on the list and when invites go out to the front of the line you can bring your friends in",
+    line,
     minAgeDays: 30,
   },
 };
 
 // fallback is what a launch cygnet registered but the code doesn't name
 // says, and how old an account has to be.
-export const fallback = { line: "a new discord server is on the way\nget on the list and when invites go out to the front of the line you can bring your friends in", minAgeDays: 30 };
+export const fallback = { line, minAgeDays: 30 };
 
 export const minute = 60_000;
 export const hour = 60 * minute;

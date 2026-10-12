@@ -14,6 +14,11 @@ read as generated: a tag hung off a comma for effect (`takes back what you said,
 it`), dramatic two-word fragments (`coffee's cold. trail's warm`), and chains of
 semicolons. Errors stay plain: say what happened and what to do, with no wit.
 
+Her flavour is another register: where she isn't answering anyone (her status lines,
+cygnet.lol's home and launch pages and their quiet states) she sounds like the owner's
+own prose, images of light, water, feathers and a borrowed sky, felt more than
+explained. Anything a person acts on (a step, a button, a reply, an error) stays plain.
+
 The rules every bird shares, which `brand/voice_test.go` holds the status lines to and
 `help`'s voice test holds every page to:
 

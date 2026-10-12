@@ -385,7 +385,7 @@ async function liftPressed(req: Request, env: Env, l: Launch): Promise<Response>
 // launches people can get in line for. Nothing to fill in, nothing to
 // scrape, and no search engine is asked in.
 async function home(env: Env): Promise<Response> {
-  return html(env, { name: "cygnet", title: "cygnet", line: "discord servers that open by invitation\none launch at a time", minAgeDays: 30, icon: "/art/cygnet.png" }, { kind: "home" });
+  return html(env, { name: "cygnet", title: "cygnet", line: "we keep the quiet places\nlit from below like water at dusk\nand let you in by name", minAgeDays: 30, icon: "/art/cygnet.png" }, { kind: "home" });
 }
 
 // privacy is the full privacy notice, for every launch.
