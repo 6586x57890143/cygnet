@@ -62,6 +62,9 @@ type Module struct {
 	// drift last reported there, so one drift is reported once.
 	timers, posted sync.Map
 	settle         time.Duration
+
+	// live is the fleet cards that tick themselves off as birds join.
+	live live
 }
 
 func New(fleet Fleet, want func() discord.Permissions, admin func(discord.Interaction) bool, g *guard.Guard) *Module {
@@ -70,7 +73,11 @@ func New(fleet Fleet, want func() discord.Permissions, admin func(discord.Intera
 
 func (*Module) Name() string { return "provision" }
 
-func (*Module) Want() intents.Want { return intents.Want{Required: gateway.IntentGuilds} }
+// Want is guilds, and server members if the portal grants it, so a fleet
+// card ticks itself off as each bird joins.
+func (*Module) Want() intents.Want {
+	return intents.Want{Required: gateway.IntentGuilds, Optional: gateway.IntentGuildMembers}
+}
 
 // Perms is what applying every compiled-in layout takes: roles, channels
 // and each permission a layout hands out, which Discord lets cygnet grant
@@ -113,7 +120,11 @@ func (m *Module) again(ctx context.Context, e *events.ComponentInteractionCreate
 		return core.Tell("only this server's admins can use /provision")
 	}
 	card := m.card(ctx, e.Client().Rest, *e.GuildID(), e.ApplicationID())
-	return e.UpdateMessage(discord.NewMessageUpdateV2(card).WithAllowedMentions(core.NoPings()))
+	if err := e.UpdateMessage(discord.NewMessageUpdateV2(card).WithAllowedMentions(core.NoPings())); err != nil {
+		return err
+	}
+	m.live.open(*e.GuildID(), e.ApplicationID(), e.Token(), time.Now())
+	return nil
 }
 
 // Rest is what the card reads from Discord.
@@ -151,7 +162,7 @@ func (m *Module) card(ctx context.Context, r Rest, guild, self snowflake.ID) dis
 			}
 		}
 	}
-	return render(guild, birds, m.fleet != nil)
+	return render(guild, birds, m.fleet != nil, m.hearing(self))
 }
 
 // row is one bird as a server sees it.
@@ -243,7 +254,7 @@ func permsOf(guild snowflake.ID, roles []discord.Role, has []snowflake.ID) disco
 }
 
 // render is the card: one line a bird, the fix for each as a button.
-func render(guild snowflake.ID, birds []row, hubOn bool) discord.ContainerComponent {
+func render(guild snowflake.ID, birds []row, hubOn bool, notes ...discord.ContainerSubComponent) discord.ContainerComponent {
 	color := brand.ColorOK
 	var lines []string
 	var fix []discord.InteractiveComponent
@@ -274,7 +285,7 @@ func render(guild snowflake.ID, birds []row, hubOn bool) discord.ContainerCompon
 		lines = append(lines, "-# the hub is off, so no other bird can show up here")
 	}
 	body := strings.Join(lines, "\n")
-	extra := []discord.ContainerSubComponent{discord.NewSeparator(discord.SeparatorSpacingSizeSmall)}
+	extra := append(notes, discord.NewSeparator(discord.SeparatorSpacingSizeSmall))
 	for len(fix) > 4 {
 		extra = append(extra, discord.NewActionRow(fix[:5]...))
 		fix = fix[5:]

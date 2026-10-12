@@ -155,20 +155,30 @@ func Button(t testing.TB, customID string, edit func(p map[string]any)) (*events
 }
 
 // Text is what a reply says: its content, then every text display in its
-// containers, a line each.
+// containers, a section's beside its accessory included, a line each.
 func Text(content string, components []discord.LayoutComponent) string {
 	out := content
+	add := func(t discord.TextDisplayComponent) {
+		if out != "" {
+			out += "\n"
+		}
+		out += t.Content
+	}
 	for _, c := range components {
 		box, ok := c.(discord.ContainerComponent)
 		if !ok {
 			continue
 		}
 		for _, s := range box.Components {
-			if t, ok := s.(discord.TextDisplayComponent); ok {
-				if out != "" {
-					out += "\n"
+			switch v := s.(type) {
+			case discord.TextDisplayComponent:
+				add(v)
+			case discord.SectionComponent:
+				for _, sub := range v.Components {
+					if t, ok := sub.(discord.TextDisplayComponent); ok {
+						add(t)
+					}
 				}
-				out += t.Content
 			}
 		}
 	}

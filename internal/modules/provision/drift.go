@@ -53,6 +53,9 @@ func (m *Module) Keep(kept map[snowflake.ID]Kept, save func(context.Context, sno
 
 // OnEvent watches the roles and channels of every provisioned server.
 func (m *Module) OnEvent(ev bot.Event) {
+	if g, c, ok := heard(ev); ok {
+		m.live.soon(g, func() { m.tick(context.Background(), c.Rest, g, time.Now()) })
+	}
 	var guild snowflake.ID
 	var client *bot.Client
 	switch e := ev.(type) {
