@@ -497,7 +497,9 @@ func buttons(card discord.ContainerComponent) []discord.ButtonComponent {
 	for _, c := range card.Components {
 		if r, ok := c.(discord.ActionRowComponent); ok {
 			for _, b := range r.Components {
-				out = append(out, b.(discord.ButtonComponent))
+				if b, ok := b.(discord.ButtonComponent); ok {
+					out = append(out, b)
+				}
 			}
 		}
 	}

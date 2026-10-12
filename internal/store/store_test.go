@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"slices"
+	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -124,12 +125,12 @@ func TestProvisioned(t *testing.T) {
 		t.Fatal(err)
 	}
 	save := SaveProvisioned(pool)
-	for _, p := range []Provisioned{{91, "flock", "propose"}, {92, "flock", "watch"}, {91, "flock", "act"}} {
+	for _, p := range []Provisioned{{91, "flock", "propose", nil}, {92, "flock", "watch", nil}, {91, "flock", "act", []string{"! role  mod: colour"}}} {
 		if err := save(ctx, p); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if save(ctx, Provisioned{93, "flock", "loud"}) == nil {
+	if save(ctx, Provisioned{93, "flock", "loud", nil}) == nil {
 		t.Fatal("a mode that isn't one was kept")
 	}
 	all, err := AllProvisioned(ctx, pool)
@@ -138,9 +139,9 @@ func TestProvisioned(t *testing.T) {
 	}
 	got := map[int64]string{}
 	for _, p := range all {
-		got[int64(p.Guild)] = p.Layout + "/" + p.Mode
+		got[int64(p.Guild)] = p.Layout + "/" + p.Mode + "/" + strings.Join(p.Leave, ",")
 	}
-	if got[91] != "flock/act" || got[92] != "flock/watch" {
+	if got[91] != "flock/act/! role  mod: colour" || got[92] != "flock/watch/" {
 		t.Fatalf("got %v", got)
 	}
 }

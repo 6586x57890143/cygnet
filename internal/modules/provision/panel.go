@@ -14,10 +14,12 @@ import (
 )
 
 // The panel's custom IDs: "provision" draws it, "provision:mode" is the
-// select that sets how far cygnet goes on her own.
+// select that sets how far cygnet goes on her own, and "provision:forget"
+// manages again what was left alone.
 const (
-	homeID = "provision"
-	modeID = homeID + ":mode"
+	homeID   = "provision"
+	modeID   = homeID + ":mode"
+	forgetID = homeID + ":forget"
 )
 
 // what is what cygnet does in each mode when the server drifts.
@@ -46,7 +48,15 @@ func (m *Module) home(ctx context.Context, e *events.ComponentInteractionCreate)
 	}
 	guild := *e.GuildID()
 	note := ""
-	if e.Data.CustomID() == modeID {
+	switch e.Data.CustomID() {
+	case forgetID:
+		if v, ok := m.kept.Load(guild); ok {
+			k := v.(Kept)
+			k.Leave = nil
+			m.store(ctx, guild, k)
+			note = "✓ cygnet keeps everything " + k.Layout + " names again"
+		}
+	case modeID:
 		v := e.StringSelectMenuInteractionData().Values
 		kept, ok := m.kept.Load(guild)
 		switch {
@@ -89,6 +99,9 @@ func (m *Module) panel(guild snowflake.ID, note string) discord.ContainerCompone
 	if kept {
 		b.WriteString(core.Readout([][2]string{{"layout", l.Name}, {"drift", k.Mode}}))
 		b.WriteString("-# when it drifts from " + l.Name + ", cygnet " + strings.Replace(what[k.Mode], "%s", l.Reports, 1))
+		if len(k.Leave) > 0 {
+			b.WriteString("\n▸ " + count(len(k.Leave), "change") + " left alone here\n```\n" + strings.Join(k.Leave, "\n") + "\n```")
+		}
 	} else {
 		b.WriteString(core.Readout([][2]string{{"layout", "none yet"}}))
 		b.WriteString("-# once a layout is applied here, cygnet keeps the server to it")
@@ -100,6 +113,9 @@ func (m *Module) panel(guild snowflake.ID, note string) discord.ContainerCompone
 		discord.NewSecondaryButton("fleet", refresh),
 		discord.NewSecondaryButton("start fresh", previewID+":"+l.Name+":fresh"),
 	)
+	if len(k.Leave) > 0 {
+		buttons = buttons.AddComponents(discord.NewSecondaryButton("forget them", forgetID))
+	}
 	extra := []discord.ContainerSubComponent{discord.NewSeparator(discord.SeparatorSpacingSizeSmall), buttons}
 	if kept {
 		opts := make([]discord.StringSelectMenuOption, len(modes))

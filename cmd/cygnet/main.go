@@ -121,11 +121,11 @@ func run(log *slog.Logger) error {
 			return fmt.Errorf("reading provisioned servers: %w", err)
 		}
 		for _, p := range all {
-			kept[p.Guild] = provision.Kept{Layout: p.Layout, Mode: p.Mode}
+			kept[p.Guild] = provision.Kept{Layout: p.Layout, Mode: p.Mode, Leave: p.Leave}
 		}
 		save := store.SaveProvisioned(pool)
 		saveKept = func(ctx context.Context, g snowflake.ID, k provision.Kept) error {
-			return save(ctx, store.Provisioned{Guild: g, Layout: k.Layout, Mode: k.Mode})
+			return save(ctx, store.Provisioned{Guild: g, Layout: k.Layout, Mode: k.Mode, Leave: k.Leave})
 		}
 	}
 
