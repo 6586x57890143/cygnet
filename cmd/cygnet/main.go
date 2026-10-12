@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -13,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"slices"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -38,6 +40,8 @@ import (
 	"github.com/6586x57890143/cygnet/internal/obs"
 	"github.com/6586x57890143/cygnet/internal/ratelimit"
 	"github.com/6586x57890143/cygnet/internal/store"
+	"github.com/6586x57890143/cygnet/link"
+	"github.com/6586x57890143/cygnet/link/perms"
 )
 
 // reprobe is how often cygnet re-reads the portal's intent toggles. A change
@@ -155,12 +159,22 @@ func run(log *slog.Logger) error {
 	// provision reads the fleet through it; a nil interface, not a nil *Hub,
 	// when it is off.
 	var fleet provision.Fleet
+	// prov answers the birds' refusals once it exists; the hub listens
+	// before the modules are made, so until then the answer is busy.
+	var prov atomic.Pointer[provision.Module]
 	if v := os.Getenv("CYGNET_BOTS"); v != "" {
 		bots, err := hub.Parse(v)
 		if err != nil {
 			return err
 		}
 		h := hub.New(bots, log)
+		_, verb, _ := link.Target(perms.MissingMethod)
+		h.Serve(verb, func(ctx context.Context, caller string, body json.RawMessage) (any, error) {
+			if p := prov.Load(); p != nil {
+				return p.Missing(ctx, caller, body)
+			}
+			return nil, link.Err(link.Busy, "cygnet is starting")
+		})
 		fleet = h
 		st.WithFleet(h.Fleet)
 		srv := &http.Server{Addr: env("CYGNET_HUB_ADDR", ":7700"), Handler: h, ReadHeaderTimeout: 5 * time.Second}
@@ -173,10 +187,11 @@ func run(log *slog.Logger) error {
 		// Birds hear goaway before the listener goes.
 		defer func() { h.Close(); _ = srv.Shutdown(context.Background()) }()
 	}
+	prov.Store(provision.New(fleet, func() discord.Permissions { return core.Install(running).Permissions }, func(i discord.Interaction) bool { return router.Admin(i) }, g).Keep(kept, saveKept, log).Live(func() bool { return probe.Identified.Has(gateway.IntentGuildMembers) }))
 	all := []core.Module{
 		st,
 		perf.New(obs.Default),
-		provision.New(fleet, func() discord.Permissions { return core.Install(running).Permissions }, func(i discord.Interaction) bool { return router.Admin(i) }, g).Keep(kept, saveKept, log).Live(func() bool { return probe.Identified.Has(gateway.IntentGuildMembers) }),
+		prov.Load(),
 		launch.New(edge(), func(i discord.Interaction) bool { return router.Admin(i) }, log).Flock(fleet),
 		help.New(func() []core.Module { return running }, func(i discord.Interaction) bool { return router.Admin(i) }, toggles),
 	}

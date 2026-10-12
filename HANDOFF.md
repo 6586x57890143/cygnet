@@ -63,6 +63,16 @@ Decisions worth keeping:
   holding Administrator (whoever runs it may be an admin by that role alone), and a
   community server's required channels. If the card's channel went with the old
   layout, the result is posted in the nest.
+- **The birds' refusals are cygnet's to fix.** `hub.Serve` lets a module answer a call
+  to cygnet herself, off the link's reader and inside the call's deadline;
+  `cygnet.missing` goes to `provision.Missing`, through an atomic pointer because the
+  hub listens before the modules exist. cygnet reads the bird's roles and the channel,
+  runs `perms.Lacks`, and grants on the bird's managed role, or on the channel for that
+  role when the server would allow it, writing the overwrite whole so it keeps what it
+  had. watch reports in the layout's staff channel, propose adds a grant button that
+  works it out again when pressed, act grants and says so. One refusal is reported once
+  in ten minutes. Permissions cygnet lacks herself are a grant to make, never a reason
+  to design around (she runs these servers).
 - **The fleet card ticks itself off.** With the server members intent identified (an
   optional `Want`, so cygnet runs without it), a fleet card opened from the panel is
   kept with its interaction's token for 14 minutes and redrawn when a bot joins the
