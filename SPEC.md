@@ -165,7 +165,8 @@ The contract every bird speaks, the same over the WebSocket and `POST /v1/call`.
 - **One permission model.** `link/perms` is Discord's permissions as data, shared by
   every bird: the bits, what each operation needs (`message.send`, `member.timeout`...)
   and Discord's own algorithm for what a member may do in a channel. A bird Discord
-  refuses for want of a permission calls `cygnet.missing {guild, channel, op}`; cygnet
+  refuses for want of a permission calls `cygnet.missing {guild, channel, op}`, read from
+  the request by `perms.Route` under `perms.Watch`, one wrapper on its HTTP client; cygnet
   works out from its roles what it lacks and grants it, by the server's drift mode, on
   the bird's role or, when only a channel takes it away, on that channel. Each manifest
   says the intents a bird wants beside those it was granted, and the fleet card links
