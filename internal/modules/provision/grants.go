@@ -75,11 +75,8 @@ func (m *Module) Missing(ctx context.Context, bird string, body json.RawMessage)
 	if err := json.Unmarshal(body, &in); err != nil {
 		return nil, link.Err(link.Invalid, "body")
 	}
-	guild, err := snowflake.Parse(in.Guild)
-	if err != nil {
-		return nil, link.Err(link.Invalid, "guild")
-	}
 	var channel snowflake.ID
+	var err error
 	if in.Channel != "" {
 		if channel, err = snowflake.Parse(in.Channel); err != nil {
 			return nil, link.Err(link.Invalid, "channel")
@@ -93,6 +90,19 @@ func (m *Module) Missing(ctx context.Context, bird string, body json.RawMessage)
 	m.grants.mu.Unlock()
 	if r == nil {
 		return nil, link.Err(link.Busy, "cygnet isn't connected yet")
+	}
+	guild, err := snowflake.Parse(in.Guild)
+	switch {
+	case in.Guild == "" && channel != 0:
+		// A channel's path doesn't name its server; Discord does.
+		ch, err := r.GetChannel(channel, rest.WithCtx(ctx))
+		gc, ok := ch.(discord.GuildChannel)
+		if err != nil || !ok {
+			return nil, link.Err(link.Invalid, "cygnet can't see that channel")
+		}
+		guild = gc.GuildID()
+	case err != nil:
+		return nil, link.Err(link.Invalid, "guild")
 	}
 	l, err := m.assess(ctx, r, guild, channel, bird, in.Op)
 	if err != nil {
