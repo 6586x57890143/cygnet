@@ -375,7 +375,7 @@ func TestFromElsewhere(t *testing.T) {
 }
 
 func TestRefusals(t *testing.T) {
-	m, s := setup()
+	m, _ := setup()
 	m.edge = ""
 	if _, _, err := run(t, m, nil); !errors.Is(err, errOffline) {
 		t.Fatalf("offline: %v", err)
@@ -383,7 +383,7 @@ func TestRefusals(t *testing.T) {
 	if _, _, err := press(t, m, "invite:3", nil); !errors.Is(err, errOffline) {
 		t.Fatalf("offline click: %v", err)
 	}
-	m, s = setup()
+	m, s := setup()
 	s.fail = errors.New("db down")
 	if _, _, err := run(t, m, nil); err == nil {
 		t.Fatal("a store failure")
