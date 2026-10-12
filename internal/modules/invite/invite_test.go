@@ -31,6 +31,7 @@ type memory struct {
 	each    map[snowflake.ID]int
 	fail    error
 	spends  int
+	tree    map[snowflake.ID][]store.Join
 	arrived []string
 	left    []string
 }
@@ -159,6 +160,12 @@ func (s *memory) Pending(_ context.Context, since time.Time) ([]store.Code, erro
 		}
 	}
 	return out, s.fail
+}
+
+func (s *memory) Tree(_ context.Context, guild snowflake.ID) ([]store.Join, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.tree[guild], s.fail
 }
 
 func (s *memory) SetEach(_ context.Context, guild snowflake.ID, n int) error {

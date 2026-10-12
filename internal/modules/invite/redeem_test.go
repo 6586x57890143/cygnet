@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -346,5 +347,49 @@ func TestJoins(t *testing.T) {
 	m.sweep(context.Background())
 	if (m.joined(discord.Member{})) != m.now() {
 		t.Fatal("a member with no join time")
+	}
+}
+
+func TestTree(t *testing.T) {
+	m, s := setup()
+	s.tree = map[snowflake.ID][]store.Join{3: {
+		{User: 11, Sponsor: 5, At: now},
+		{User: 12, At: now},
+		{User: 13, Sponsor: 5, At: now, Left: now},
+		{User: 14, Sponsor: 11, At: now},
+	}}
+	text, _, err := press(t, m, "invite:tree:3", as("50", false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	has(t, text, "**invite** · the tree", "joined      4 since cygnet watched", "by a link   3", "untraced    1", "left since  1",
+		"<@5> brought <@11> · ~~<@13>~~\n<@11> brought <@14>\n-# untraced: <@12>\n")
+	if _, got, _ := press(t, m, "invite:3", as("50", false)); !strings.Contains(got, "invite:tree:3 ") {
+		t.Fatal("no tree button for an admin")
+	}
+	if _, got, _ := press(t, m, "invite:3", nil); strings.Contains(got, "invite:tree:3") {
+		t.Fatal("a tree button for a member")
+	}
+	for _, edit := range []func(map[string]any){nil, as("5", true)} {
+		if _, _, err := press(t, m, "invite:tree:3", edit); err == nil || !strings.Contains(err.Error(), "only this server's admins") {
+			t.Fatalf("the tree for someone else: %v", err)
+		}
+	}
+
+	// Nobody yet, and a server too big for one card.
+	s.tree[3] = nil
+	if text, _, _ := press(t, m, "invite:tree:3", as("50", false)); !strings.Contains(text, "nobody has joined since cygnet started watching") {
+		t.Fatal(text)
+	}
+	for i := range 300 {
+		s.tree[3] = append(s.tree[3], store.Join{User: snowflake.ID(1_000_000_000_000_000 + i), Sponsor: snowflake.ID(2_000_000_000_000_000 + i), At: now})
+	}
+	text, _, _ = press(t, m, "invite:tree:3", as("50", false))
+	if !strings.Contains(text, "more lines") || len(text) > 4000 {
+		t.Fatalf("%d characters, cut: %v", len(text), strings.Contains(text, "more lines"))
+	}
+	s.fail = errors.New("db down")
+	if _, _, err := press(t, m, "invite:tree:3", as("50", false)); err == nil {
+		t.Fatal("a store failure")
 	}
 }

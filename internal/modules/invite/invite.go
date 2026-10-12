@@ -63,6 +63,7 @@ type Store interface {
 	Arrive(ctx context.Context, guild, user snowflake.ID, at time.Time) (snowflake.ID, error)
 	Leave(ctx context.Context, guild, user snowflake.ID, at time.Time) error
 	Pending(ctx context.Context, since time.Time) ([]store.Code, error)
+	Tree(ctx context.Context, guild snowflake.ID) ([]store.Join, error)
 }
 
 // Discord is cygnet's Discord as /invite reaches it: the servers in her
@@ -121,7 +122,7 @@ func (*Module) Help() core.Help {
 	return core.Help{
 		Color: brand.ColorPrimary,
 		Line:  "links that bring one person each into the server",
-		About: "/invite shows the links you made for this server and who used each, makes a new one and takes back one nobody used. a link lets one person in and works for 48h; one taken back or run out unused is yours to make again. install cygnet on your account and /invite works from any dm or server. admins set how many links each member may have on the same panel, and have no limit themselves",
+		About: "/invite shows the links you made for this server and who used each, makes a new one and takes back one nobody used. a link lets one person in and works for 48h; one taken back or run out unused is yours to make again. install cygnet on your account and /invite works from any dm or server. admins set how many links each member may have on the same panel, and have no limit themselves. the tree shows them everyone who joined since cygnet watched and whose link brought them in",
 	}
 }
 
@@ -304,6 +305,16 @@ func (m *Module) click(ctx context.Context, e *events.ComponentInteractionCreate
 		}
 	}
 	admin := m.isAdmin(e, g)
+	if len(parts) == 3 && parts[1] == "tree" {
+		if !m.canSet(e, g) {
+			return core.Tell("only this server's admins can see its tree, from inside it")
+		}
+		card, err := m.tree(ctx, g)
+		if err != nil {
+			return err
+		}
+		return e.UpdateMessage(discord.NewMessageUpdateV2(card).WithAllowedMentions(core.NoPings()))
+	}
 	note := ""
 	switch {
 	case len(parts) == 3 && parts[1] == "make":
@@ -426,10 +437,11 @@ func (m *Module) panel(ctx context.Context, g discord.Guild, user snowflake.ID, 
 	if left == 0 {
 		makeBtn = makeBtn.AsDisabled()
 	}
-	extra := []discord.ContainerSubComponent{
-		discord.NewSeparator(discord.SeparatorSpacingSizeSmall),
-		discord.NewActionRow(makeBtn, discord.NewSecondaryButton("check again", fmt.Sprintf("%s:%s", id, g.ID))),
+	buttons := discord.NewActionRow(makeBtn, discord.NewSecondaryButton("check again", fmt.Sprintf("%s:%s", id, g.ID)))
+	if set {
+		buttons = buttons.AddComponents(discord.NewSecondaryButton("the tree", fmt.Sprintf("%s:tree:%s", id, g.ID)))
 	}
+	extra := []discord.ContainerSubComponent{discord.NewSeparator(discord.SeparatorSpacingSizeSmall), buttons}
 	if len(open) > 0 {
 		extra = append(extra, discord.NewActionRow(discord.NewStringSelectMenu(fmt.Sprintf("%s:back:%s", id, g.ID), "take a link back", open...)))
 	}
