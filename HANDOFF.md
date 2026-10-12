@@ -1,13 +1,75 @@
-# Handoff: Milestone 2 (`/provision`), in progress
+# Handoff: Milestone 3 (codes), built
 
-Written 2026-10-11. Read this with `CLAUDE.md` and `SPEC.md`.
+Written 2026-10-13. Read this with `CLAUDE.md` and `SPEC.md`.
 
 ## Where the branches are
 
 | Branch | State |
 |---|---|
-| `main` | M0, M1, the rewritten spec and M2 so far (#8 to #12). Deployed to foundry; skua is linked in production |
-| `feat/panels` | one command a module, each a panel: `/provision`, and launches moved to `/launch` |
+| `main` | M0 to M2, the edge's launch list (M4, started), and M3's store (#31) and user installed commands (#32). Deployed to foundry |
+| `feat/invite` (#33) | `/invite`, the panel |
+| `feat/redeem` (#34) | cygnet's side of redemption, attribution and the sweep; on `feat/invite` |
+| `feat/edge-redeem` (#35) | the Worker's `/i/<code>` for server codes, and the tunnel; on `feat/redeem` |
+| `feat/tree` | the tree, and these docs; on `feat/edge-redeem` |
+
+The four go in together, in that order: alone, `/invite` would hand out links
+cygnet.lol can't take yet.
+
+## What M3 changed
+
+- **Postgres owns codes and joins** (`internal/store/codes.go`, migration 004). A code
+  is its SHA-256 with its server, owner, expiry, spender and arrival. `Spend` is one
+  conditional `UPDATE`, and spending a code you already spent returns it (the
+  redemption's idempotency key); someone holds one code into a server at a time (a
+  partial unique index). `Arrive` records a join with the code its member spent there or
+  none, under an advisory lock per member, so a direct add and its gateway event make
+  one join. `invites` holds each server's allowance.
+- **User installed commands** (`core`): one whose integration types include user
+  install is registered globally, and has to be `Public`; the install settings turn user
+  install on exactly when one runs.
+- **`/invite`** (`internal/modules/invite`): the panel lists your links and what became
+  of each, makes one (shown once), takes one back. From a DM or another server it offers
+  the servers cygnet is in where you're a member and links are allowed. Admins set the
+  allowance from inside (none until they do) and have no limit; the owner has none
+  from anywhere. A server with the module off has it off from DMs too (`core.Gated`).
+- **Redemption** (`redeem.go`): cygnet.lol's Worker is the bird `edge`, calling
+  `cygnet.code` and `cygnet.redeem` over `POST /v1/call`. Gate (30 day account, not
+  banned), spend, then in: added with their `guilds.join` token, or a **targeted
+  invite** (Discord's `target_users_file`: theirs alone, one use, 300 s, returned once
+  Discord's job finishes). Already in spends nothing. A code whose owner left is gone.
+- **The token** goes through a REST client with a discard logger (disgo logs request
+  bodies at debug) and the error kept from the add is rebuilt without the request.
+- **Attribution** (`joins.go`): member add and remove events (Server Members, optional),
+  and a sweep on `GuildsReady` over codes spent in the last 7 days.
+- **The Worker** (`edge/src/hub.ts`, `index.ts`): a code D1 doesn't know is a server's.
+  Its page has two ways in behind one Turnstile form, the callback sends the token only
+  for an add and revokes it after, and refusals are said plainly. The privacy notice says
+  what a server's link keeps.
+- **The tunnel**: cloudflared in the prod compose behind the `tunnel` profile, on the
+  fleet network only. Setup is in `docs/edge.md`, The tunnel.
+- **The tree**: on an admin's `/invite` panel, one line a sponsor ("brought ..."), the
+  untraced on their own line, leavers struck through, cut at a card's room.
+
+Decisions worth keeping:
+
+- **SPEC experiment 4 is answered**: Discord restricts an invite to chosen users itself,
+  so the fallback needs no binding of cygnet's and its join is exact.
+- **The launch list's D1 invites stay where they are** until M4's hand-off moves them to
+  Postgres (the "Postgres owns membership" decision); nothing new was put in D1.
+- **No ledger table in Postgres yet**: `code` and `joined` are the record. The edge's
+  chained ledger moves with the launch hand-off.
+- **Pages were checked by rendering `page()`**: `wrangler dev`'s workerd couldn't reach
+  a local fake hub from the sandbox, so the server views were looked at in Chrome from a
+  node server with the same assets.
+
+## Not done yet, deliberately (M3)
+
+- Going live: the tunnel, Access, `edge=` in `CYGNET_BOTS` and the Worker's secrets
+  (`docs/edge.md`, The tunnel), then a real link end to end.
+- The pixel unfurl for a link (SPEC experiment 5) and earning links by rules (M5): the
+  allowance is a number an admin sets.
+- Erasure for `joined`: the notice says to write in; there's no button.
+- The tree past one card: the first lines are shown, then a count.
 
 ## What M2 has so far
 

@@ -111,12 +111,15 @@ Postgres, so a code is spent once however many tabs race for it.
 the tunnel. cygnet spends the code, checks the server's gate (not banned, account age,
 whatever the layout asks) and adds the member with `PUT /guilds/{guild}/members/{user}`.
 The token is dropped as soon as that returns. Without `guilds.join` she mints a Discord
-invite instead (`max_uses: 1`, `max_age: 300`, `unique: true`) and the page sends them
-straight to it. Either way the code is spent before anyone is let in.
+invite instead (`max_uses: 1`, `max_age: 300`, `unique: true`), limited by Discord to
+them alone (`target_users_file`), and the page sends them straight to it. Either way the
+code is spent before anyone is let in, and someone holds one code into a server at a
+time.
 
-**Attribution.** A direct add is attributed when cygnet makes it. An invite join is
-matched by the invite cygnet minted for that redemption: she sees `INVITE_DELETE`
-when its one use is spent, and `GUILD_MEMBER_ADD` for who arrived.
+**Attribution.** A direct add is attributed when cygnet makes it. An invite join is the
+member's own: only they can take the invite, so `GUILD_MEMBER_ADD` for them is the join,
+traced to the code they spent. Joins missed while cygnet was away are found by a sweep
+once she is back. A code whose owner has left the server is gone with them.
 
 **Sealed until launch.** Someone who signs up early and ticks *add me when it opens*
 leaves a refresh token that the Worker encrypts to cygnet's public key and cannot
@@ -212,8 +215,8 @@ about activity.
 |---|---|---|
 | 1 | Hub frame encoding: JSON against a fixed binary header with a raw body, round trip and allocations per call between two `link` clients | open. JSON baseline (`go test ./internal/hub -bench Call`): 97 us and 122 allocs a call and reply, two WebSocket hops on Windows loopback. Live on foundry (1 vCPU, `tools/hubbench`, one hop to the hub and back): p50 123 us, p99 854 us one at a time; 13k calls/s at 8 in flight, p50 617 us, queueing on the one core |
 | 2 | Redemption round trip, sign-in return to member added, p50 and p99 from the Worker's clock: direct add against minted invite | open |
-| 3 | Code spend under a race: 1000 concurrent redemptions of one code, exactly one wins, and the cost of the conditional `UPDATE` | open |
-| 4 | Invites restricted to chosen users by Discord itself, if the API offers it, against cygnet's own one-use binding | open; verify the API first |
+| 3 | Code spend under a race: 1000 concurrent redemptions of one code, exactly one wins, and the cost of the conditional `UPDATE` | started: 50 concurrent spends of one code, one wins (`TestSpendRaceHasOneWinner`); the 1000-way race and its cost open |
+| 4 | Invites restricted to chosen users by Discord itself, if the API offers it, against cygnet's own one-use binding | answered: the API restricts an invite to listed users (`target_users_file`, after a job cygnet waits on), so the fallback invite is theirs alone and attribution needs no binding of cygnet's |
 | 5 | The unfurl: an OG card drawn in the Worker against one pre-drawn per code, time to first byte and Discord's cache behaviour | open |
 | 6 | Wave sizing: the valve's rule replayed against a recorded launch, joins a minute held under a ceiling with no idle gap | open |
 
@@ -224,7 +227,7 @@ about activity.
 | 0 | Scaffold from skua: core, guard, intents, obs, ratelimit, store, brand, `/status` `/perf` `/help`, CI, deploy, setup | done |
 | 1 | `internal/hub` and the public `link` module: hello, calls, events, deadlines, backpressure, goaway, manifests; the fleet on `/status`; skua linked | done; skua linked in production |
 | 2 | `/provision`: compiled-in layouts applied by diff with a preview, the live install card from each bird's manifest, role order, onboarding; drift cards at `watch`, `propose` or `act` | done: the `/provision` panel, with the live fleet card, the layout preview (role colours, a confirmed fresh start, onboarding) and the drift mode, with drift reports |
-| 3 | Codes: `/invite` (in the server and user-installed), the Worker's redemption page, direct add with the one-use invite fallback, attribution, the tree | open |
+| 3 | Codes: `/invite` (in the server and user-installed), the Worker's redemption page, direct add with the one-use invite fallback, attribution, the tree | built: `/invite` and its allowance, `cygnet.lol/i/<code>` through the tunnel, the direct add with a targeted invite as fallback, attribution with a sweep, the tree on the admin's panel; live once the tunnel is set up (`docs/edge.md`) |
 | 4 | Launches: interest pages, places in line, sealed tokens, the valve and its waves | started: `cygnet.lol/silcord`, places in line, contingents released to the front, invites issued and taken with an email proof, the tree and its ledger; sealed tokens, the valve and the hand-off to cygnet open |
 | 5 | Earning: rules in the layout, `skua.check` for activity, progress on `/invite`, sponsor standing | open |
 
