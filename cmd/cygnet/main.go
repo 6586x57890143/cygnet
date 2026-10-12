@@ -243,15 +243,38 @@ func run(log *slog.Logger) error {
 	// follows every module added, removed or skipped. A failure only leaves
 	// the link stale, which is no reason not to boot.
 	install := core.Install(running)
-	if wrote, err := core.SyncInstall(probeRest, app, install, core.UserInstall(running)); err != nil {
-		log.Warn("updating the install settings", "err", err)
-	} else if wrote {
-		log.Info("install settings updated", "permissions", install.Permissions)
+	syncInstall := func(user bool) {
+		if wrote, err := core.SyncInstall(probeRest, app, install, user); err != nil {
+			log.Warn("updating the install settings", "err", err)
+		} else if wrote {
+			log.Info("install settings updated", "permissions", install.Permissions, "user", user)
+		}
 	}
 	// The commands a user installs live in the global list, the rest in
-	// each guild's. Overwritten whole, so one dropped from the code goes.
-	if _, err := probeRest.SetGlobalCommands(app.ID, router.Global()); err != nil {
-		log.Warn("registering the global commands", "err", err)
+	// each guild's, which no longer has them: so a failed write is tried
+	// again until it lands. Overwritten whole, so one dropped from the code
+	// goes. Discord lists a user installed command only while user install
+	// is on, so it is switched on before they are listed and off after.
+	global := router.Global()
+	setGlobal := func() {
+		for {
+			_, err := probeRest.SetGlobalCommands(app.ID, global)
+			if err == nil {
+				return
+			}
+			log.Warn("registering the global commands; trying again in a minute", "err", err)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(time.Minute):
+			}
+		}
+	}
+	if len(global) > 0 {
+		syncInstall(true)
+		go setGlobal()
+	} else {
+		go func() { setGlobal(); syncInstall(false) }()
 	}
 
 	register := func(c *bot.Client, guild snowflake.ID) {
@@ -260,7 +283,8 @@ func run(log *slog.Logger) error {
 		}
 	}
 	// A module turned off or on leaves or joins the guild's command list,
-	// within the guild's command budget. Over budget, it tries again once
+	// within the guild's command budget (a user installed command, being
+	// global, stays listed, and dispatch refuses it). Over budget, it tries again once
 	// the budget has room: dispatch refuses an off module meanwhile, but a
 	// module turned back on would otherwise stay missing from the menu.
 	var resync func(snowflake.ID)

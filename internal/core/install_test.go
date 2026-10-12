@@ -86,10 +86,8 @@ func TestUserInstallFollowsTheCommands(t *testing.T) {
 	slash := Command{Create: discord.SlashCommandCreate{Name: "invite", IntegrationTypes: []discord.ApplicationIntegrationType{discord.ApplicationIntegrationTypeGuildInstall, user}}, Tier: Public, Run: run}
 	guildOnly := Command{Create: discord.SlashCommandCreate{Name: "launch"}, Tier: Admin, Run: run}
 	message := Command{Create: discord.MessageCommandCreate{Name: "pin", IntegrationTypes: []discord.ApplicationIntegrationType{user}}, Tier: Public, Run: run}
-	if UserInstall([]Module{mod{[]Command{guildOnly}}}) || !UserInstall([]Module{mod{[]Command{guildOnly}}, mod{[]Command{slash}}}) {
-		t.Fatal("UserInstall doesn't follow the commands")
-	}
-	if !UserInstalled(message.Create) || UserInstalled(discord.UserCommandCreate{Name: "who"}) {
+	if !UserInstalled(message.Create) || UserInstalled(discord.UserCommandCreate{Name: "who"}) ||
+		!UserInstalled(discord.EntryPointCommandCreate{Name: "play", IntegrationTypes: []discord.ApplicationIntegrationType{user}}) {
 		t.Fatal("UserInstalled reads the wrong types")
 	}
 
@@ -101,6 +99,13 @@ func TestUserInstallFollowsTheCommands(t *testing.T) {
 	if g, all := r.Global(), r.CreatesFor(1); len(g) != 2 || len(all) != 1 || all[0].CommandName() != "launch" {
 		t.Fatalf("global %d, guild %v", len(g), all)
 	}
+	// Administrator in a server cygnet isn't in makes nobody her admin.
+	admin := slash
+	admin.Create = discord.SlashCommandCreate{Name: "keep", IntegrationTypes: []discord.ApplicationIntegrationType{user}}
+	admin.Tier = Admin
+	if err := r.Add(mod{[]Command{admin}}); err == nil {
+		t.Fatal("an admin command a user can install")
+	}
 
 	want := Install(nil)
 	a := &appRest{}
@@ -111,8 +116,13 @@ func TestUserInstallFollowsTheCommands(t *testing.T) {
 	if p := cfg[user].OAuth2InstallParams; p == nil || len(p.Scopes) != 1 || p.Scopes[0] != discord.OAuth2ScopeApplicationsCommands || p.Permissions != 0 {
 		t.Fatalf("user install %+v", cfg[user])
 	}
-	// As Discord has it now, nothing to write.
+	// As Discord has it now, nothing to write; a user entry without
+	// params, as Discord can send one, isn't it.
 	if wrote, _ := SyncInstall(a, &discord.Application{IntegrationTypesConfig: cfg}, want, true); wrote {
 		t.Fatal("wrote what Discord already had")
+	}
+	bare := discord.ApplicationIntegrationTypesConfig{discord.ApplicationIntegrationTypeGuildInstall: cfg[discord.ApplicationIntegrationTypeGuildInstall], user: {}}
+	if wrote, _ := SyncInstall(a, &discord.Application{IntegrationTypesConfig: bare}, want, true); !wrote {
+		t.Fatal("a user entry without params passed as set")
 	}
 }

@@ -21,17 +21,6 @@ func Install(running []Module) discord.InstallParams {
 	}
 }
 
-// UserInstall is whether any running module has a command a user can
-// install, which is what turns user install on.
-func UserInstall(running []Module) bool {
-	for _, m := range running {
-		if slices.ContainsFunc(m.Commands(), func(c Command) bool { return UserInstalled(c.Create) }) {
-			return true
-		}
-	}
-	return false
-}
-
 // SyncInstall makes want the app's Default Install Settings, which is what
 // Discord's bare install link (and cygnet.lol, which redirects to it)
 // asks a server for, and switches user install on (asking for commands

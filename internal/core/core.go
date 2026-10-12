@@ -122,6 +122,8 @@ type Router struct {
 	// ("modal:"+ID) and component ("component:"+ID), and createdBy the module behind each create.
 	owners    map[any]string
 	createdBy []string
+	// global is whether each create is user installed, so in the global list.
+	global    []bool
 	toggles   *Toggles
 	bootstrap snowflake.ID
 	owner     func(guild snowflake.ID) (snowflake.ID, bool)
@@ -149,10 +151,15 @@ func (r *Router) Add(m Module) error {
 			return fmt.Errorf("core: /%s from %s has no handler", k.name, m.Name())
 		case r.cmds[k].Run != nil:
 			return fmt.Errorf("core: /%s registered twice (second by %s)", k.name, m.Name())
+		case UserInstalled(c.Create) && c.Tier != Public:
+			// Run from a server cygnet isn't in, Administrator there makes
+			// nobody an admin of anything she keeps.
+			return fmt.Errorf("core: /%s from %s can be user installed, so it has to be Public", k.name, m.Name())
 		}
 		r.cmds[k] = c
 		r.creates = append(r.creates, c.Create)
 		r.createdBy = append(r.createdBy, m.Name())
+		r.global = append(r.global, UserInstalled(c.Create))
 		r.owners[k] = m.Name()
 	}
 	if mm, ok := m.(Modals); ok {
@@ -197,7 +204,7 @@ func (r *Router) Creates() []discord.ApplicationCommandCreate { return r.creates
 func (r *Router) CreatesFor(guild snowflake.ID) []discord.ApplicationCommandCreate {
 	out := make([]discord.ApplicationCommandCreate, 0, len(r.creates))
 	for i, c := range r.creates {
-		if !UserInstalled(c) && r.toggles.On(guild, r.createdBy[i]) {
+		if !r.global[i] && r.toggles.On(guild, r.createdBy[i]) {
 			out = append(out, c)
 		}
 	}
@@ -210,8 +217,8 @@ func (r *Router) CreatesFor(guild snowflake.ID) []discord.ApplicationCommandCrea
 // there.
 func (r *Router) Global() []discord.ApplicationCommandCreate {
 	out := []discord.ApplicationCommandCreate{}
-	for _, c := range r.creates {
-		if UserInstalled(c) {
+	for i, c := range r.creates {
+		if r.global[i] {
 			out = append(out, c)
 		}
 	}
@@ -228,6 +235,8 @@ func UserInstalled(c discord.ApplicationCommandCreate) bool {
 	case discord.UserCommandCreate:
 		types = c.IntegrationTypes
 	case discord.MessageCommandCreate:
+		types = c.IntegrationTypes
+	case discord.EntryPointCommandCreate:
 		types = c.IntegrationTypes
 	}
 	return slices.Contains(types, discord.ApplicationIntegrationTypeUserInstall)
