@@ -166,6 +166,8 @@ func run(log *slog.Logger) error {
 	// prov answers the birds' refusals once it exists; the hub listens
 	// before the modules are made, so until then the answer is busy.
 	var prov atomic.Pointer[provision.Module]
+	// inv answers cygnet.lol's redemptions the same way.
+	var inv atomic.Pointer[invite.Module]
 	if v := os.Getenv("CYGNET_BOTS"); v != "" {
 		bots, err := hub.Parse(v)
 		if err != nil {
@@ -179,6 +181,19 @@ func run(log *slog.Logger) error {
 			}
 			return nil, link.Err(link.Busy, "cygnet is starting")
 		})
+		// cygnet.code and cygnet.redeem, for cygnet.lol: answered while
+		// there is a database, and refused as off without one.
+		for verb, fn := range map[string]func(*invite.Module, context.Context, string, json.RawMessage) (any, error){"code": (*invite.Module).Code, "redeem": (*invite.Module).Redeem} {
+			h.Serve(verb, func(ctx context.Context, caller string, body json.RawMessage) (any, error) {
+				if m := inv.Load(); m != nil {
+					return fn(m, ctx, caller, body)
+				}
+				if codes == nil {
+					return nil, link.Err(link.Denied, "cygnet has no database, so no codes")
+				}
+				return nil, link.Err(link.Busy, "cygnet is starting")
+			})
+		}
 		fleet = h
 		st.WithFleet(h.Fleet)
 		srv := &http.Server{Addr: env("CYGNET_HUB_ADDR", ":7700"), Handler: h, ReadHeaderTimeout: 5 * time.Second}
@@ -199,7 +214,11 @@ func run(log *slog.Logger) error {
 		launch.New(edge(), func(i discord.Interaction) bool { return router.Admin(i) }, log).Flock(fleet),
 	}
 	if codes != nil {
-		all = append(all, invite.New(codes, members{func() *bot.Client { return client }}, links(), func(i discord.Interaction) bool { return router.Admin(i) }))
+		// The member add carries a member's own token, so it goes through
+		// REST that logs nothing, even at debug.
+		quiet := rest.NewClient(token, rest.WithLogger(slog.New(slog.DiscardHandler)))
+		inv.Store(invite.New(codes, members{func() *bot.Client { return client }, quiet}, links(), func(i discord.Interaction) bool { return router.Admin(i) }, g, log))
+		all = append(all, inv.Load())
 	} else {
 		log.Warn("no database, so no /invite: codes live in Postgres")
 	}
@@ -402,25 +421,22 @@ func env(k, def string) string {
 // them as the bird edge (docs/edge.md, The tunnel). Until then there is
 // nowhere for a link to go, and /invite says so.
 func links() string {
-	if bots, _ := hub.Parse(os.Getenv("CYGNET_BOTS")); bots["edge"] == "" {
+	if bots, _ := hub.Parse(os.Getenv("CYGNET_BOTS")); bots[invite.Edge] == "" {
 		return ""
 	}
 	return os.Getenv("CYGNET_EDGE_URL")
 }
 
-// members is Discord as /invite reads it: the servers in the guild cache,
-// and whether someone is in one, asked of Discord when they ask.
-type members struct{ client func() *bot.Client }
+// members is Discord as /invite reaches it: the guild cache, the bot's
+// REST, and REST that logs nothing.
+type members struct {
+	client func() *bot.Client
+	quiet  rest.Client
+}
 
 func (m members) Guilds() []discord.Guild { return slices.Collect(m.client().Caches.Guilds()) }
-
-func (m members) Member(ctx context.Context, guild, user snowflake.ID) (bool, error) {
-	_, err := m.client().Rest.GetMember(guild, user, rest.WithCtx(ctx))
-	if rest.IsJSONErrorCode(err, rest.JSONErrorCodeUnknownMember) {
-		return false, nil
-	}
-	return err == nil, err
-}
+func (m members) Rest() rest.Rest         { return m.client().Rest }
+func (m members) Quiet() rest.Client      { return m.quiet }
 
 // edge is the Worker at cygnet.lol that /launch registers with,
 // if CYGNET_EDGE_URL and CYGNET_EDGE_TOKEN (the Worker's ADMIN_TOKEN) are set.
