@@ -177,7 +177,7 @@ func run(log *slog.Logger) error {
 		st,
 		perf.New(obs.Default),
 		provision.New(fleet, func() discord.Permissions { return core.Install(running).Permissions }, func(i discord.Interaction) bool { return router.Admin(i) }, g).Keep(kept, saveKept, log),
-		launch.New(edge(), func(i discord.Interaction) bool { return router.Admin(i) }, log),
+		launch.New(edge(), func(i discord.Interaction) bool { return router.Admin(i) }, log).Flock(fleet),
 		help.New(func() []core.Module { return running }, func(i discord.Interaction) bool { return router.Admin(i) }, toggles),
 	}
 

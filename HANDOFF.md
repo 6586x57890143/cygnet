@@ -95,6 +95,13 @@ Decisions worth keeping:
 
 ## The edge (M4, started)
 
+Since #23 the copy is cygnet's flavour (UX.md, Voice), and every page carries the
+home page's footer: the flock, live from the hub (`launch/flock.go` pushes each linked
+bird's avatar, `PUT /admin/bird/<name>`), and a link to `/privacy`, whose terms are
+centred. The Worker is deployed by hand (`npm -C edge run deploy`, which applies D1
+migrations first); CI only tests it.
+
+
 `edge/` is the Worker at `cygnet.lol` (`docs/edge.md`): `/silcord` takes sign ups
 through Turnstile and Discord (`identify email`), one place per Discord account and per
 verified email. Admins release invites to the front of the line; a member makes one

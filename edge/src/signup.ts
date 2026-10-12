@@ -202,3 +202,9 @@ function base32(bytes: Uint8Array): string {
   if (bits > 0) out += alphabet[(acc << (5 - bits)) & 31];
   return out;
 }
+
+// isPNG is whether b64 starts as a PNG does: its eight byte signature,
+// base64.
+export function isPNG(b64: string): boolean {
+  return b64.startsWith("iVBORw0KGgo");
+}

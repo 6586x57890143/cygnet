@@ -77,6 +77,20 @@ The same lives on the Worker's admin API, with `ADMIN_TOKEN` as a bearer:
 `POST /admin/<launch>/release {"count": 10, "invites": 3}`, `POST /admin/<launch>/lift
 {"user": "<discord id>"}`, `GET /admin/<launch>/tree` and `GET /admin/verify`.
 
+## The flock in the footer
+
+Every page ends with one line: the birds that keep the site, each as its own pixel
+picture, then `kept by cygnet with skua` and a link to the full notice at `/privacy`.
+The notice is linked from every page, not repeated under the card.
+
+The birds come from the hub. Once she is connected, cygnet sends herself and every bird
+linked to her, each the bird's Discord avatar resampled by majority to 32 by 32 cells:
+`PUT /admin/bird/<name> {"png": "<base64>"}`, again each hour while it stays linked. The
+Worker keeps the last one per bird (`bird`, migration 0003) and serves it at
+`/bird/<name>.png?v=<version>`, so visitors never load anything from Discord for it. A
+bird seen in the last day is shown, cygnet first and the rest in the order they first
+linked, so a deploy doesn't make one blink out. When merlin links, merlin appears.
+
 ## GDPR, by design
 
 - **Notice:** a compact one under every card, and the full one at `/privacy`: who's

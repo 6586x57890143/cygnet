@@ -27,6 +27,7 @@ import {
   same,
   token,
   type Launch,
+  isPNG,
 } from "./signup.ts";
 import { Store, type DB, type Hashes } from "./store.ts";
 
@@ -96,6 +97,7 @@ export default {
       if (first === "v" && second) return await confirm(req, env, second);
       if (first === "admin") return await admin(req, env, second, third);
       if (first === "privacy" && !second) return await privacy(env);
+      if (first === "bird" && second && !third && req.method === "GET") return await birdArt(env, second);
       if (!first && req.method === "GET") return await home(env);
       if (!l) return new Response("nothing here", { status: 404, headers: secure(text) });
       if (second === undefined && req.method === "GET") return await landing(req, env, l);
@@ -423,6 +425,15 @@ async function admin(req: Request, env: Env, launch?: string, action?: string): 
     const g = await s.byGuild(action);
     return g ? json({ launch: g.name }) : new Response("no launch here", { status: 404, headers: secure(text) });
   }
+  // cygnet sends a linked bird's picture: a small PNG, base64.
+  if (launch === "bird" && action && req.method === "PUT") {
+    const b = await req.json<{ png?: string }>();
+    if (!/^[a-z0-9-]{1,32}$/.test(action) || typeof b.png !== "string" || b.png.length > 90_000 || !isPNG(b.png)) {
+      return new Response("bad bird", { status: 400, headers: secure(text) });
+    }
+    await s.bird(action, b.png, (await digest(b.png)).slice(0, 8), Date.now());
+    return json({ bird: action });
+  }
   // cygnet registers a launch, or refreshes it, with its server's id, name
   // and picture.
   if (launch && !action && req.method === "PUT") {
@@ -468,9 +479,21 @@ function withCookie(res: Response, c: string): Response {
 }
 
 async function html(env: Env, l: Launch, view: View, status = 200): Promise<Response> {
-  return new Response(page(l, await store(env).total(l), view, env.TURNSTILE_SITEKEY, l.icon ?? ""), {
+  const s = store(env);
+  return new Response(page(l, await s.total(l), view, env.TURNSTILE_SITEKEY, l.icon ?? "", await s.flock(Date.now())), {
     status,
     headers: secure({ "content-type": "text/html; charset=utf-8", "cache-control": "no-store" }),
+  });
+}
+
+// birdArt is a bird's picture for the footer. Its URL carries the
+// picture's version, so it can be kept a long time.
+async function birdArt(env: Env, file: string): Promise<Response> {
+  const name = file.replace(/\.png$/, "");
+  const png = /^[a-z0-9-]{1,32}$/.test(name) ? await store(env).art(name) : null;
+  if (!png) return new Response("nothing here", { status: 404, headers: secure(text) });
+  return new Response(Uint8Array.from(atob(png), (c) => c.charCodeAt(0)), {
+    headers: secure({ "content-type": "image/png", "cache-control": "public, max-age=604800, immutable" }),
   });
 }
 
