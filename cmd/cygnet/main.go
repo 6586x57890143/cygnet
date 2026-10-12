@@ -33,6 +33,7 @@ import (
 	"github.com/6586x57890143/cygnet/internal/hub"
 	"github.com/6586x57890143/cygnet/internal/intents"
 	"github.com/6586x57890143/cygnet/internal/modules/help"
+	"github.com/6586x57890143/cygnet/internal/modules/invite"
 	"github.com/6586x57890143/cygnet/internal/modules/launch"
 	"github.com/6586x57890143/cygnet/internal/modules/perf"
 	"github.com/6586x57890143/cygnet/internal/modules/provision"
@@ -105,6 +106,8 @@ func run(log *slog.Logger) error {
 	// applied again.
 	kept := map[snowflake.ID]provision.Kept{}
 	var saveKept func(context.Context, snowflake.ID, provision.Kept) error
+	// Codes and joins live only in Postgres: without it there is no /invite.
+	var codes *store.Codes
 	if dsn := os.Getenv("CYGNET_DATABASE_URL"); dsn != "" {
 		pool, err := store.Open(ctx, dsn)
 		if err != nil {
@@ -115,6 +118,7 @@ func run(log *slog.Logger) error {
 			return err
 		}
 		db = pool
+		codes = store.NewCodes(pool)
 		off, err := store.ModulesOff(ctx, pool)
 		if err != nil {
 			return fmt.Errorf("reading module switches: %w", err)
@@ -193,8 +197,13 @@ func run(log *slog.Logger) error {
 		perf.New(obs.Default),
 		prov.Load(),
 		launch.New(edge(), func(i discord.Interaction) bool { return router.Admin(i) }, log).Flock(fleet),
-		help.New(func() []core.Module { return running }, func(i discord.Interaction) bool { return router.Admin(i) }, toggles),
 	}
+	if codes != nil {
+		all = append(all, invite.New(codes, members{func() *bot.Client { return client }}, links(), func(i discord.Interaction) bool { return router.Admin(i) }))
+	} else {
+		log.Warn("no database, so no /invite: codes live in Postgres")
+	}
+	all = append(all, help.New(func() []core.Module { return running }, func(i discord.Interaction) bool { return router.Admin(i) }, toggles))
 
 	wants := make(map[string]intents.Want, len(all))
 	for _, m := range all {
@@ -387,6 +396,30 @@ func env(k, def string) string {
 		return v
 	}
 	return def
+}
+
+// links is where /invite's links point: cygnet.lol, once it can redeem
+// them as the bird edge (docs/edge.md, The tunnel). Until then there is
+// nowhere for a link to go, and /invite says so.
+func links() string {
+	if bots, _ := hub.Parse(os.Getenv("CYGNET_BOTS")); bots["edge"] == "" {
+		return ""
+	}
+	return os.Getenv("CYGNET_EDGE_URL")
+}
+
+// members is Discord as /invite reads it: the servers in the guild cache,
+// and whether someone is in one, asked of Discord when they ask.
+type members struct{ client func() *bot.Client }
+
+func (m members) Guilds() []discord.Guild { return slices.Collect(m.client().Caches.Guilds()) }
+
+func (m members) Member(ctx context.Context, guild, user snowflake.ID) (bool, error) {
+	_, err := m.client().Rest.GetMember(guild, user, rest.WithCtx(ctx))
+	if rest.IsJSONErrorCode(err, rest.JSONErrorCodeUnknownMember) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // edge is the Worker at cygnet.lol that /launch registers with,
