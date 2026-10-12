@@ -371,7 +371,7 @@ test("cygnet registers a launch from its server, and can't take another's name",
   assert.ok(await s.register("silcord", "1558585698712293378", "silcord", "https://cdn.discordapp.com/icons/1/a.webp", t0));
   const sil = await s.launch("silcord");
   assert.equal(sil?.icon, "https://cdn.discordapp.com/icons/1/a.webp");
-  assert.match(sil?.line ?? "", /bring your friends/);
+  assert.match(sil?.line ?? "", /the front of the line/);
   // A new one needs no code, and keeps its name to its server.
   assert.ok(await s.register("wren", "175928847299117063", "Wren Club", "", t0));
   assert.equal((await s.launch("wren"))?.title, "Wren Club");
@@ -431,9 +431,9 @@ test("the list: only its owner, as a tree, with holds to lift", async () => {
 });
 
 test("the home page: the name, a line, nothing to fill in, nothing for robots", () => {
-  const home = page({ name: "cygnet", title: "cygnet", line: "discord servers that open by invitation\none launch at a time", minAgeDays: 30, icon: "/art/cygnet.png" }, 0, { kind: "home" }, "k");
+  const home = page({ name: "cygnet", title: "cygnet", line: "we keep the quiet places\nlit from below like water at dusk\nand let you in by name", minAgeDays: 30, icon: "/art/cygnet.png" }, 0, { kind: "home" }, "k");
   assert.match(home, /<h1>cygnet<\/h1>/);
-  assert.match(home, /nothing launching just yet/);
+  assert.match(home, /nothing is open tonight/);
   assert.match(home, /<meta name="robots" content="noindex, nofollow, noarchive, noai, noimageai">/);
   assert.doesNotMatch(home, /<form|turnstile\/v0|on the list/);
   assert.doesNotMatch(visible(home), /[.,;:!?'"A-Z]/);

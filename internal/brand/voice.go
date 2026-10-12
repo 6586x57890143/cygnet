@@ -1,23 +1,22 @@
 package brand
 
 // Status is cygnet's line in the member list, one per re-probe tick, round
-// robin so the same line never shows twice running. The voice is UX.md's:
-// a quiet, clever bird who knows more than she says, casual about it, and a
-// friend of peregrine and merlin. Something she'd actually say, not a line
-// written to sound like a character. voice_test holds every line to it.
+// robin so the same line never shows twice running. These are her flavour,
+// where she may sound like cygnet.lol does: light, water, feathers, a sky
+// that isn't hers (UX.md, Voice). voice_test holds every line to the rules.
 var Status = []string{
-	"keeping an eye on things",
-	"reading along quietly",
-	"somewhere above the server",
-	"around if you need me",
-	"listening more than talking",
-	"out flying with peregrine",
-	"merlin says hi",
-	"on the high perch tonight",
-	"taking the long way round",
-	"just passing through",
-	"knows more than she lets on",
-	"back before you notice",
+	"counting stars over the reeds",
+	"where the light bends",
+	"keeping watch on still water",
+	"reading the tide",
+	"feathers drying in the dusk",
+	"out past the coral with peregrine",
+	"merlin brought the fire",
+	"under a borrowed sky",
+	"writing on the water",
+	"somewhere the light is late",
+	"listening to the brine",
+	"back before the shadows move",
 }
 
 // StatusAt is the line for tick n.
