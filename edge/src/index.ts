@@ -475,13 +475,13 @@ async function html(env: Env, l: Launch, view: View, status = 200): Promise<Resp
 }
 
 // secure adds the headers every response carries: nothing framed, nothing
-// referred, scripts only from this site and Turnstile, and pictures only
-// from here and Discord's CDN.
+// referred, scripts only from this site and Turnstile, pictures only from
+// here and Discord's CDN, and fonts only from here.
 function secure(h: Record<string, string>): Headers {
   return new Headers({
     ...h,
     "content-security-policy":
-      "default-src 'none'; img-src 'self' https://cdn.discordapp.com; style-src 'self' 'unsafe-inline'; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; connect-src 'self' https://challenges.cloudflare.com; form-action 'self' https://discord.com; base-uri 'none'; frame-ancestors 'none'",
+      "default-src 'none'; img-src 'self' https://cdn.discordapp.com; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; connect-src 'self' https://challenges.cloudflare.com; form-action 'self' https://discord.com; base-uri 'none'; frame-ancestors 'none'",
     "referrer-policy": "no-referrer",
     "x-content-type-options": "nosniff",
     // Shared by people, never found by search or taken for training.

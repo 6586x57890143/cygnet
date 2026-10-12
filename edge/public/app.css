@@ -3,6 +3,19 @@
    card that holds what you came to do. Dark first; light is the same page
    on paper. */
 
+/* The monospace is shipped, not left to the device: each system's own is a
+   different width (a phone's is wider), and the card's rows are set to
+   this one. Cascadia Mono, latin, every weight in one file, under the OFL
+   (fonts/OFL.txt). */
+@font-face {
+  font-family: "Cygnet Mono";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 200 700;
+  src: url(/fonts/cascadia-mono.woff2) format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 :root {
   --bg: #0a0d14;
   --glass: rgba(18, 23, 30, 0.74);
@@ -19,7 +32,7 @@
   --err: #d98088;
   --field: 84, 104, 142;
   --scene: night;
-  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --mono: "Cygnet Mono", ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   color-scheme: dark;
 }
@@ -174,6 +187,7 @@ header { flex-direction: column; gap: 10px; }
    them into columns a phone has no room for. */
 .row { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 14px; }
 .row > :last-child { text-align: center; }
+.row .dim { display: block; text-wrap: balance; }
 .invites li { justify-content: center; gap: 18px; }
 .leave { text-align: center; }
 .link code { text-align: center; }

@@ -232,6 +232,7 @@ ${refresh}
 <meta property="og:image:alt" content="an ASCII swan on the water at night, beside the name cygnet">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="/art/cygnet.png">
+<link rel="preload" href="/fonts/cascadia-mono.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/app.css">
 <script src="/theme.js"></script>
 </head>
