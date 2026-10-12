@@ -11,8 +11,11 @@ type Manifest struct {
 	// Perms is the union of the channel permissions its running modules use,
 	// as Discord's permission bitfield in decimal, the way Discord writes it.
 	Perms string `json:"perms"`
-	// Intents is the gateway intents it identifies with.
+	// Intents is the gateway intents it identifies with, and Wants the ones
+	// its modules ask for: what Wants has that Intents doesn't is waiting on
+	// the developer portal, where only a person can switch it on.
 	Intents  uint64    `json:"intents"`
+	Wants    uint64    `json:"wants,omitempty"`
 	Commands []Command `json:"commands"`
 }
 
