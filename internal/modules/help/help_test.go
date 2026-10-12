@@ -429,15 +429,6 @@ func TestEveryPageKeepsTheVoice(t *testing.T) {
 	}
 }
 
-func TestHjælpIsHelp(t *testing.T) {
-	r := newRouter(t, nil, nest)
-	e, sent := coretest.Event(t, "hjælp", nil)
-	r.OnCommand(e)
-	if len(*sent) != 1 || !strings.Contains(mustJSON(t, (*sent)[0].Components), "**nest**") {
-		t.Fatalf("/hjælp didn't answer with the guide: %+v", *sent)
-	}
-}
-
 // TestIndexWrapsOnlySubtext holds the index to a phone: a module's line can
 // be long, but it goes in subtext of its own, so a wrap never pushes text
 // under the name. A name line stays within UX.md's 40 columns.

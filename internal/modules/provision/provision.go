@@ -1,8 +1,9 @@
-// Package provision is how cygnet sets a server up for the flock.
-// /provision fleet is every linked bird, read from its own manifest, checked
-// against what it holds in this server, with the one button that fixes it.
-// /provision layout is a compiled-in layout previewed as a diff against the
-// server and applied by it.
+// Package provision is how cygnet sets a server up for the flock. /provision
+// opens one panel, and everything is done from it: the fleet card, which
+// is every linked bird, read from its own manifest, checked against what it
+// holds in this server, with the one button that fixes it; a compiled-in
+// layout previewed as a diff against the server and applied by it; and how
+// far cygnet goes on her own when the server drifts from it.
 package provision
 
 import (
@@ -61,9 +62,6 @@ type Module struct {
 	// drift last reported there, so one drift is reported once.
 	timers, posted sync.Map
 	settle         time.Duration
-
-	// edge is the Worker launches run on.
-	edge *Edge
 }
 
 func New(fleet Fleet, want func() discord.Permissions, admin func(discord.Interaction) bool, g *guard.Guard) *Module {
@@ -89,7 +87,7 @@ func (*Module) Help() core.Help {
 	return core.Help{
 		Color: brand.ColorPrimary,
 		Line:  "sets this server up for the flock",
-		About: "/provision fleet shows every bird linked to her, whether it's in this server and whether it holds what it asks for. each one that isn't in yet or is missing something gets a button that adds it or grants the rest. what a bird asks for comes from the bird itself, so the card follows each one as it changes. /provision layout shows what a layout would change here before anything happens: roles, channels and who may post where, birds included. apply makes exactly those changes and nothing else, and leaves whatever the layout doesn't name alone. every role gets its colour: the layout's own, and one for all the bots. with fresh, whatever the layout doesn't name goes too: replace deletes it, archive keeps the old channels hidden in an archive category, and nothing is deleted before you confirm what goes. once a layout is applied she keeps an eye on it, and when the server drifts from it she says so in the layout's staff channel. /provision launch gives this server a page at cygnet.lol where people get in line: she sends the server's name and picture there herself and keeps them current. /provision campaign shows the launch's numbers and runs it: gathering lets people get on the list, closed stops new sign ups, open means the server is open, and release gives the next people in line their invites. /provision mode sets how far she goes: watch only says so, propose adds a button to put it back, and act puts it back and then says what she did",
+		About: "/provision opens a panel: the layout this server keeps and how far cygnet goes when it drifts, with the way to everything else. layout shows what a layout would change here before anything happens: roles, channels and who may post where, birds included. apply makes exactly those changes and leaves whatever the layout doesn't name alone, and every role gets its colour. start fresh also takes away whatever the layout doesn't name: replace deletes it, archive keeps the old channels hidden in an archive category, and nothing goes before you confirm what goes. fleet shows every bird linked to her, whether it's in this server and whether it holds what it asks for, with a button that adds it or grants the rest. once a layout is applied she keeps an eye on it, and when the server drifts she says so in the layout's staff channel. the panel sets how far she goes: watch only says so, propose adds a button to put it back, and act puts it back and then says what she did",
 	}
 }
 
@@ -99,65 +97,14 @@ func (m *Module) Commands() []core.Command {
 			Name:        "provision",
 			Description: "set this server up for the flock",
 			Contexts:    []discord.InteractionContextType{discord.InteractionContextTypeGuild},
-			Options: []discord.ApplicationCommandOption{
-				discord.ApplicationCommandOptionSubCommand{Name: "fleet", Description: "every bird, in this server or not, and what it's missing"},
-				discord.ApplicationCommandOptionSubCommand{Name: "layout", Description: "what a layout would change here, then apply it", Options: []discord.ApplicationCommandOption{
-					discord.ApplicationCommandOptionString{Name: "name", Description: "which layout", Choices: choices()},
-					discord.ApplicationCommandOptionBool{Name: "fresh", Description: "start over: delete or archive what the layout doesn't name, once you confirm"},
-				}},
-				discord.ApplicationCommandOptionSubCommand{Name: "launch", Description: "give this server a page at cygnet.lol where people get in line", Options: []discord.ApplicationCommandOption{
-					discord.ApplicationCommandOptionString{Name: "name", Description: "the page's name, as in cygnet.lol/name", Required: true},
-				}},
-				discord.ApplicationCommandOptionSubCommand{Name: "campaign", Description: "this server's launch campaign: its numbers, its stage and releasing invites"},
-				discord.ApplicationCommandOptionSubCommand{Name: "mode", Description: "how far she goes on her own when this server drifts", Options: []discord.ApplicationCommandOption{
-					discord.ApplicationCommandOptionString{Name: "level", Description: "watch, propose or act", Required: true, Choices: modeChoices()},
-				}},
-			},
 		},
 		Tier: core.Admin,
-		Run:  m.run,
+		Run:  m.open,
 	}}
 }
 
 func (m *Module) Components() []core.Component {
-	return []core.Component{{ID: refresh, Run: m.again}, {ID: previewID, Run: m.previewAgain}, {ID: applyID, Run: m.applyPressed}, {ID: confirmID, Run: m.confirmPressed}, {ID: campaignID, Run: m.campaignPressed}}
-}
-
-func choices() []discord.ApplicationCommandOptionChoiceString {
-	out := make([]discord.ApplicationCommandOptionChoiceString, len(layouts))
-	for i, l := range layouts {
-		out[i] = discord.ApplicationCommandOptionChoiceString{Name: l.Name, Value: l.Name}
-	}
-	return out
-}
-
-func modeChoices() []discord.ApplicationCommandOptionChoiceString {
-	out := make([]discord.ApplicationCommandOptionChoiceString, len(modes))
-	for i, md := range modes {
-		out[i] = discord.ApplicationCommandOptionChoiceString{Name: md, Value: md}
-	}
-	return out
-}
-
-func (m *Module) run(ctx context.Context, e *events.ApplicationCommandInteractionCreate) error {
-	if sub := e.SlashCommandInteractionData().SubCommandName; sub != nil {
-		switch *sub {
-		case "layout":
-			return m.layoutCmd(ctx, e)
-		case "mode":
-			return m.modeCmd(ctx, e)
-		case "launch":
-			return m.launchCmd(ctx, e)
-		case "campaign":
-			return m.campaignCmd(ctx, e)
-		}
-	}
-	card := m.card(ctx, e.Client().Rest, *e.GuildID(), e.ApplicationID())
-	return e.CreateMessage(discord.MessageCreate{
-		Components:      []discord.LayoutComponent{card},
-		Flags:           discord.MessageFlagEphemeral | discord.MessageFlagIsComponentsV2,
-		AllowedMentions: core.NoPings(),
-	})
+	return []core.Component{{ID: refresh, Run: m.again}, {ID: previewID, Run: m.previewAgain}, {ID: applyID, Run: m.applyPressed}, {ID: confirmID, Run: m.confirmPressed}, {ID: homeID, Run: m.home}}
 }
 
 // again redraws the card in place, for whoever may run /provision.
@@ -333,7 +280,7 @@ func render(guild snowflake.ID, birds []row, hubOn bool) discord.ContainerCompon
 		fix = fix[5:]
 	}
 	extra = append(extra, discord.NewActionRow(append(fix, discord.NewSecondaryButton("check again", refresh))...))
-	return brand.Card(color, "provision", "fleet", body, extra...)
+	return withBack(brand.Card(color, "provision", "fleet", body, extra...))
 }
 
 // worse keeps whichever mood says more is wrong.

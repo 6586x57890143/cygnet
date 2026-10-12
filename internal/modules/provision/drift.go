@@ -2,7 +2,6 @@ package provision
 
 import (
 	"context"
-	"fmt"
 	"errors"
 	"log/slog"
 	"strings"
@@ -51,12 +50,6 @@ func (m *Module) OnEvent(ev bot.Event) {
 	var guild snowflake.ID
 	var client *bot.Client
 	switch e := ev.(type) {
-	case *events.GuildUpdate:
-		// A launch's page follows its server's name and picture.
-		if e.Guild.Name != e.OldGuild.Name || fmt.Sprint(e.Guild.Icon) != fmt.Sprint(e.OldGuild.Icon) {
-			go m.refresh(e.Guild)
-		}
-		return
 	case *events.RoleCreate:
 		// A bot joining makes its role, which wants the bots' colour, and
 		// a bird its overwrites.
@@ -230,31 +223,4 @@ func (m *Module) store(ctx context.Context, guild snowflake.ID, k Kept) {
 			m.warn("saving a provisioned server", guild, err)
 		}
 	}
-}
-
-// modeCmd sets how far cygnet goes on her own when this server drifts.
-func (m *Module) modeCmd(ctx context.Context, e *events.ApplicationCommandInteractionCreate) error {
-	guild := *e.GuildID()
-	v, ok := m.kept.Load(guild)
-	if !ok {
-		return core.Tell("apply a layout here first; cygnet watches only what she set up")
-	}
-	k := v.(Kept)
-	k.Mode = e.SlashCommandInteractionData().String("level")
-	if k.Mode == "" {
-		k.Mode = Propose
-	}
-	m.store(ctx, guild, k)
-	l, _ := layout(k.Layout)
-	what := map[string]string{
-		Watch:   "say so in #" + l.Reports,
-		Propose: "say so in #" + l.Reports + ", with a button to put it back",
-		Act:     "put it back and say what she did in #" + l.Reports,
-	}[k.Mode]
-	card := brand.Card(brand.ColorOK, "provision", "mode", "✓ when this server drifts from **"+k.Layout+"**, cygnet will "+what)
-	return e.CreateMessage(discord.MessageCreate{
-		Components:      []discord.LayoutComponent{card},
-		Flags:           discord.MessageFlagEphemeral | discord.MessageFlagIsComponentsV2,
-		AllowedMentions: core.NoPings(),
-	})
 }

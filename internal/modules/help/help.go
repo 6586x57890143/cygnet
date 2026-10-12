@@ -1,4 +1,4 @@
-// Package help is /help (and /hjælp), cygnet's field guide: an index of every running
+// Package help is /help, cygnet's field guide: an index of every running
 // module that has a page, and a page per module, in one Components V2
 // container you move around with a select menu.
 //
@@ -59,23 +59,19 @@ func (*Module) Want() intents.Want { return intents.Want{} }
 // Perms is none: the guide is only ever an interaction reply.
 func (*Module) Perms() discord.Permissions { return 0 }
 
-// Commands is the guide under two names: /help and the danish /hjælp.
+// Commands is the guide.
 func (m *Module) Commands() []core.Command {
-	var out []core.Command
-	for _, name := range []string{"help", "hjælp"} {
-		out = append(out, core.Command{
-			Create: discord.SlashCommandCreate{
-				Name:        name,
-				Description: "what cygnet can do and where admins switch her modules",
-				Options: []discord.ApplicationCommandOption{
-					discord.ApplicationCommandOptionBool{Name: "post", Description: "admins: post it in the channel for everyone"},
-				},
+	return []core.Command{{
+		Create: discord.SlashCommandCreate{
+			Name:        "help",
+			Description: "what cygnet can do and where admins switch her modules",
+			Options: []discord.ApplicationCommandOption{
+				discord.ApplicationCommandOptionBool{Name: "post", Description: "admins: post it in the channel for everyone"},
 			},
-			Tier: core.Public,
-			Run:  m.help,
-		})
-	}
-	return out
+		},
+		Tier: core.Public,
+		Run:  m.help,
+	}}
 }
 
 func (m *Module) Components() []core.Component {

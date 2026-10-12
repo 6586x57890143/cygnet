@@ -7,7 +7,7 @@ Written 2026-10-11. Read this with `CLAUDE.md` and `SPEC.md`.
 | Branch | State |
 |---|---|
 | `main` | M0, M1, the rewritten spec and M2 so far (#8 to #12). Deployed to foundry; skua is linked in production |
-| `feat/provision-fresh` | role colours and the fresh start |
+| `feat/panels` | one command a module, each a panel: `/provision`, and launches moved to `/launch` |
 
 ## What M2 has so far
 
@@ -15,13 +15,20 @@ Written 2026-10-11. Read this with `CLAUDE.md` and `SPEC.md`.
 - `link.Manifest.App`: the bird's application ID, which is its bot user's. Needs
   `link/v0.3.0` tagged once merged, then a skua PR that fills it in. Until then skua's
   row on the card says its build doesn't say which app it is.
-- `internal/modules/provision`: `/provision fleet`, an admin card with a line for cygnet
+- **One command a module, each a panel** (UX.md). `/provision` opens a panel that
+  reads nothing from Discord: the layout the server keeps, the drift mode as a select,
+  and buttons to the layout preview, the fleet card and a fresh start. Every card on
+  the way has `◂ back`; on a card posted in a channel (a drift report) it gives the
+  admin their own panel and leaves the card alone. `/launch` (its own module now, with
+  a flag glyph) is the campaign card, or, before a page exists, a button that opens a
+  form for its name. `/hjælp` is gone: it's skua's.
+- `internal/modules/provision`: the fleet card, an admin card with a line for cygnet
   and each linked bird: in the server or not, and the permissions it declares that its
   roles don't give it, server wide. A bird that isn't in, or is missing something, gets
   its own install link for this server (`guild_id`, `disable_guild_select`), which for
   a bird already in updates its role. `check again` redraws the card in place.
   Roles are read once and every bird is asked at once, inside the response window.
-- `/provision layout`: the compiled-in `flock` layout (`layout.go`) planned against the
+- the layout preview: the compiled-in `flock` layout (`layout.go`) planned against the
   server (`plan.go`, pure) as a diff card, every overwrite spelled out, and an apply
   button that carries the plan's digest: if the server changed since the preview, apply
   shows the new plan instead of running. `apply.go` runs the writes in order off the
@@ -33,7 +40,7 @@ Written 2026-10-11. Read this with `CLAUDE.md` and `SPEC.md`.
   (`provision` table, migration 002). Role and channel updates and deletes, which come
   with `GUILDS`, start a check once the server has been quiet for 5s; drift is
   reported in the layout's `Reports` channel (`#cygnet`, staff only), once per distinct
-  drift. `/provision mode`: `watch` reports, `propose` (the default) adds the apply
+  drift. The panel's mode: `watch` reports, `propose` (the default) adds the apply
   button, `act` puts it back first and then says what it did.
 
 Decisions worth keeping:
@@ -47,7 +54,7 @@ Decisions worth keeping:
 - **Only what a layout names, unless asked.** A plan adds and changes; it never deletes,
   and leaves every role, channel and overwrite the layout doesn't name alone. A role
   above cygnet's is shown as blocked, not attempted.
-- **A fresh start asks twice.** `/provision layout fresh:true` plans the removal of
+- **A fresh start asks twice.** **start fresh** plans the removal of
   every channel, category and role the layout doesn't name, after its own changes.
   The preview offers `archive old` (the old channels move into `┄ archive`, hidden from
   @everyone, in one `lock_permissions` move; categories and roles are deleted) or

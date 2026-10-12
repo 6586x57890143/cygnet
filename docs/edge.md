@@ -61,8 +61,8 @@ Turnstile, static assets) runs on Cloudflare's free plan.
 
 ## Running a campaign
 
-In the launch's server, an admin runs `/provision campaign`. cygnet asks the Worker which
-launch the server has and shows its card: how many are on the list and held, in line and
+In the launch's server, an admin runs `/launch`. cygnet asks the Worker which launch
+the server has and shows its panel: how many are on the list and held, in line and
 waiting, how many have invites and how many invites were made, used and still open.
 
 - **Stages**, one button each: **gathering** (anyone can get on the list), **closed** (no
@@ -176,7 +176,7 @@ On the Cloudflare account that holds `cygnet.lol` (the free plan is enough):
    domain.
 7. On foundry, in `~/cygnet/.env`: `CYGNET_EDGE_URL=https://cygnet.lol` and
    `CYGNET_EDGE_TOKEN` set to the same value as the Worker's `ADMIN_TOKEN`, then restart
-   cygnet. In the launch's server, run `/provision launch name:silcord`: cygnet reads the
+   cygnet. In the launch's server, run `/launch` and name its page `silcord`: cygnet reads the
    server's name and picture with its own token and registers them, and keeps them current.
    Any server can launch this way; a name the code doesn't know gets the default line.
 8. Before announcing it: one real link each to Gmail, Outlook and a custom domain, to

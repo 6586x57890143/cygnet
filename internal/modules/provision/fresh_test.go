@@ -148,7 +148,7 @@ func TestFreshButtons(t *testing.T) {
 		ids = append(ids, b.Label+"="+b.CustomID)
 	}
 	sum := digest(p.changes)
-	want := "archive old=" + confirmID + ":flock:" + sum + ":archive, replace=" + confirmID + ":flock:" + sum + ":replace, check again=" + previewID + ":flock:fresh"
+	want := "archive old=" + confirmID + ":flock:" + sum + ":archive, replace=" + confirmID + ":flock:" + sum + ":replace, check again=" + previewID + ":flock:fresh, ◂ back=" + homeID
 	if strings.Join(ids, ", ") != want {
 		t.Fatalf("buttons %v", ids)
 	}

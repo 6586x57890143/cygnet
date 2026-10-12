@@ -49,7 +49,7 @@ func apply(ctx context.Context, w Writes, g *guard.Guard, s state, l Layout, cha
 		}
 		return s.target(name)
 	}
-	opts := []rest.RequestOpt{rest.WithCtx(ctx), rest.WithReason("cygnet: /provision layout " + l.Name)}
+	opts := []rest.RequestOpt{rest.WithCtx(ctx), rest.WithReason("cygnet: layout " + l.Name)}
 	for _, c := range changes {
 		if c.blocked != "" {
 			continue

@@ -123,7 +123,7 @@ func TestRender(t *testing.T) {
 			}
 		}
 	}
-	if strings.Join(labels, ",") != "grant skua,add merlin,check again" {
+	if strings.Join(labels, ",") != "grant skua,add merlin,check again,◂ back" {
 		t.Fatalf("buttons: %v", labels)
 	}
 	if want := "client_id=7&scope=bot+applications.commands&permissions=17716741120&guild_id=3&disable_guild_select=true"; !strings.HasSuffix(urls[0], want) {
@@ -184,7 +184,27 @@ func module(f Fleet) *Module {
 	}, guard.New())
 }
 
-func TestFleetCommand(t *testing.T) {
+// fleet is an admin pressing fleet on the panel, against r: the card it
+// draws in place.
+func fleet(t *testing.T, m *Module, r rest.Rest) string {
+	t.Helper()
+	e, _ := coretest.Button(t, refresh, nil)
+	e.Client().Rest = r
+	var got discord.MessageUpdate
+	e.Respond = func(_ discord.InteractionResponseType, d discord.InteractionResponseData, _ ...rest.RequestOpt) error {
+		got = d.(discord.MessageUpdate)
+		return nil
+	}
+	if err := m.again(context.Background(), e); err != nil {
+		t.Fatal(err)
+	}
+	if got.Flags == nil || !got.Flags.Has(discord.MessageFlagIsComponentsV2) {
+		t.Fatalf("flags %v", got.Flags)
+	}
+	return coretest.Text("", *got.Components)
+}
+
+func TestFleet(t *testing.T) {
 	f := &fakeFleet{
 		birds: []hub.Bird{{Name: "merlin"}, {Name: "peregrine"}, {Name: "skua", Build: "old"}, {Name: "wren"}, {Name: "kite"}},
 		answers: map[string]any{
@@ -195,18 +215,9 @@ func TestFleetCommand(t *testing.T) {
 			"kite":      link.Err(link.Timeout),
 		},
 	}
-	e, sent := coretest.Event(t, "provision", nil)
 	r := server()
 	r.members[7] = []snowflake.ID{20}
-	e.Client().Rest = r
-	if err := module(f).run(context.Background(), e); err != nil {
-		t.Fatal(err)
-	}
-	m := (*sent)[0]
-	if m.Flags&discord.MessageFlagEphemeral == 0 || m.Flags&discord.MessageFlagIsComponentsV2 == 0 {
-		t.Fatalf("flags %v", m.Flags)
-	}
-	text := coretest.Text("", m.Components)
+	text := fleet(t, module(f), r)
 	for _, want := range []string{
 		"✓ **skua** · `35ebc52`",
 		"▸ **merlin**",
@@ -220,35 +231,19 @@ func TestFleetCommand(t *testing.T) {
 	}
 }
 
-func TestFleetCommandHubOff(t *testing.T) {
-	e, sent := coretest.Event(t, "provision", nil)
-	e.Client().Rest = server()
-	if err := module(nil).run(context.Background(), e); err != nil {
-		t.Fatal(err)
-	}
-	if text := coretest.Text("", (*sent)[0].Components); !strings.Contains(text, "✓ **cygnet**") || !strings.Contains(text, "hub is off") {
+func TestFleetHubOff(t *testing.T) {
+	if text := fleet(t, module(nil), server()); !strings.Contains(text, "✓ **cygnet**") || !strings.Contains(text, "hub is off") {
 		t.Fatal(text)
 	}
 }
 
-func TestFleetCommandUnreadable(t *testing.T) {
-	e, sent := coretest.Event(t, "provision", nil)
+func TestFleetUnreadable(t *testing.T) {
 	r := server()
 	r.rolesErr = errors.New("500")
-	e.Client().Rest = r
-	if err := module(nil).run(context.Background(), e); err != nil {
-		t.Fatal(err)
-	}
-	if text := coretest.Text("", (*sent)[0].Components); !strings.Contains(text, "couldn't read this server's roles") {
+	if text := fleet(t, module(nil), r); !strings.Contains(text, "couldn't read this server's roles") {
 		t.Fatal(text)
 	}
-
-	e, sent = coretest.Event(t, "provision", nil)
-	e.Client().Rest = &failingMember{server()}
-	if err := module(nil).run(context.Background(), e); err != nil {
-		t.Fatal(err)
-	}
-	if text := coretest.Text("", (*sent)[0].Components); !strings.Contains(text, "couldn't look it up here") {
+	if text := fleet(t, module(nil), &failingMember{server()}); !strings.Contains(text, "couldn't look it up here") {
 		t.Fatal(text)
 	}
 }

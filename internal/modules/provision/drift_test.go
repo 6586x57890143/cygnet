@@ -217,54 +217,6 @@ func TestDriftFromEvents(t *testing.T) {
 	}
 }
 
-func modeEvent(t *testing.T, m *Module, level string) (*[]discord.MessageCreate, error) {
-	e, sent := coretest.Event(t, "provision", func(p map[string]any) {
-		opts := []any{}
-		if level != "" {
-			opts = append(opts, map[string]any{"name": "level", "type": 3, "value": level})
-		}
-		p["data"] = map[string]any{"id": "6", "name": "provision", "type": 1, "options": []any{
-			map[string]any{"name": "mode", "type": 1, "options": opts},
-		}}
-	})
-	return sent, m.run(context.Background(), e)
-}
-
-func TestModeCommand(t *testing.T) {
-	_, err := modeEvent(t, module(nil), Act)
-	if tell, ok := asTell(err); !ok || !strings.Contains(tell, "apply a layout here first") {
-		t.Fatalf("an unprovisioned server: %v", err)
-	}
-
-	m, _, _, saved := provisioned(t, Propose)
-	for _, c := range []struct{ level, says string }{
-		{Act, "put it back and say what she did in #cygnet"},
-		{Watch, "say so in #cygnet"},
-		{"", "say so in #cygnet, with a button to put it back"},
-	} {
-		level, says := c.level, c.says
-		sent, err := modeEvent(t, m, level)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if text := say((*sent)[0]); !strings.Contains(text, "✓ when this server drifts from **flock**, cygnet will "+says) {
-			t.Fatal(text)
-		}
-	}
-	if len(*saved) != 3 || (*saved)[2].Mode != Propose {
-		t.Fatalf("saved %v", *saved)
-	}
-
-	// A save that fails keeps the mode in memory and says nothing more.
-	m.save = func(context.Context, snowflake.ID, Kept) error { return errors.New("db down") }
-	if _, err := modeEvent(t, m, Watch); err != nil {
-		t.Fatal(err)
-	}
-	if v, _ := m.kept.Load(guild); v.(Kept).Mode != Watch {
-		t.Fatal("the mode didn't hold")
-	}
-}
-
 // Applying a layout keeps the server to it, in propose unless it had a mode.
 func TestApplyKeeps(t *testing.T) {
 	g := newGuild()

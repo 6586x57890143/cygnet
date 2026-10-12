@@ -554,32 +554,6 @@ func TestRefusal(t *testing.T) {
 	}
 }
 
-func layoutEvent(t *testing.T, g *guildFake) (*[]discord.MessageCreate, error) {
-	e, sent := coretest.Event(t, "provision", func(p map[string]any) {
-		p["data"] = map[string]any{"id": "6", "name": "provision", "type": 1, "options": []any{
-			map[string]any{"name": "layout", "type": 1, "options": []any{map[string]any{"name": "name", "type": 3, "value": "flock"}}},
-		}}
-	})
-	e.Client().Rest = g
-	return sent, module(nil).run(context.Background(), e)
-}
-
-func TestLayoutCommand(t *testing.T) {
-	g := newGuild()
-	sent, err := layoutEvent(t, g)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if text := coretest.Text("", (*sent)[0].Components); !strings.Contains(text, "**provision** · flock") {
-		t.Fatal(text)
-	}
-	g.fail["read"] = errors.New("500")
-	_, err = layoutEvent(t, g)
-	if _, ok := asTell(err); !ok {
-		t.Fatalf("a failed read should tell: %v", err)
-	}
-}
-
 // press is an admin pressing customID, with every response recorded.
 func press(t *testing.T, g *guildFake, customID, user string) (*[]discord.InteractionResponseData, error) {
 	return pressOn(t, module(nil), g, customID, user)
@@ -598,8 +572,8 @@ func pressOn(t *testing.T, m *Module, g *guildFake, customID, user string) (*[]d
 	if strings.HasPrefix(customID, confirmID) {
 		return &got, m.confirmPressed(context.Background(), e)
 	}
-	if strings.HasPrefix(customID, campaignID) {
-		return &got, m.campaignPressed(context.Background(), e)
+	if strings.HasPrefix(customID, homeID+":") || customID == homeID {
+		return &got, m.home(context.Background(), e)
 	}
 	if strings.HasPrefix(customID, previewID) {
 		return &got, m.previewAgain(context.Background(), e)
