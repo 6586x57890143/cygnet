@@ -284,9 +284,10 @@ func run(log *slog.Logger) error {
 	}
 	// A module turned off or on leaves or joins the guild's command list,
 	// within the guild's command budget (a user installed command, being
-	// global, stays listed, and dispatch refuses it). Over budget, it tries again once
-	// the budget has room: dispatch refuses an off module meanwhile, but a
-	// module turned back on would otherwise stay missing from the menu.
+	// global, stays listed, and dispatch refuses it). Over budget, it tries
+	// again once the budget has room: dispatch refuses an off module
+	// meanwhile, but a module turned back on would otherwise stay missing
+	// from the menu.
 	var resync func(snowflake.ID)
 	resync = core.Coalesce(func(guild snowflake.ID) {
 		if err := g.Allow(guild, guard.CommandSync); err != nil {
