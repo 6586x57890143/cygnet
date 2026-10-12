@@ -259,6 +259,8 @@ func (g *guildFake) UpdatePermissionOverwrite(channel, role snowflake.ID, u disc
 }
 
 func (g *guildFake) UpdateInteractionResponse(_ snowflake.ID, _ string, u discord.MessageUpdate, _ ...rest.RequestOpt) (*discord.Message, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	g.edits = append(g.edits, u)
 	return nil, g.fail["edit"]
 }

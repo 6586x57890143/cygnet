@@ -63,6 +63,13 @@ Decisions worth keeping:
   holding Administrator (whoever runs it may be an admin by that role alone), and a
   community server's required channels. If the card's channel went with the old
   layout, the result is posted in the nest.
+- **The fleet card ticks itself off.** With the server members intent identified (an
+  optional `Want`, so cygnet runs without it), a fleet card opened from the panel is
+  kept with its interaction's token for 14 minutes and redrawn when a bot joins the
+  server or a role there changes, which is how a re-authorised bird's permissions land.
+  A burst of events settles for a second into one redraw. Without the intent the card
+  says so, with a link to cygnet's bot page in the portal: **switch Server Members
+  Intent on there** and cygnet restarts onto it within ten minutes.
 - **Onboarding is part of the layout.** `flock` asks one question, "what do you come
   here for", whose answers open `#studio`, `#play` and `#general`, over five default
   channels, in advanced mode, so Discord counts 7 channels and 5 to talk in. The plan
@@ -130,7 +137,6 @@ Not live until the steps in `docs/edge.md` are done.
 ## Not done yet, deliberately
 
 - More layouts than `flock`, and a way to choose channel positions.
-- The live install card: needs `GUILD_MEMBERS`.
 - M3 to M5 in `SPEC.md`. For M4: sealed tokens, the valve, standing for sponsors whose
   invitees are removed, and how cygnet reads the list and the tree (through the tunnel,
   as the spec says; the admin endpoints are a bearer token until then).
