@@ -179,6 +179,17 @@ func TestRefusedRefusals(t *testing.T) {
 	if _, err := m.Missing(context.Background(), "wren", json.RawMessage(`{"guild":"3","op":"message.send"}`)); err == nil {
 		t.Error("a bird with no manifest")
 	}
+	// A channel alone is enough: cygnet finds its server.
+	if out, err := refused(t, m, chanID(g, "general"), perms.MessageEmbed); err != nil || out["lacks"] != "16384" {
+		t.Fatalf("with its guild: %v, %v", out, err)
+	}
+	body, _ := json.Marshal(perms.Missing{Channel: chanID(g, "general").String(), Op: perms.MessageEmbed})
+	if out, err := m.Missing(context.Background(), "skua", body); err != nil || out.(map[string]string)["lacks"] != "16384" {
+		t.Fatalf("channel alone: %v, %v", out, err)
+	}
+	if _, err := m.Missing(context.Background(), "skua", json.RawMessage(`{"channel":"999999","op":"message.send"}`)); err == nil {
+		t.Error("a channel cygnet can't see")
+	}
 	m.grants.rest = nil
 	if _, err := m.Missing(context.Background(), "skua", json.RawMessage(`{"guild":"3","op":"message.send"}`)); err == nil {
 		t.Error("before cygnet connected")

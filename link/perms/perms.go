@@ -271,7 +271,9 @@ const MissingMethod = "cygnet.missing"
 
 // Missing is a bird telling cygnet Discord refused it: where, and what it
 // was doing. cygnet works out what it lacks from its roles there, so a bird
-// sends only what it knows. Channel is empty for an op the server decides.
+// sends only what it knows. Channel is empty for an op the server decides;
+// Guild may be empty when Channel isn't, as a channel's path doesn't name
+// its server, and cygnet looks it up.
 type Missing struct {
 	Guild   string `json:"guild"`
 	Channel string `json:"channel,omitempty"`
