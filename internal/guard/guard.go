@@ -44,6 +44,12 @@ const (
 	// GuildEdit is one write to the server's own settings, as a layout's
 	// onboarding.
 	GuildEdit
+	// MemberAdd is one member added to a server with their own sign in, as
+	// a code is redeemed.
+	MemberAdd
+	// InviteCreate is one Discord invite made for one person, when they'd
+	// rather not let cygnet add them.
+	InviteCreate
 	opCount
 )
 
@@ -62,6 +68,9 @@ var caps = [opCount]int64{
 	RoleEdit: 60,
 	// Onboarding is one write an apply; a drift put back is another.
 	GuildEdit: 10,
+	// Every member let in by a code is one; a busy evening is dozens.
+	MemberAdd:    300,
+	InviteCreate: 300,
 }
 
 const (

@@ -6,7 +6,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
+	"log/slog"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -17,15 +20,19 @@ import (
 	"github.com/disgoorg/snowflake/v2"
 
 	"github.com/6586x57890143/cygnet/internal/core/coretest"
+	"github.com/6586x57890143/cygnet/internal/guard"
 	"github.com/6586x57890143/cygnet/internal/store"
 )
 
 // memory is the store as a test keeps it, with Codes' rules.
 type memory struct {
-	mu    sync.Mutex
-	codes []store.Code
-	each  map[snowflake.ID]int
-	fail  error
+	mu      sync.Mutex
+	codes   []store.Code
+	each    map[snowflake.ID]int
+	fail    error
+	spends  int
+	arrived []string
+	left    []string
 }
 
 func (s *memory) counted(guild, owner snowflake.ID, now time.Time) int {
@@ -87,6 +94,73 @@ func (s *memory) Each(_ context.Context, guild snowflake.ID) (int, error) {
 	return s.each[guild], s.fail
 }
 
+func (s *memory) Find(_ context.Context, hash []byte) (store.Code, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, c := range s.codes {
+		if bytes.Equal(c.Hash, hash) {
+			return c, nil
+		}
+	}
+	return store.Code{}, store.ErrGone
+}
+
+// Spend is Codes.Spend's rules but for the one way in, which the store's
+// own tests hold.
+func (s *memory) Spend(_ context.Context, hash []byte, user snowflake.ID, now time.Time) (store.Code, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.spends++
+	for i, c := range s.codes {
+		switch {
+		case !bytes.Equal(c.Hash, hash):
+		case c.SpentBy == user:
+			return c, nil
+		case c.Owner == user:
+			return store.Code{}, store.ErrOwn
+		case c.Open(now):
+			s.codes[i].SpentBy, s.codes[i].SpentAt = user, now
+			return s.codes[i], nil
+		}
+	}
+	return store.Code{}, store.ErrGone
+}
+
+func (s *memory) Arrive(_ context.Context, guild, user snowflake.ID, at time.Time) (snowflake.ID, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.fail != nil {
+		return 0, s.fail
+	}
+	s.arrived = append(s.arrived, fmt.Sprint(guild, "/", user))
+	for i, c := range s.codes {
+		if c.Guild == guild && c.SpentBy == user && c.Arrived.IsZero() {
+			s.codes[i].Arrived = at
+			return c.Owner, nil
+		}
+	}
+	return 0, nil
+}
+
+func (s *memory) Leave(_ context.Context, guild, user snowflake.ID, _ time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.left = append(s.left, fmt.Sprint(guild, "/", user))
+	return s.fail
+}
+
+func (s *memory) Pending(_ context.Context, since time.Time) ([]store.Code, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []store.Code
+	for _, c := range s.codes {
+		if c.SpentBy != 0 && c.Arrived.IsZero() && c.SpentAt.After(since) {
+			out = append(out, c)
+		}
+	}
+	return out, s.fail
+}
+
 func (s *memory) SetEach(_ context.Context, guild snowflake.ID, n int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -94,33 +168,95 @@ func (s *memory) SetEach(_ context.Context, guild snowflake.ID, n int) error {
 	return nil
 }
 
-// fleet is the Discord a test sees: servers, and who is in which.
+// unexpected is the REST calls fleet doesn't answer: nil, so one panics.
+type unexpected = rest.Rest
+
+// fleet is the Discord a test sees: servers, who is in which and since
+// when, who is banned, and what cygnet asked of it. REST calls it doesn't
+// expect hit the nil rest.Rest and panic.
 type fleet struct {
+	unexpected
+	mu      sync.Mutex
 	guilds  []discord.Guild
 	members map[snowflake.ID][]snowflake.ID
-	fail    error
+	bans    map[snowflake.ID][]snowflake.ID
+	fail    error // every member lookup fails with it
+	addErr  error // the add answers with it
+	added   []string
+	jobs    []discord.TargetUsersJobStatusCode // the job's answers, in turn
+	invites []discord.InviteCreate
+	on      []snowflake.ID // the channel each invite opened on
+	texts   []discord.GuildChannel
 }
 
-func (f fleet) Guilds() []discord.Guild { return f.guilds }
+func (f *fleet) Guilds() []discord.Guild { return f.guilds }
+func (f *fleet) Rest() rest.Rest         { return f }
+func (f *fleet) Quiet() rest.Client      { return f }
 
-func (f fleet) Member(_ context.Context, guild, user snowflake.ID) (bool, error) {
-	for _, u := range f.members[guild] {
-		if u == user {
-			return true, f.fail
-		}
+var joinedAt = time.Date(2026, 10, 12, 11, 0, 0, 0, time.UTC)
+
+func (f *fleet) GetMember(guild, user snowflake.ID, _ ...rest.RequestOpt) (*discord.Member, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.fail != nil {
+		return nil, f.fail
 	}
-	return false, f.fail
+	if slices.Contains(f.members[guild], user) {
+		return &discord.Member{User: discord.User{ID: user, Username: fmt.Sprint("user", user)}, JoinedAt: &joinedAt}, nil
+	}
+	return nil, &rest.Error{Code: rest.JSONErrorCodeUnknownMember}
+}
+
+func (f *fleet) GetBan(guild, user snowflake.ID, _ ...rest.RequestOpt) (*discord.Ban, error) {
+	if slices.Contains(f.bans[guild], user) {
+		return &discord.Ban{}, nil
+	}
+	return nil, &rest.Error{Code: rest.JSONErrorCodeUnknownBan}
+}
+
+// Do is the quiet client: only the member add goes through it.
+func (f *fleet) Do(e *rest.CompiledEndpoint, body, _ any, _ ...rest.RequestOpt) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if e.Endpoint != rest.AddMember {
+		return fmt.Errorf("unexpected %s", e.URL)
+	}
+	if f.addErr != nil {
+		return f.addErr
+	}
+	f.added = append(f.added, body.(discord.MemberAdd).AccessToken)
+	return nil
+}
+
+func (f *fleet) CreateInvite(ch snowflake.ID, c discord.InviteCreate, _ ...rest.RequestOpt) (*discord.Invite, error) {
+	f.invites = append(f.invites, c)
+	f.on = append(f.on, ch)
+	return &discord.Invite{Code: "onlyyou"}, nil
+}
+
+func (f *fleet) GetInviteTargetUsersJobStatus(code string, _ ...rest.RequestOpt) (*discord.TargetUsersJobStatus, error) {
+	if len(f.jobs) == 0 {
+		return &discord.TargetUsersJobStatus{Status: discord.TargetUsersJobStatusCodeCompleted}, nil
+	}
+	st := f.jobs[0]
+	f.jobs = f.jobs[1:]
+	return &discord.TargetUsersJobStatus{Status: st}, nil
+}
+
+func (f *fleet) GetGuildChannels(snowflake.ID, ...rest.RequestOpt) ([]discord.GuildChannel, error) {
+	return f.texts, nil
 }
 
 // Servers: 3 is coretest's, 30 another member 5 is in, 31 one they aren't.
 // 50 is an admin of 3, and 60 owns 30.
 func setup() (*Module, *memory) {
 	s := &memory{each: map[snowflake.ID]int{}}
-	f := fleet{
+	f := &fleet{
 		guilds:  []discord.Guild{{ID: 3, Name: "nest", OwnerID: 1}, {ID: 30, Name: "pond", OwnerID: 60}, {ID: 31, Name: "reeds", OwnerID: 1}},
 		members: map[snowflake.ID][]snowflake.ID{3: {5, 50}, 30: {5, 60}, 31: {7}},
+		bans:    map[snowflake.ID][]snowflake.ID{},
 	}
-	m := New(s, f, "https://cygnet.lol/", func(i discord.Interaction) bool { return i.User().ID == 50 })
+	m := New(s, f, "https://cygnet.lol/", func(i discord.Interaction) bool { return i.User().ID == 50 }, guard.New(), slog.New(slog.DiscardHandler))
 	m.now = func() time.Time { return time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC) }
 	return m, s
 }
@@ -390,9 +526,7 @@ func TestRefusals(t *testing.T) {
 	}
 	m, s = setup()
 	s.each[30] = 1
-	f := m.discord.(fleet)
-	f.fail = errors.New("discord down")
-	m.discord = f
+	m.discord.(*fleet).fail = errors.New("discord down")
 	if _, _, err := run(t, m, as("5", true)); err == nil || !strings.Contains(err.Error(), "discord down") {
 		t.Fatalf("discord failing: %v", err)
 	}
@@ -403,7 +537,7 @@ func TestRefusals(t *testing.T) {
 
 func TestModule(t *testing.T) {
 	m, _ := setup()
-	if m.Name() != "invite" || m.Perms() != 0 || m.Want().Required == 0 || m.Help().About == "" || len(m.Components()) != 1 {
+	if m.Name() != "invite" || m.Perms() == 0 || m.Want().Required == 0 || m.Help().About == "" || len(m.Components()) != 1 {
 		t.Fatal("module shape")
 	}
 	c := m.Commands()[0]

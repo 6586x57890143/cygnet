@@ -14,6 +14,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strconv"
 	"strings"
@@ -23,10 +24,12 @@ import (
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/events"
 	"github.com/disgoorg/disgo/gateway"
+	"github.com/disgoorg/disgo/rest"
 	"github.com/disgoorg/snowflake/v2"
 
 	"github.com/6586x57890143/cygnet/internal/brand"
 	"github.com/6586x57890143/cygnet/internal/core"
+	"github.com/6586x57890143/cygnet/internal/guard"
 	"github.com/6586x57890143/cygnet/internal/intents"
 	"github.com/6586x57890143/cygnet/internal/store"
 )
@@ -55,18 +58,28 @@ type Store interface {
 	Revoke(ctx context.Context, hash []byte, owner snowflake.ID, now time.Time) (bool, error)
 	Each(ctx context.Context, guild snowflake.ID) (int, error)
 	SetEach(ctx context.Context, guild snowflake.ID, n int) error
+	Find(ctx context.Context, hash []byte) (store.Code, error)
+	Spend(ctx context.Context, hash []byte, user snowflake.ID, now time.Time) (store.Code, error)
+	Arrive(ctx context.Context, guild, user snowflake.ID, at time.Time) (snowflake.ID, error)
+	Leave(ctx context.Context, guild, user snowflake.ID, at time.Time) error
+	Pending(ctx context.Context, since time.Time) ([]store.Code, error)
 }
 
-// Discord is what /invite reads of Discord: the servers cygnet is in, and
-// whether someone is a member of one.
+// Discord is cygnet's Discord as /invite reaches it: the servers in her
+// guild cache, and REST.
 type Discord interface {
 	Guilds() []discord.Guild
-	Member(ctx context.Context, guild, user snowflake.ID) (bool, error)
+	Rest() rest.Rest
+	// Quiet is REST that logs nothing, whatever the log level, for the one
+	// request that carries a member's own token.
+	Quiet() rest.Client
 }
 
 type Module struct {
 	store   Store
 	discord Discord
+	guard   *guard.Guard
+	log     *slog.Logger
 	// edge is cygnet.lol's address, where links point; "" when unset.
 	edge  string
 	admin func(discord.Interaction) bool
@@ -77,8 +90,11 @@ type Module struct {
 	on func(guild snowflake.ID) bool
 }
 
-func New(s Store, d Discord, edge string, admin func(discord.Interaction) bool) *Module {
-	return &Module{store: s, discord: d, edge: strings.TrimRight(edge, "/"), admin: admin, now: time.Now, on: func(snowflake.ID) bool { return true }}
+func New(s Store, d Discord, edge string, admin func(discord.Interaction) bool, g *guard.Guard, log *slog.Logger) *Module {
+	return &Module{
+		store: s, discord: d, guard: g, log: log, edge: strings.TrimRight(edge, "/"), admin: admin,
+		now: time.Now, on: func(snowflake.ID) bool { return true },
+	}
 }
 
 // Gate is core.Gated: on says which servers have /invite on.
@@ -86,10 +102,20 @@ func (m *Module) Gate(on func(guild snowflake.ID) bool) { m.on = on }
 
 func (*Module) Name() string { return "invite" }
 
-// Want is guilds: the servers a member can make links for.
-func (*Module) Want() intents.Want { return intents.Want{Required: gateway.IntentGuilds} }
+// Want is guilds, the servers a member can make links for, and, when the
+// portal grants it, server members: who joins, to trace them to a code.
+// Without it a join is traced only when cygnet adds the member herself or
+// her sweep finds them.
+func (*Module) Want() intents.Want {
+	return intents.Want{Required: gateway.IntentGuilds, Optional: gateway.IntentGuildMembers}
+}
 
-func (*Module) Perms() discord.Permissions { return 0 }
+// Perms is what a redemption takes: adding a member needs Create Invite, a
+// banned check Ban Members, and an invite only one person can take Manage
+// Server as well.
+func (*Module) Perms() discord.Permissions {
+	return discord.PermissionCreateInstantInvite | discord.PermissionBanMembers | discord.PermissionManageGuild
+}
 
 func (*Module) Help() core.Help {
 	return core.Help{
@@ -164,6 +190,15 @@ func (m *Module) guild(id snowflake.ID) (discord.Guild, bool) {
 	return all[i], true
 }
 
+// member is user in guild as Discord has them, or nil if they aren't in it.
+func (m *Module) member(ctx context.Context, guild, user snowflake.ID) (*discord.Member, error) {
+	mem, err := m.discord.Rest().GetMember(guild, user, rest.WithCtx(ctx))
+	if rest.IsJSONErrorCode(err, rest.JSONErrorCodeUnknownMember) {
+		return nil, nil
+	}
+	return mem, err
+}
+
 // isAdmin is whether whoever sent i is an admin of g: by their roles when
 // they are in g, and as its owner from anywhere.
 func (m *Module) isAdmin(i discord.Interaction, g discord.Guild) bool {
@@ -195,7 +230,9 @@ func (m *Module) choose(ctx context.Context, user snowflake.ID) (discord.Contain
 			each, err := m.store.Each(ctx, g.ID)
 			in := false
 			if err == nil && (each > 0 || g.OwnerID == user) {
-				in, err = m.discord.Member(ctx, g.ID, user)
+				var mem *discord.Member
+				mem, err = m.member(ctx, g.ID, user)
+				in = mem != nil
 			}
 			mu.Lock()
 			defer mu.Unlock()
@@ -258,11 +295,11 @@ func (m *Module) click(ctx context.Context, e *events.ComponentInteractionCreate
 	}
 	user := e.User().ID
 	if here := e.GuildID(); here == nil || *here != g.ID {
-		in, err := m.discord.Member(ctx, g.ID, user)
+		mem, err := m.member(ctx, g.ID, user)
 		if err != nil {
 			return err
 		}
-		if !in {
+		if mem == nil {
 			return core.Tell("you're not in that server")
 		}
 	}
