@@ -225,12 +225,16 @@ func TestApplyKeeps(t *testing.T) {
 	if _, err := pressOn(t, m, g, applyID+":flock:"+digest(p.changes), "5"); err != nil {
 		t.Fatal(err)
 	}
-	if v, ok := m.kept.Load(guild); !ok || v.(Kept) != (Kept{Layout: "flock", Mode: Propose}) {
+	if v, ok := m.kept.Load(guild); !ok || v.(Kept).Layout != "flock" || v.(Kept).Mode != Propose {
 		t.Fatalf("kept %v", v)
 	}
-	m.kept.Store(guild, Kept{Layout: "flock", Mode: Act})
-	m.keep(context.Background(), guild, "flock")
-	if v, _ := m.kept.Load(guild); v.(Kept).Mode != Act {
-		t.Fatal("a reapply reset the mode")
+	m.kept.Store(guild, Kept{Layout: "flock", Mode: Act, Leave: []string{"x"}})
+	m.keep(context.Background(), guild, "flock", false)
+	if v, _ := m.kept.Load(guild); v.(Kept).Mode != Act || len(v.(Kept).Leave) != 1 {
+		t.Fatal("a reapply reset the mode or what's left alone")
+	}
+	m.keep(context.Background(), guild, "flock", true)
+	if v, _ := m.kept.Load(guild); v.(Kept).Mode != Act || v.(Kept).Leave != nil {
+		t.Fatal("a fresh start kept what was left alone")
 	}
 }

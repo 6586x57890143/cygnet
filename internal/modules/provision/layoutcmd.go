@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -91,6 +92,12 @@ func (m *Module) read(ctx context.Context, r rest.Rest, guild, self snowflake.ID
 	}
 	p := planned{l: l, s: s, self: self, fresh: fresh, short: needs(l) &^ permsOf(guild, roles, me.RoleIDs)}
 	p.changes, p.waiting = plan(l, s)
+	if v, ok := m.kept.Load(guild); ok && !fresh {
+		// What the admins left alone isn't planned; a fresh start starts
+		// over and plans it all.
+		leave := v.(Kept).Leave
+		p.changes = slices.DeleteFunc(p.changes, func(c change) bool { return slices.Contains(leave, c.line()) })
+	}
 	if fresh {
 		p.changes = append(p.changes, sweep(l, s)...)
 	}
@@ -212,7 +219,7 @@ func (m *Module) applyPressed(ctx context.Context, e *events.ComponentInteractio
 			}
 		})
 		if err == nil {
-			m.keep(work, guild, l.Name)
+			m.keep(work, guild, l.Name, p.fresh)
 		}
 		card := p.result(done, total, err)
 		if edit(card) != nil && p.fresh {

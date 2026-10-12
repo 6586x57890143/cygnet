@@ -57,6 +57,9 @@ or server without leaving the conversation they're in.
 - **Drift.** A role or overwrite changed by hand shows up as a card with the diff and a
   *put it back* button. Each server picks how far cygnet goes on her own: `watch`
   (tell), `propose` (the card, the default) or `act` (put it back and say so).
+  A report lets an admin leave any of its differences alone: cygnet stops managing
+  that aspect there until someone forgets it on the panel, so `act` never argues
+  with a change made on purpose. A fresh start forgets them all.
 - **The tree.** Every member's line back to the code, rule or wave that let them in. A
   sponsor whose invitees keep getting removed earns more slowly, by a rule anyone can
   read.

@@ -3,7 +3,9 @@ package provision
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -18,9 +20,13 @@ import (
 	"github.com/6586x57890143/cygnet/internal/guard"
 )
 
-// Kept is a server's layout and how far cygnet goes on her own when the
-// server drifts from it.
-type Kept struct{ Layout, Mode string }
+// Kept is a server's layout, how far cygnet goes on her own when the server
+// drifts from it, and what its admins chose to leave alone: changes, by
+// their line in the preview, that cygnet no longer makes there.
+type Kept struct {
+	Layout, Mode string
+	Leave        []string
+}
 
 // The modes, from least to most on her own.
 const (
@@ -191,10 +197,7 @@ func (s state) named(name string) (snowflake.ID, bool) {
 // the button that puts it back.
 func (p planned) drifted(mode string) discord.ContainerComponent {
 	note := "this server drifted from **" + p.l.Name + "**; here's what would put it back"
-	if mode == Watch {
-		return p.card(note, false)
-	}
-	return p.card(note, true)
+	return p.leavable(p.card(note, mode != Watch), "")
 }
 
 // putBack is the report in act: what drifted, and that cygnet put it back.
@@ -203,14 +206,86 @@ func (p planned) putBack(done int, err error) discord.ContainerComponent {
 		return p.result(done, p.todo(), err)
 	}
 	body := "✓ this server drifted from **" + p.l.Name + "**, so cygnet put back " + count(done, "change") + "\n" + p.diff()
-	return brand.Card(brand.ColorOK, "provision", "drift", body)
+	return p.leavable(brand.Card(brand.ColorOK, "provision", "drift", body), "if one was on purpose, leave it alone and make the change again; cygnet won't put it back")
 }
 
-// keep remembers that guild now follows l, keeping its mode.
-func (m *Module) keep(ctx context.Context, guild snowflake.ID, l string) {
+// leaveID is the select on a drift report that leaves changes alone.
+const leaveID = "provision-leave"
+
+// leavable adds the select that leaves some of p's changes alone to a
+// drift report, with why above it. A fresh start's removals aren't drift,
+// so they're never offered.
+func (p planned) leavable(card discord.ContainerComponent, why string) discord.ContainerComponent {
+	var opts []discord.StringSelectMenuOption
+	seen := map[string]bool{}
+	for _, c := range p.changes {
+		key := c.line()
+		if c.kind == remove || c.kind == archive || seen[key] || len(opts) == 25 {
+			continue
+		}
+		seen[key] = true
+		opts = append(opts, discord.StringSelectMenuOption{Label: key, Value: key})
+	}
+	if len(opts) == 0 {
+		return card
+	}
+	if why != "" {
+		card.Components = append(card.Components, discord.NewTextDisplay("-# "+why))
+	}
+	menu := discord.NewStringSelectMenu(leaveID, "leave some alone", opts...).WithMinValues(1).WithMaxValues(len(opts))
+	card.Components = append(card.Components, discord.NewActionRow(menu))
+	return card
+}
+
+// most is how many changes a server can leave alone.
+const most = 100
+
+// leavePressed leaves the changes picked on a drift report alone in this
+// server from now on. The values came from the member's client: each is
+// only ever compared to a change's line, so a forged one leaves nothing
+// alone but itself, and their size and number are capped.
+func (m *Module) leavePressed(ctx context.Context, e *events.ComponentInteractionCreate) error {
+	if e.GuildID() == nil || !m.admin(e) {
+		return core.Tell("only this server's admins can use /provision")
+	}
+	guild := *e.GuildID()
+	v, ok := m.kept.Load(guild)
+	if !ok {
+		return core.Tell("cygnet doesn't keep this server to a layout anymore")
+	}
+	k := v.(Kept)
+	picked := e.StringSelectMenuInteractionData().Values
+	leave := slices.Clone(k.Leave)
+	for _, key := range picked {
+		if len(key) > 100 {
+			return core.Tell("that report is from an older cygnet; run /provision again")
+		}
+		if !slices.Contains(leave, key) {
+			leave = append(leave, key)
+		}
+	}
+	if len(leave) > most {
+		return core.Tell(fmt.Sprintf("this server leaves %d changes alone, which is the most it can; forget them on /provision first", most))
+	}
+	k.Leave = leave
+	m.store(ctx, guild, k)
+	body := "✓ cygnet leaves " + count(len(picked), "change") + " alone here now\n```\n" + strings.Join(picked, "\n") + "\n```\n-# /provision shows what's left alone and forgets it"
+	return e.CreateMessage(discord.MessageCreate{
+		Components:      []discord.LayoutComponent{brand.Card(brand.ColorOK, "provision", "drift", body)},
+		Flags:           discord.MessageFlagEphemeral | discord.MessageFlagIsComponentsV2,
+		AllowedMentions: core.NoPings(),
+	})
+}
+
+// keep remembers that guild now follows l, keeping its mode, and what it
+// leaves alone unless this was a fresh start.
+func (m *Module) keep(ctx context.Context, guild snowflake.ID, l string, fresh bool) {
 	k := Kept{Layout: l, Mode: Propose}
 	if v, ok := m.kept.Load(guild); ok {
 		k.Mode = v.(Kept).Mode
+		if !fresh {
+			k.Leave = v.(Kept).Leave
+		}
 	}
 	m.store(ctx, guild, k)
 }

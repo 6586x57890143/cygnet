@@ -63,6 +63,12 @@ Decisions worth keeping:
   holding Administrator (whoever runs it may be an admin by that role alone), and a
   community server's required channels. If the card's channel went with the old
   layout, the result is posted in the nest.
+- **Left alone is per aspect, not per value.** A drift report's select stores each
+  picked change by its preview line (`! perms #rules: @everyone`) in the server's row
+  (`leave`, migration 003, at most 100). Every plan but a fresh start's drops those
+  lines, so cygnet stops managing that aspect whatever its value; in `act` she has
+  already put it back, so the admin makes their change again. **forget them** on
+  the panel clears the list, and so does a fresh start.
 - **Every role is coloured.** The layout's roles carry their colours, and every bot's
   role takes `BotColor`, linked bird or not, except cygnet's own at her top, which she
   can't reach. A bot joining (`RoleCreate`) starts a drift check, so in `act` it is
