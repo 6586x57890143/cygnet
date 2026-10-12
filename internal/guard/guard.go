@@ -41,6 +41,9 @@ const (
 	// RoleEdit is one role created or changed, as /provision applies a
 	// layout.
 	RoleEdit
+	// GuildEdit is one write to the server's own settings, as a layout's
+	// onboarding.
+	GuildEdit
 	opCount
 )
 
@@ -57,6 +60,8 @@ var caps = [opCount]int64{
 	EmojiCreate: 50,
 	// A layout is a handful of roles; a few applies an hour is plenty.
 	RoleEdit: 60,
+	// Onboarding is one write an apply; a drift put back is another.
+	GuildEdit: 10,
 }
 
 const (
