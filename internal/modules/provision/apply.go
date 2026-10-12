@@ -28,6 +28,7 @@ type Writes interface {
 	UpdateChannelPositions(guildID snowflake.ID, guildChannelPositionUpdates []discord.GuildChannelPositionUpdate, opts ...rest.RequestOpt) error
 	DeleteChannel(channelID snowflake.ID, opts ...rest.RequestOpt) error
 	DeleteRole(guildID snowflake.ID, roleID snowflake.ID, opts ...rest.RequestOpt) error
+	Onboard
 }
 
 // apply makes changes in order, skipping the blocked ones, and stops at the
@@ -57,6 +58,9 @@ func apply(ctx context.Context, w Writes, g *guard.Guard, s state, l Layout, cha
 		op := guard.ChannelEdit
 		if c.kind == roleCreate || c.kind == roleUpdate || c.kind == roleOrder || c.kind == roleColor || (c.kind == remove && c.role.Name != "") {
 			op = guard.RoleEdit
+		}
+		if c.kind == onboardSet {
+			op = guard.GuildEdit
 		}
 		if err := g.Allow(s.guild, op); err != nil {
 			return done, fmt.Errorf("%w: %w", core.Tell("stopped at cygnet's hourly limit for this server; check again in a while and apply the rest"), err)
@@ -98,6 +102,8 @@ func (c change) do(guild snowflake.ID, w Writes, opts []rest.RequestOpt, l Layou
 		return w.DeleteChannel(c.id, opts...)
 	case archive:
 		return moveToArchive(guild, w, opts, c.ids, cats)
+	case onboardSet:
+		return onboard(guild, w, opts, l)
 	case categoryCreate:
 		ch, err := w.CreateGuildChannel(guild, discord.GuildCategoryChannelCreate{Name: c.name}, opts...)
 		if err == nil {

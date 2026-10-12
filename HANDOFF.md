@@ -63,6 +63,15 @@ Decisions worth keeping:
   holding Administrator (whoever runs it may be an admin by that role alone), and a
   community server's required channels. If the card's channel went with the old
   layout, the result is posted in the nest.
+- **Onboarding is part of the layout.** `flock` asks one question, "what do you come
+  here for", whose answers open `#studio`, `#play` and `#general`, over five default
+  channels, in advanced mode, so Discord counts 7 channels and 5 to talk in. The plan
+  compares on, mode, default channels and the question, and is one change
+  (`! onboarding: ...`). It writes after the channels, reading them again so new ones
+  have IDs, keeps questions an admin added and the IDs of its own, so members'
+  answers survive a reapply. On a server that isn't a community it waits, as a bird's
+  overwrite does, instead of standing as drift. It costs cygnet Manage Server, which
+  `needs` asks for only for a layout that has onboarding; `guard.GuildEdit` caps it.
 - **Left alone is per aspect, not per value.** A drift report's select stores each
   picked change by its preview line (`! perms #rules: @everyone`) in the server's row
   (`leave`, migration 003, at most 100). Every plan but a fresh start's drops those
@@ -120,7 +129,6 @@ Not live until the steps in `docs/edge.md` are done.
 
 ## Not done yet, deliberately
 
-- Onboarding in layouts.
 - More layouts than `flock`, and a way to choose channel positions.
 - The live install card: needs `GUILD_MEMBERS`.
 - M3 to M5 in `SPEC.md`. For M4: sealed tokens, the valve, standing for sponsors whose

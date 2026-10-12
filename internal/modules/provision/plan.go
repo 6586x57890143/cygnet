@@ -33,6 +33,8 @@ const (
 	// archive moves ids, the channels a fresh start removes, into the
 	// archive, where they're hidden and kept.
 	archive
+	// onboard writes the layout's onboarding; fields is what differs.
+	onboardSet
 )
 
 // change is one write a layout needs, in the order it has to happen: roles,
@@ -75,6 +77,10 @@ type state struct {
 	// required is the channels a community server can't be without, which
 	// Discord won't let anyone delete.
 	required map[snowflake.ID]bool
+	// community is whether the server is one, which onboarding needs, and
+	// onboarding what it has, read only for a layout that has some.
+	community  bool
+	onboarding *discord.GuildOnboarding
 }
 
 // plan is what l needs done to s, and the overwrites that wait for a bird
@@ -148,7 +154,20 @@ func plan(l Layout, s state) (changes []change, waiting []string) {
 			}
 		}
 	}
-	return append(changes, later...), waiting
+	changes = append(changes, later...)
+	// Onboarding needs a community server. Until this is one it waits, as
+	// a bird's overwrite does, rather than standing as drift nobody can
+	// put back.
+	switch {
+	case l.Onboarding == nil:
+	case !s.community:
+		waiting = append(waiting, "onboarding waits for community; turn it on in server settings and check again")
+	default:
+		if fields := s.onboardingDiff(l); len(fields) > 0 {
+			changes = append(changes, change{kind: onboardSet, fields: fields})
+		}
+	}
+	return changes, waiting
 }
 
 // role is the role of the layout called name, never a bot's own.
@@ -392,6 +411,8 @@ func (c change) line() string {
 		return "- text  #" + c.name
 	case archive:
 		return "! move  " + count(len(c.ids), "channel") + " into " + archiveName
+	case onboardSet:
+		return "! onboarding: " + strings.Join(c.fields, ", ")
 	case roleOrder:
 		return "! order roles as the layout lists them"
 	case categoryCreate:

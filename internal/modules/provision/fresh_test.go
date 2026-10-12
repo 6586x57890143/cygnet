@@ -158,7 +158,7 @@ func TestFreshButtons(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := coretest.Text("", *(*got)[0].(discord.MessageUpdate).Components)
-	if !strings.Contains(text, "! this can't be undone\n▸ cygnet deletes 3 channels with every message in them, 1 category, 1 role\n-# and makes the other 12 changes") || len(g.writes) != 0 {
+	if !strings.Contains(text, "! this can't be undone\n▸ cygnet deletes 3 channels with every message in them, 1 category, 1 role\n-# and makes the other 14 changes") || len(g.writes) != 0 {
 		t.Fatal(text)
 	}
 	got, _ = press(t, g, confirmID+":flock:"+sum+":archive", "5")

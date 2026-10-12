@@ -55,6 +55,23 @@ type guildFake struct {
 	sent map[snowflake.ID][]discord.MessageCreate
 	// rules is the channel a community server can't delete, or 0.
 	rules snowflake.ID
+	// community is whether it's one, and onboarding what it has.
+	community  bool
+	onboarding discord.GuildOnboarding
+}
+
+func (g *guildFake) GetGuildOnboarding(snowflake.ID, ...rest.RequestOpt) (*discord.GuildOnboarding, error) {
+	o := g.onboarding
+	return &o, g.fail["onboarding"]
+}
+
+func (g *guildFake) UpdateGuildOnboarding(_ snowflake.ID, u discord.GuildOnboardingUpdate, _ ...rest.RequestOpt) (*discord.GuildOnboarding, error) {
+	if err := g.fail["onboard"]; err != nil {
+		return nil, err
+	}
+	g.writes = append(g.writes, "onboarding")
+	g.onboarding = discord.GuildOnboarding{Prompts: *u.Prompts, DefaultChannelIDs: *u.DefaultChannelIDs, Enabled: *u.Enabled, Mode: *u.Mode}
+	return &g.onboarding, nil
 }
 
 func (g *guildFake) CreateMessage(channel snowflake.ID, m discord.MessageCreate, _ ...rest.RequestOpt) (*discord.Message, error) {
@@ -251,6 +268,9 @@ func (g *guildFake) GetGuild(snowflake.ID, bool, ...rest.RequestOpt) (*discord.R
 		return nil, err
 	}
 	out := &discord.RestGuild{}
+	if g.community {
+		out.Features = []discord.GuildFeature{discord.GuildFeatureCommunity}
+	}
 	if g.rules != 0 {
 		out.RulesChannelID = &g.rules
 	}
@@ -336,19 +356,20 @@ func TestApplyThenNothingLeft(t *testing.T) {
 	want := strings.Join([]string{
 		"+ role  mod", "+ role  member",
 		"+ group ╭ welcome", "+ text  #📜│rules", "+ text  #📣│announcements",
-		"+ group ├ chatter", "+ text  #💬│general", "+ text  #📷│media",
+		"+ group ├ chatter", "+ text  #💬│general", "+ text  #📷│media", "+ text  #🎨│studio", "+ text  #🎮│play",
 		"+ group ├ song", "+ voice 🔊│lounge",
 		"+ group ╰ nest", "+ text  #🦢│cygnet",
 	}, "\n")
 	if got := lines(p.changes); got != want {
 		t.Fatalf("plan:\n%s", got)
 	}
-	if len(p.waiting) != 0 || p.short != 0 {
+	// Only onboarding waits, for a server that isn't a community.
+	if len(p.waiting) != 1 || !strings.HasPrefix(p.waiting[0], "onboarding waits for community") || p.short != 0 {
 		t.Fatalf("waiting %v, short %v", p.waiting, p.short)
 	}
 	var seen []int
 	done, err := apply(context.Background(), g, guard.New(), p.s, flock, p.changes, func(n int) { seen = append(seen, n) })
-	if err != nil || done != 12 || len(seen) != 12 {
+	if err != nil || done != 14 || len(seen) != 14 {
 		t.Fatalf("applied %d, %v", done, err)
 	}
 	// #announcements and the nest's #cygnet were made with skua's
@@ -373,7 +394,7 @@ func TestApplyThenNothingLeft(t *testing.T) {
 func TestBirdWaits(t *testing.T) {
 	g := newGuild()
 	p := planOn(t, g, nil)
-	if len(p.waiting) != 1 || !strings.Contains(p.waiting[0], "skua isn't in this server yet, so #announcements") {
+	if len(p.waiting) != 2 || !strings.Contains(p.waiting[0], "skua isn't in this server yet, so #announcements") {
 		t.Fatalf("waiting %v", p.waiting)
 	}
 	if _, err := apply(context.Background(), g, guard.New(), p.s, flock, p.changes, func(int) {}); err != nil {
@@ -433,14 +454,14 @@ func TestPreview(t *testing.T) {
 	p := planOn(t, g, map[string]snowflake.ID{"skua": skuaApp})
 	card := p.preview("")
 	text := coretest.Text("", []discord.LayoutComponent{card})
-	for _, want := range []string{"**provision** · flock", "▸ 12 changes to make it match", "```diff\n+ role  mod", "+ text  #🦢│cygnet\n```",
+	for _, want := range []string{"**provision** · flock", "▸ 14 changes to make it match", "```diff\n+ role  mod", "+ text  #🦢│cygnet\n```",
 		"-# #rules: @everyone can't send messages", "-# #announcements: skua can send messages, embed links, attach files"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("preview lacks %q:\n%s", want, text)
 		}
 	}
 	apply := buttons(card)[0]
-	if apply.Label != "apply 12 changes" || apply.Disabled || apply.CustomID != applyID+":flock:"+digest(p.changes) {
+	if apply.Label != "apply 14 changes" || apply.Disabled || apply.CustomID != applyID+":flock:"+digest(p.changes) {
 		t.Fatalf("apply button %+v", apply)
 	}
 
@@ -600,11 +621,11 @@ func TestApplyButton(t *testing.T) {
 	}
 
 	got, err = press(t, g, id, "5")
-	if err != nil || (*got)[0] != nil || len(g.writes) != 12 {
+	if err != nil || (*got)[0] != nil || len(g.writes) != 14 {
 		t.Fatalf("%v, %v, writes %v", err, *got, g.writes)
 	}
 	last := g.edits[len(g.edits)-1]
-	if text := coretest.Text("", *last.Components); !strings.Contains(text, "✓ applied 12 changes; this server matches **flock**") {
+	if text := coretest.Text("", *last.Components); !strings.Contains(text, "✓ applied 14 changes; this server matches **flock**") {
 		t.Fatal(text)
 	}
 
@@ -722,7 +743,7 @@ func TestRestyle(t *testing.T) {
 			t.Fatalf("restyling made something new: %s", c.line())
 		}
 	}
-	if got := lines(p.changes); !strings.Contains(got, "! name  welcome: ╭ welcome") || !strings.Contains(got, "! name  #rules: 📜│rules") || len(p.changes) != 10 {
+	if got := lines(p.changes); !strings.Contains(got, "! name  welcome: ╭ welcome") || !strings.Contains(got, "! name  #rules: 📜│rules") || len(p.changes) != 12 {
 		t.Fatalf("plan:\n%s", got)
 	}
 	if _, err := apply(context.Background(), g, guard.New(), p.s, flock, p.changes, func(int) {}); err != nil {

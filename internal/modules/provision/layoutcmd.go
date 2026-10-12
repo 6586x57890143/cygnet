@@ -34,7 +34,13 @@ const (
 // needs is what cygnet has to hold to apply l: roles and channels, and
 // every permission l hands out.
 func needs(l Layout) discord.Permissions {
-	return discord.PermissionManageRoles | discord.PermissionManageChannels | l.Grants()
+	p := discord.PermissionManageRoles | discord.PermissionManageChannels | l.Grants()
+	if l.Onboarding != nil {
+		// Discord's onboarding endpoint takes Manage Server, so only a
+		// layout that has onboarding asks for it.
+		p |= discord.PermissionManageGuild
+	}
+	return p
 }
 
 // planned is a layout planned against a server, ready to show or apply.
@@ -75,6 +81,18 @@ func (m *Module) read(ctx context.Context, r rest.Rest, guild, self snowflake.ID
 		for _, id := range me.RoleIDs {
 			if id == role.ID {
 				s.top = max(s.top, role.Position)
+			}
+		}
+	}
+	if l.Onboarding != nil {
+		g, err := r.GetGuild(guild, false, opts)
+		if err != nil {
+			return planned{}, err
+		}
+		s.community = slices.Contains(g.Features, discord.GuildFeatureCommunity)
+		if s.community {
+			if s.onboarding, err = r.GetGuildOnboarding(guild, opts); err != nil {
+				return planned{}, err
 			}
 		}
 	}

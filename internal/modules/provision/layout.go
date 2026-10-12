@@ -21,6 +21,9 @@ type Layout struct {
 	// BotColor is every bot's role, the birds' first, so the bots read as
 	// one in the member list beside the layout's own colours.
 	BotColor int
+	// Onboarding is what someone joining sees, or nil to leave the
+	// server's alone.
+	Onboarding *Onboarding
 }
 
 // Role is one role the layout keeps. Perms are its server-wide permissions.
@@ -81,8 +84,9 @@ const (
 var layouts = []Layout{flock}
 
 // flock is a small community server the birds work in together: read-only
-// announcements skua's notify can still post to, a place to talk, a room to
-// hang out in, and a staff channel where cygnet reports drift.
+// announcements skua's notify can still post to, a place to talk, rooms
+// someone joining picks in onboarding, a room to hang out in, and a staff
+// channel where cygnet reports drift.
 var flock = Layout{
 	Name:     "flock",
 	About:    "a small community: announcements, chatter, a voice room, and a nest where staff and the birds report",
@@ -107,6 +111,8 @@ var flock = Layout{
 		{Name: "chatter", Channels: []Channel{
 			{Emoji: "💬", Name: "general"},
 			{Emoji: "📷", Name: "media"},
+			{Emoji: "🎨", Name: "studio", Topic: "things people are making"},
+			{Emoji: "🎮", Name: "play", Topic: "games and who's up for one"},
 		}},
 		{Name: "song", Channels: []Channel{
 			{Emoji: "🔊", Name: "lounge", Voice: true},
@@ -118,6 +124,18 @@ var flock = Layout{
 				{Role: Self, Allow: see | post},
 				{Role: Birds, Allow: see | post},
 			}},
+		}},
+	},
+	Onboarding: &Onboarding{
+		Defaults: []string{"rules", "announcements", "general", "media", "lounge"},
+		Questions: []Question{{
+			Title: "what do you come here for",
+			Multi: true,
+			Answers: []Answer{
+				{Emoji: "🎨", Title: "making things", Channels: []string{"studio"}},
+				{Emoji: "🎮", Title: "playing games", Channels: []string{"play"}},
+				{Emoji: "💬", Title: "just talking", Channels: []string{"general"}},
+			},
 		}},
 	},
 }
