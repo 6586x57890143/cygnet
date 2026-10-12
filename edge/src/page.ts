@@ -26,6 +26,7 @@ export type View =
   | { kind: "opened" }
   | { kind: "in"; rank: number | null; held: string | null; released: number; left: number; invites: Invite[]; now: number }
   | { kind: "invited"; code: string; expires: number; now: number }
+  | { kind: "server"; code: string; from: string; expires: number; now: number }
   | { kind: "sent"; to: string; expires: number; now: number; what: string }
   | { kind: "confirm"; token: string }
   | { kind: "confirmed" }
@@ -164,6 +165,13 @@ export function page(l: Launch, total: number, view: View, sitekey: string, icon
       <form method="post" action="/i/${esc(view.code)}">${widget(sitekey)}<button type="submit">take the invite</button></form>
       <p class="fine">you sign in with discord<br>then we email you a link to make sure its you</p>`;
       break;
+    case "server":
+      turnstile = true;
+      body = `
+      <p class="note ok">${esc(view.from)} invited you<br>this link is for one person${view.expires > view.now ? ` and works for another ${span(view.expires - view.now)}` : ""}</p>
+      <form method="post" action="/i/${esc(view.code)}">${widget(sitekey)}<button type="submit" name="how" value="add">take me in</button><button class="quiet" type="submit" name="how" value="invite">send me an invite instead</button></form>
+      <p class="fine">you sign in with discord and we add you to the server<br>or we make an invite only you can use for 5 minutes<br>the server keeps who brought you in</p>`;
+      break;
     case "sent":
       refresh = `<noscript><meta http-equiv="refresh" content="5"></noscript>`;
       wait = ` data-wait="/${esc(l.name)}/wait?check"`;
@@ -209,7 +217,7 @@ export function page(l: Launch, total: number, view: View, sitekey: string, icon
   const scripts = `<script type="module" src="/app.js"></script>${turnstile ? `<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>` : ""}`;
   const mark = icon
     ? `<img class="icon" src="${esc(icon)}" alt="" width="56" height="56" decoding="async">`
-    : `<span class="icon none" aria-hidden="true">${esc(l.name.slice(0, 1))}</span>`;
+    : `<span class="icon none" aria-hidden="true">${esc((l.server ? (l.title ?? l.name) : l.name).slice(0, 1))}</span>`;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -248,10 +256,10 @@ ${refresh}
   <section class="card">
     <header>
       <span class="ring">${mark}</span>
-      <span><span class="kicker">${view.kind === "privacy" ? "cygnet lol" : view.kind === "list" ? "the list" : view.kind === "home" ? "by invitation" : l.stage === "open" ? "open now" : "coming soon"}</span><h1>${esc(l.title ?? l.name)}</h1></span>
+      <span><span class="kicker">${view.kind === "privacy" ? "cygnet lol" : view.kind === "list" ? "the list" : view.kind === "home" ? "by invitation" : l.server ? "an invite" : l.stage === "open" ? "open now" : "coming soon"}</span><h1>${esc(l.title ?? l.name)}</h1></span>
     </header>
     ${
-      view.kind === "privacy" || view.kind === "list"
+      view.kind === "privacy" || view.kind === "list" || l.server
         ? ""
         : view.kind === "home"
           ? `<p class="line">${lines(l.line)}</p>`
@@ -295,6 +303,7 @@ function notice(controller: string, contact: string): string {
     ${row("how long", "ip and location hashes 30 days<br>email hashes until 30 days after launch<br>everything else until 12 months after launch<br>or until you leave the list whichever comes first")}
     ${row("when you leave", "your entry is deleted at once<br>where you invited someone your id is replaced by a keyed hash so the invite tree still adds up<br>the step record keeps that hash until the launch data is deleted")}
     ${row("cookies", "only ones that keep you signed in and in the middle of a step<br>your browser also remembers your theme and how grown the swan is<br>no analytics no tracking so there is nothing to consent to")}
+    ${row("links into a server", "a link someone made with cygnet in discord lets one person into their server<br>you sign in with discord so cygnet knows who you are and nothing else<br>if you let cygnet add you your discord token is used once to add you and then dropped<br>otherwise she makes a discord invite only you can use for 5 minutes<br>cygnet keeps your discord id with the link you came in by and when you joined and left so the server can see who brought whom<br>for as long as cygnet keeps that server or until you write to us to have it removed")}
     ${row("who sees the list", "the server owner and cygnets admin can see the list after signing in with discord<br>they see discord ids your place who invited you and any hold<br>never your email or ip")}
     ${row("decisions", "nothing is decided about you by profiling<br>a second sign up from the same connection only holds invites until a person looks")}
     ${row("your rights", "see and download your data from your page<br>delete it by leaving the list<br>object to or ask to limit anything here or correct it by writing to us<br>complain to the data protection authority where you live")}

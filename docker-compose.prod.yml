@@ -53,6 +53,26 @@ services:
     restart: unless-stopped
     mem_limit: 256m
 
+  # The way in for cygnet.lol's Worker, and for a bird on another host: an
+  # outbound connection to Cloudflare, so nothing listens on foundry. Its
+  # hostname answers only to Access's service token and reaches the hub as
+  # cygnet:7700 on the fleet network (docs/edge.md, The tunnel). Started
+  # only with COMPOSE_PROFILES=tunnel and TUNNEL_TOKEN in .env, and given
+  # nothing else from it.
+  tunnel:
+    image: cloudflare/cloudflared:2026.10.0@sha256:9b49eed8f62806d5d45ddf59ecefb5710429598ea6d3fcccd2af938f621b2b07
+    profiles: [tunnel]
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+    networks:
+      - fleet
+    read_only: true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+    mem_limit: 128m
+
 volumes:
   pgdata:
 

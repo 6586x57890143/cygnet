@@ -1,8 +1,32 @@
 # The edge Worker
 
 `edge/` is `cygnet.lol`: a launch's page (`/silcord`), its sign in with Discord, the
-invites its members give, and the list and ledger it keeps in D1. It holds no bot token,
-opens nothing on foundry, and emails only the one link a person asks for.
+invites its members give, and the list and ledger it keeps in D1, and the page behind
+every link a member makes with `/invite`. It holds no bot token, opens nothing on
+foundry, and emails only the one link a person asks for.
+
+## Links into a server
+
+`/invite` in Discord makes a link, `cygnet.lol/i/<code>`, that lets one person into a
+server cygnet keeps. cygnet keeps the code (its SHA-256, in Postgres); the Worker only
+asks her, as the bird `edge`, with `POST /v1/call` on her hub through the tunnel (below).
+
+1. The page asks `cygnet.code {code}` (the hash) for whether the link still works, the
+   server's name and picture, who it's from and how long it has left. A code D1 knows is
+   a launch's invite, and goes the launch's way instead.
+2. **take me in** passes Turnstile and goes to Discord with `identify guilds.join`;
+   **send me an invite instead** with `identify` alone.
+3. Back at `/auth/discord`, the Worker reads who they are and asks
+   `cygnet.redeem {code, user, token}`, the token only if they chose to be added. cygnet
+   checks the gate (an account 30 days old, not banned), spends the code and adds them,
+   or makes a Discord invite only they can take, once, within five minutes. Then the
+   Worker revokes their token.
+4. They land in the server (`discord.com/channels/<server>`) or on their invite
+   (`discord.gg/<invite>`). A refusal is said plainly: the link is gone, their account
+   is too new, they're banned, or they're in as many servers as Discord allows.
+
+Nothing about the person is stored at the edge. cygnet keeps who used which link and
+when they joined and left, which is the tree.
 
 ## Getting on the list
 
@@ -195,3 +219,23 @@ On the Cloudflare account that holds `cygnet.lol` (the free plan is enough):
    Any server can launch this way; a name the code doesn't know gets the default line.
 8. Before announcing it: one real link each to Gmail, Outlook and a custom domain, to
    see it lands in the inbox and not spam.
+
+### The tunnel
+
+What `/invite`'s links need: a way from the Worker to cygnet's hub that opens no port.
+
+1. Zero Trust, Networks, Tunnels: create a tunnel (cloudflared) and copy its token. Add
+   a public hostname for it on `cygnet.lol` (say `hub.cygnet.lol`) whose service is
+   `http://cygnet:7700`.
+2. Zero Trust, Access: a service token for the Worker, and a self-hosted application on
+   that hostname whose one policy is **Service Auth** for that token. Without the token,
+   Cloudflare answers and cygnet never sees the request.
+3. On foundry, in `~/cygnet/.env`: `COMPOSE_PROFILES=tunnel`, `TUNNEL_TOKEN=<the
+   tunnel's token>`, and `edge=<openssl rand -hex 32>` added to `CYGNET_BOTS`. Deploy, or
+   `docker compose -f docker-compose.prod.yml up -d`.
+4. The Worker's secrets, each with `npx wrangler secret put`: `CYGNET_HUB_URL`
+   (`https://hub.cygnet.lol`), `CYGNET_HUB_TOKEN` (the `edge=` token),
+   `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET` (the service token). Then
+   `npm run deploy`.
+5. In a server cygnet keeps: `/invite`, set how many links members may have, make one,
+   and open it signed in as another account.

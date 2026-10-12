@@ -22,6 +22,9 @@ export interface Launch {
   // stage is where its campaign stands (store.ts, campaign): gathering
   // when unset.
   stage?: Stage;
+  // server is set on the pages a server's link leads to (/i/<code> from
+  // /invite): a server, not a launch, so no line and no list.
+  server?: boolean;
 }
 
 export type Stage = "gathering" | "closed" | "open";
