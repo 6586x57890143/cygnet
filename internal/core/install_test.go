@@ -46,6 +46,7 @@ func TestSyncInstallWritesOnlyWhenDiscordDiffers(t *testing.T) {
 	reordered.Scopes = []discord.OAuth2Scope{discord.OAuth2ScopeBot, discord.OAuth2ScopeApplicationsCommands}
 	fewer := want
 	fewer.Permissions = 0
+	commands := discord.InstallParams{Scopes: []discord.OAuth2Scope{discord.OAuth2ScopeApplicationsCommands}}
 
 	cases := []struct {
 		name  string
@@ -55,13 +56,13 @@ func TestSyncInstallWritesOnlyWhenDiscordDiffers(t *testing.T) {
 		{"nothing set (a new app)", nil, true},
 		{"guild entry without params", discord.ApplicationIntegrationTypesConfig{guild: {}}, true},
 		{"stale permissions", discord.ApplicationIntegrationTypesConfig{guild: in(fewer)}, true},
-		{"user install still on", discord.ApplicationIntegrationTypesConfig{guild: in(want), user: {}}, true},
+		{"user install still on", discord.ApplicationIntegrationTypesConfig{guild: in(want), user: in(commands)}, true},
 		{"already right", discord.ApplicationIntegrationTypesConfig{guild: in(want)}, false},
 		{"already right, scopes in another order", discord.ApplicationIntegrationTypesConfig{guild: in(reordered)}, false},
 	}
 	for _, c := range cases {
 		r := &appRest{}
-		wrote, err := SyncInstall(r, &discord.Application{IntegrationTypesConfig: c.have}, want)
+		wrote, err := SyncInstall(r, &discord.Application{IntegrationTypesConfig: c.have}, want, false)
 		if err != nil || wrote != c.write || len(r.updates) != map[bool]int{false: 0, true: 1}[c.write] {
 			t.Errorf("%s: wrote=%v err=%v updates=%d", c.name, wrote, err, len(r.updates))
 			continue
@@ -75,7 +76,53 @@ func TestSyncInstallWritesOnlyWhenDiscordDiffers(t *testing.T) {
 	}
 
 	r := &appRest{err: errors.New("503")}
-	if wrote, err := SyncInstall(r, &discord.Application{}, want); err == nil || wrote {
+	if wrote, err := SyncInstall(r, &discord.Application{}, want, false); err == nil || wrote {
 		t.Errorf("a failed write: wrote=%v err=%v", wrote, err)
+	}
+}
+
+func TestUserInstallFollowsTheCommands(t *testing.T) {
+	user := discord.ApplicationIntegrationTypeUserInstall
+	slash := Command{Create: discord.SlashCommandCreate{Name: "invite", IntegrationTypes: []discord.ApplicationIntegrationType{discord.ApplicationIntegrationTypeGuildInstall, user}}, Tier: Public, Run: run}
+	guildOnly := Command{Create: discord.SlashCommandCreate{Name: "launch"}, Tier: Admin, Run: run}
+	message := Command{Create: discord.MessageCommandCreate{Name: "pin", IntegrationTypes: []discord.ApplicationIntegrationType{user}}, Tier: Public, Run: run}
+	if !UserInstalled(message.Create) || UserInstalled(discord.UserCommandCreate{Name: "who"}) ||
+		!UserInstalled(discord.EntryPointCommandCreate{Name: "play", IntegrationTypes: []discord.ApplicationIntegrationType{user}}) {
+		t.Fatal("UserInstalled reads the wrong types")
+	}
+
+	r := NewRouter(0, nil, nil)
+	r.Gate(NewToggles(nil, nil))
+	if err := r.Add(mod{[]Command{slash, guildOnly, message}}); err != nil {
+		t.Fatal(err)
+	}
+	if g, all := r.Global(), r.CreatesFor(1); len(g) != 2 || len(all) != 1 || all[0].CommandName() != "launch" {
+		t.Fatalf("global %d, guild %v", len(g), all)
+	}
+	// Administrator in a server cygnet isn't in makes nobody her admin.
+	admin := slash
+	admin.Create = discord.SlashCommandCreate{Name: "keep", IntegrationTypes: []discord.ApplicationIntegrationType{user}}
+	admin.Tier = Admin
+	if err := r.Add(mod{[]Command{admin}}); err == nil {
+		t.Fatal("an admin command a user can install")
+	}
+
+	want := Install(nil)
+	a := &appRest{}
+	if wrote, err := SyncInstall(a, &discord.Application{}, want, true); !wrote || err != nil {
+		t.Fatalf("wrote=%v err=%v", wrote, err)
+	}
+	cfg := *a.updates[0].IntegrationTypesConfig
+	if p := cfg[user].OAuth2InstallParams; p == nil || len(p.Scopes) != 1 || p.Scopes[0] != discord.OAuth2ScopeApplicationsCommands || p.Permissions != 0 {
+		t.Fatalf("user install %+v", cfg[user])
+	}
+	// As Discord has it now, nothing to write; a user entry without
+	// params, as Discord can send one, isn't it.
+	if wrote, _ := SyncInstall(a, &discord.Application{IntegrationTypesConfig: cfg}, want, true); wrote {
+		t.Fatal("wrote what Discord already had")
+	}
+	bare := discord.ApplicationIntegrationTypesConfig{discord.ApplicationIntegrationTypeGuildInstall: cfg[discord.ApplicationIntegrationTypeGuildInstall], user: {}}
+	if wrote, _ := SyncInstall(a, &discord.Application{IntegrationTypesConfig: bare}, want, true); !wrote {
+		t.Fatal("a user entry without params passed as set")
 	}
 }

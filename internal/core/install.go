@@ -23,19 +23,33 @@ func Install(running []Module) discord.InstallParams {
 
 // SyncInstall makes want the app's Default Install Settings, which is what
 // Discord's bare install link (and cygnet.lol, which redirects to it)
-// asks a server for. Guild install only: user install is switched off,
-// since every command is guild-only. It writes only when Discord's copy
+// asks a server for, and switches user install on (asking for commands
+// alone) exactly when user is set. It writes only when Discord's copy
 // differs, so a restart costs one comparison, and reports whether it wrote.
-func SyncInstall(r rest.Applications, app *discord.Application, want discord.InstallParams) (bool, error) {
-	guild := discord.ApplicationIntegrationTypeGuildInstall
-	if have, ok := app.IntegrationTypesConfig[guild]; ok && len(app.IntegrationTypesConfig) == 1 &&
-		have.OAuth2InstallParams != nil && sameInstall(*have.OAuth2InstallParams, want) {
+func SyncInstall(r rest.Applications, app *discord.Application, want discord.InstallParams, user bool) (bool, error) {
+	guild, userType := discord.ApplicationIntegrationTypeGuildInstall, discord.ApplicationIntegrationTypeUserInstall
+	cfg := discord.ApplicationIntegrationTypesConfig{guild: {OAuth2InstallParams: &want}}
+	if user {
+		cfg[userType] = discord.ApplicationIntegrationTypeConfiguration{OAuth2InstallParams: &discord.InstallParams{Scopes: []discord.OAuth2Scope{discord.OAuth2ScopeApplicationsCommands}}}
+	}
+	if sameConfig(app.IntegrationTypesConfig, cfg) {
 		return false, nil
 	}
-	_, err := r.UpdateCurrentApplication(discord.ApplicationUpdate{
-		IntegrationTypesConfig: &discord.ApplicationIntegrationTypesConfig{guild: {OAuth2InstallParams: &want}},
-	})
+	_, err := r.UpdateCurrentApplication(discord.ApplicationUpdate{IntegrationTypesConfig: &cfg})
 	return err == nil, err
+}
+
+func sameConfig(have, want discord.ApplicationIntegrationTypesConfig) bool {
+	if len(have) != len(want) {
+		return false
+	}
+	for t, w := range want {
+		h, ok := have[t]
+		if !ok || h.OAuth2InstallParams == nil || !sameInstall(*h.OAuth2InstallParams, *w.OAuth2InstallParams) {
+			return false
+		}
+	}
+	return true
 }
 
 func sameInstall(a, b discord.InstallParams) bool {
