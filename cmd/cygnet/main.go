@@ -199,7 +199,7 @@ func run(log *slog.Logger) error {
 		launch.New(edge(), func(i discord.Interaction) bool { return router.Admin(i) }, log).Flock(fleet),
 	}
 	if codes != nil {
-		all = append(all, invite.New(codes, members{func() *bot.Client { return client }}, os.Getenv("CYGNET_EDGE_URL"), func(i discord.Interaction) bool { return router.Admin(i) }))
+		all = append(all, invite.New(codes, members{func() *bot.Client { return client }}, links(), func(i discord.Interaction) bool { return router.Admin(i) }))
 	} else {
 		log.Warn("no database, so no /invite: codes live in Postgres")
 	}
@@ -396,6 +396,16 @@ func env(k, def string) string {
 		return v
 	}
 	return def
+}
+
+// links is where /invite's links point: cygnet.lol, once it can redeem
+// them as the bird edge (docs/edge.md, The tunnel). Until then there is
+// nowhere for a link to go, and /invite says so.
+func links() string {
+	if bots, _ := hub.Parse(os.Getenv("CYGNET_BOTS")); bots["edge"] == "" {
+		return ""
+	}
+	return os.Getenv("CYGNET_EDGE_URL")
 }
 
 // members is Discord as /invite reads it: the servers in the guild cache,
