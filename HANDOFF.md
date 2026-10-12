@@ -12,8 +12,9 @@ Written 2026-10-13. Read this with `CLAUDE.md` and `SPEC.md`.
 | `feat/edge-redeem` (#35) | the Worker's `/i/<code>` for server codes, and the tunnel; on `feat/redeem` |
 | `feat/tree` | the tree, and these docs; on `feat/edge-redeem` |
 
-The four go in together, in that order: alone, `/invite` would hand out links
-cygnet.lol can't take yet.
+They go in in that order. Until `edge=` is in `CYGNET_BOTS`, `/invite` says cygnet
+isn't connected to cygnet.lol and makes no links, so merging changes nothing a member
+sees before the tunnel is set up.
 
 ## What M3 changed
 
