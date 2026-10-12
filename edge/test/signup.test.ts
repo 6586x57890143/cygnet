@@ -11,6 +11,8 @@ import { area, budget, isPNG, created, digest, held, inviteCode, inviteLife, key
 import { Store, type DB, type Stmt } from "../src/store.ts";
 
 const l = launches.silcord;
+// server is the page a server's link leads to, as index.ts makes it.
+const server = { name: "i/c0de", title: "pond", icon: "", line: "", minAgeDays: 30, server: true };
 
 test("one inbox is one email", () => {
   assert.equal(normalEmail("Steve.Tester+launch@GoogleMail.com"), "stevetester@gmail.com");
@@ -303,6 +305,9 @@ test("every page, in the voice", () => {
     confirmed: page(l, 1, { kind: "confirmed" }, "k"),
     error: page(l, 1, { kind: "error", why: "that link ran out or was already used\nstart again from your page" }, "k"),
     privacy: page(l, 1, { kind: "privacy", controller: "the people running cygnet lol", contact: "privacy@cygnet.lol" }, "k"),
+    server: page(server, 0, { kind: "server", code: "c0de", from: "steve", expires: now + 3_600_000, now }, "key"),
+    serverWaiting: page(server, 0, { kind: "server", code: "c0de", from: "steve", expires: now - 1, now }, "key"),
+    serverError: page(server, 0, { kind: "error", why: "you cant join this server" }, "k"),
   };
   for (const [name, html] of Object.entries(views)) {
     const words = visible(html);
@@ -320,6 +325,15 @@ test("every page, in the voice", () => {
   assert.match(views.mine, /ran out and came back to you/);
   assert.match(views.mine, /make an invite/);
   assert.match(views.invitee, /youre in through a friend/);
+  assert.match(views.server, /steve invited you<br>this link is for one person and works for another 1h 0m/);
+  assert.match(views.server, /<form method="post" action="\/i\/c0de">[\s\S]*name="how" value="add">take me in[\s\S]*name="how" value="invite">send me an invite instead/);
+  assert.match(views.server, /data-sitekey="key"/);
+  assert.match(views.server, /<span class="kicker">an invite<\/span><h1>pond<\/h1>/);
+  assert.match(views.serverWaiting, /this link is for one person<\/p>/, "no time left to count down");
+  for (const v of [views.server, views.serverError]) assert.doesNotMatch(v, /on the list|class="line"/, "a server has no line and no list");
+  assert.match(views.serverError, /href="\/i\/c0de">go back/);
+  assert.match(views.privacy, /links into a server/);
+  assert.match(views.server, /<span class="icon none" aria-hidden="true">p<\/span>/, "the server's letter, not the link's");
   for (const right of ["download", "delete", "complain", "cloudflare", "scaleway", "12 months"]) assert.match(views.privacy, new RegExp(right));
   assert.match(views.mine, /href="\/silcord\/mine">download my data/);
   assert.match(views.open, /href="\/privacy">privacy<\/a>/);

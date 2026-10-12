@@ -30,6 +30,7 @@ import {
   isPNG,
 } from "./signup.ts";
 import { Store, type DB, type Hashes } from "./store.ts";
+import { call, hubOf, type CodeInfo, type Redeemed } from "./hub.ts";
 
 interface Env {
   DB: D1Database;
@@ -47,9 +48,17 @@ interface Env {
   // them, as the privacy notice names them. Set at deploy, not in the code.
   CONTROLLER?: string;
   CONTACT?: string;
+  // cygnet's hub, for the links members make with /invite: its address
+  // through the tunnel, the Worker's token as the bird edge, and Access's
+  // service token. All secrets; without the first two those links are
+  // nothing here.
+  CYGNET_HUB_URL?: string;
+  CYGNET_HUB_TOKEN?: string;
+  CF_ACCESS_CLIENT_ID?: string;
+  CF_ACCESS_CLIENT_SECRET?: string;
 }
 
-type Purpose = "join" | "issue" | "redeem" | "list";
+type Purpose = "join" | "issue" | "redeem" | "list" | "server";
 
 const api = "https://discord.com/api/v10";
 // stay is how long the page remembers who you are.
@@ -84,6 +93,18 @@ const say = {
   inviteGoneLate: "this invite got used or taken back or ran out before you finished\nask for a new one",
   closed: "the list is closed for now",
   notYours: "only the server owner can see the list",
+  tooNewHere: (days: number) => `discord accounts need to be at least ${days} days old to come in this way`,
+  banned: "you cant join this server",
+  full: "youre in as many servers as discord allows\nleave one and try again",
+};
+
+// denied is what a server's link refused for, in a person's words: the
+// reason cygnet.redeem gives.
+const denied: Record<string, string> = {
+  gone: say.inviteGone,
+  young: say.tooNewHere(30),
+  banned: say.banned,
+  full: say.full,
 };
 
 export default {
@@ -139,8 +160,9 @@ async function landing(req: Request, env: Env, l: Launch): Promise<Response> {
   return html(env, l, { kind: stage === "gathering" ? "open" : stage === "open" ? "opened" : "closed" });
 }
 
-// human runs next once Turnstile says a person sent the form.
-async function human(req: Request, env: Env, l: Launch, next: () => Promise<Response>): Promise<Response> {
+// human runs next once Turnstile says a person sent the form, handing it
+// the form.
+async function human(req: Request, env: Env, l: Launch, next: (form: FormData) => Promise<Response>): Promise<Response> {
   const form = await req.formData();
   const ok = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
     method: "POST",
@@ -151,7 +173,7 @@ async function human(req: Request, env: Env, l: Launch, next: () => Promise<Resp
     }),
   }).then((r) => r.json<{ success: boolean }>());
   if (!ok.success) return html(env, l, { kind: "error", why: say.robot }, 403);
-  return next();
+  return next(form);
 }
 
 // oauth sends the person to Discord with a state only this browser holds,
@@ -177,11 +199,13 @@ async function issueStart(req: Request, env: Env, l: Launch, url: URL): Promise<
   return human(req, env, l, () => oauth(env, url, "issue", l));
 }
 
-// invited is an invite's page, and taking it.
+// invited is an invite's page, and taking it: a launch's, kept here, or
+// else a server's, which cygnet keeps.
 async function invited(req: Request, env: Env, url: URL, code: string): Promise<Response> {
   const hash = await digest(code);
   const row = await env.DB.prepare("SELECT launch FROM invite WHERE hash = ?1").bind(hash).first<{ launch: string }>();
-  const l = row ? await store(env).launch(row.launch) : undefined;
+  if (!row) return serverInvited(req, env, url, code, hash);
+  const l = await store(env).launch(row.launch);
   if (!l) return new Response("nothing here", { status: 404, headers: secure(text) });
   const now = Date.now();
   const open = await store(env).open(l, hash, now);
@@ -191,9 +215,88 @@ async function invited(req: Request, env: Env, url: URL, code: string): Promise<
   return html(env, l, { kind: "invited", code, expires: open.expires, now });
 }
 
+// serverInvited is a server's link (/invite): its page, as cygnet says the
+// link stands, and the sign in that takes it. Two ways in: cygnet adds them
+// with their own sign in, or makes an invite only they can take.
+async function serverInvited(req: Request, env: Env, url: URL, code: string, hash: string): Promise<Response> {
+  const hub = hubOf(env);
+  if (!hub) return new Response("nothing here", { status: 404, headers: secure(text) });
+  const r = await call<CodeInfo>(hub, "cygnet.code", { code: hash });
+  const s = serverPage(r.ok ? r.body : { open: false }, code);
+  if (!r.ok) return html(env, s, { kind: "error", why: say.broke }, 502);
+  if (!r.body.open) return html(env, s, { kind: "error", why: say.inviteGone }, 410);
+  if (req.method === "POST") return human(req, env, s, (form) => serverOAuth(env, url, form.get("how") === "invite" ? "invite" : "add", hash));
+  return html(env, s, { kind: "server", code, from: r.body.from ?? "someone", expires: r.body.expires ?? 0, now: Date.now() });
+}
+
+// serverPage is the page a server's link leads to: the server's name and
+// picture, and back to the link from an error.
+function serverPage(info: CodeInfo, code: string): Launch {
+  return { name: `i/${code}`, title: info.name ?? "cygnet", icon: info.icon ?? "", line: "", minAgeDays: 30, server: true };
+}
+
+// serverOAuth sends the person to Discord: to be added (guilds.join, which
+// lets cygnet add them with their own sign in), or only to say who they
+// are, for an invite of their own.
+async function serverOAuth(env: Env, url: URL, how: "add" | "invite", hash: string): Promise<Response> {
+  const nonce = token();
+  const to = new URL("https://discord.com/oauth2/authorize");
+  to.search = new URLSearchParams({
+    client_id: env.DISCORD_CLIENT_ID,
+    response_type: "code",
+    redirect_uri: `https://${url.host}/auth/discord`,
+    scope: how === "add" ? "identify guilds.join" : "identify",
+    state: nonce,
+    prompt: "none",
+  }).toString();
+  const state = await sign(env, ["server", how, nonce, hash].join("."));
+  return new Response(null, { status: 303, headers: secure({ location: to.toString(), "set-cookie": cookie("cy_state", state, 600) }) });
+}
+
+// serverBack is the page a refusal on a server's link shows: cygnet's, with
+// the way back home, since only the link itself names the server.
+const serverBack: Launch = { name: "", title: "cygnet", icon: "", line: "", minAgeDays: 30, server: true };
+
+// serverCallback is Discord sending the person back to take a server's
+// link: cygnet spends it and lets them in. Their token goes to cygnet only
+// for an add, and is revoked once she's done with it.
+async function serverCallback(env: Env, ctx: ExecutionContext, url: URL, how: string, nonce: string, hash: string): Promise<Response> {
+  const hub = hubOf(env);
+  if (!hub) return new Response("nothing here", { status: 404, headers: secure(text) });
+  if (!nonce || !same(nonce, url.searchParams.get("state") ?? "")) return html(env, serverBack, { kind: "error", why: say.elsewhere }, 400);
+  const code = url.searchParams.get("code");
+  if (!code) return new Response(null, { status: 303, headers: secure({ location: "/" }) });
+  const basic = `Basic ${btoa(`${env.DISCORD_CLIENT_ID}:${env.DISCORD_CLIENT_SECRET}`)}`;
+  const grant = await fetch(`${api}/oauth2/token`, {
+    method: "POST",
+    headers: { authorization: basic, "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "authorization_code", code, redirect_uri: `https://${url.host}/auth/discord` }),
+  });
+  if (!grant.ok) return html(env, serverBack, { kind: "error", why: say.discordNo }, 502);
+  const { access_token } = await grant.json<{ access_token: string }>();
+  try {
+    const me = await fetch(`${api}/users/@me`, { headers: { authorization: `Bearer ${access_token}` } });
+    if (!me.ok) return html(env, serverBack, { kind: "error", why: say.discordWho }, 502);
+    const user = await me.json<{ id: string }>();
+    const r = await call<Redeemed>(hub, "cygnet.redeem", { code: hash, user: user.id, token: how === "add" ? access_token : undefined });
+    if (!r.ok) return html(env, serverBack, { kind: "error", why: r.code === "denied" && Object.hasOwn(denied, r.reason) ? denied[r.reason] : say.broke }, r.code === "denied" ? 403 : 502);
+    const to = r.body.invite ? `https://discord.gg/${encodeURIComponent(r.body.invite)}` : `https://discord.com/channels/${encodeURIComponent(r.body.guild)}`;
+    return new Response(null, { status: 303, headers: secure({ location: to, "set-cookie": cookie("cy_state", "", 0) }) });
+  } finally {
+    ctx.waitUntil(
+      fetch(`${api}/oauth2/token/revoke`, {
+        method: "POST",
+        headers: { authorization: basic, "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ token: access_token, token_type_hint: "access_token" }),
+      }),
+    );
+  }
+}
+
 async function callback(req: Request, env: Env, ctx: ExecutionContext, url: URL): Promise<Response> {
   const state = (await unsign(env, read(req, "cy_state")))?.split(".") ?? [];
   const [purpose, launch, nonce, invite] = state as [Purpose, string, string, string];
+  if (purpose === "server") return serverCallback(env, ctx, url, launch, nonce, invite);
   const l = launch ? await store(env).launch(launch) : undefined;
   if (!l) return new Response("nothing here", { status: 404, headers: secure(text) });
   if (!nonce || !same(nonce, url.searchParams.get("state") ?? "")) return html(env, l, { kind: "error", why: say.elsewhere }, 400);
