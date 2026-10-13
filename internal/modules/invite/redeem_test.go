@@ -203,6 +203,12 @@ func TestRedeemRefuses(t *testing.T) {
 			t.Fatalf("%d: %v", code2, err)
 		}
 	}
+	// cygnet lacking a permission is the server not being ready, said as
+	// such; she reports it to its admins herself.
+	f.addErr = &rest.Error{Code: rest.JSONErrorCodeLackPermissionsToPerformAction}
+	if _, err := call(t, m.Redeem, Edge, RedeemAsk{code, newcomer.String(), "tok"}); !denied(err, Unready) {
+		t.Fatalf("missing permissions: %v", err)
+	}
 	// Discord failing keeps the code theirs for a retry, and says nothing
 	// of the request.
 	f.addErr = &rest.Error{Response: &http.Response{Status: "503 Service Unavailable", StatusCode: 503}, RqBody: []byte(`{"access_token":"tok"}`)}

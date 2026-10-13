@@ -55,6 +55,10 @@ const (
 	Young = "young"
 	// Full: they are in as many servers as Discord allows.
 	Full = "full"
+	// Unready: Discord refused cygnet for want of a permission. She reports
+	// it to the server's admins herself (perms.Watch in main); nothing was
+	// spent that could have been.
+	Unready = "unready"
 )
 
 // CodeAsk is cygnet.code's body: the SHA-256 of a link's code, in hex.
@@ -118,7 +122,16 @@ func (m *Module) Code(ctx context.Context, caller string, body json.RawMessage) 
 
 // Redeem answers cygnet.redeem: the gate (not banned, an account old
 // enough), then the code spent, then in.
-func (m *Module) Redeem(ctx context.Context, caller string, body json.RawMessage) (any, error) {
+func (m *Module) Redeem(ctx context.Context, caller string, body json.RawMessage) (out any, err error) {
+	defer func() {
+		if rest.IsJSONErrorCode(err, rest.JSONErrorCodeLackPermissionsToPerformAction) {
+			out, err = nil, link.Err(link.Denied, Unready)
+		}
+	}()
+	return m.redeem(ctx, caller, body)
+}
+
+func (m *Module) redeem(ctx context.Context, caller string, body json.RawMessage) (any, error) {
 	var ask RedeemAsk
 	hash, err := read(caller, body, &ask, &ask.Code)
 	if err != nil {

@@ -42,12 +42,18 @@ type Grants interface {
 }
 
 // granting is what the grants keep: the REST client cygnet connected with,
-// and when each refusal was last reported.
+// her own application, and when each refusal was last reported.
 type granting struct {
 	mu   sync.Mutex
 	rest Grants
+	self snowflake.ID
 	seen map[string]time.Time
 }
+
+// cygnet is the name cygnet's own refusals come in under: her REST
+// client reports them as a bird would (perms.Watch in main), and no bird
+// can link with her name.
+const cygnet = "cygnet"
 
 // lack is a bird's refusal worked out: what it lacks, and the shortest
 // grant that fixes it: an overwrite for its role on the channel when only
@@ -70,6 +76,10 @@ type lack struct {
 // Missing answers "cygnet.missing": a bird Discord refused says where and
 // what it tried, and cygnet works out what it lacks, reports it in the
 // layout's staff channel, and grants it as far as the server's mode says.
+// Her own refusals come here too, as the bird cygnet. Discord lets no bot
+// raise its own role, so what she lacks server wide is a report with her
+// install link, which a person presses; what only a channel takes from her
+// she gives back herself, as she would a bird.
 func (m *Module) Missing(ctx context.Context, bird string, body json.RawMessage) (any, error) {
 	var in perms.Missing
 	if err := json.Unmarshal(body, &in); err != nil {
@@ -137,8 +147,11 @@ func (m *Module) fresh(l lack, now time.Time) bool {
 func (m *Module) assess(ctx context.Context, r Grants, guild, channel snowflake.ID, bird string, op perms.Op) (lack, error) {
 	opts := rest.WithCtx(ctx)
 	b := row{Name: bird}
-	b.manifest(ctx, m.fleet)
-	if b.Err != "" {
+	if bird == cygnet {
+		m.grants.mu.Lock()
+		b.App = m.grants.self
+		m.grants.mu.Unlock()
+	} else if b.manifest(ctx, m.fleet); b.Err != "" {
 		return lack{}, link.Err(link.Invalid, "cygnet couldn't read your manifest")
 	}
 	roles, err := r.GetRoles(guild, opts)
@@ -206,6 +219,11 @@ func (m *Module) answer(ctx context.Context, r Grants, l lack) string {
 	did := "reported"
 	var card discord.ContainerComponent
 	switch {
+	case l.bird == cygnet && !l.inChannel:
+		m.grants.mu.Lock()
+		self := m.grants.self
+		m.grants.mu.Unlock()
+		card = l.self(install(self, m.selfWant(l), l.guild))
 	case mode == Act && l.role != 0:
 		if err := m.grant(ctx, r, l); err != nil {
 			m.warn("granting a bird", l.guild, err)
@@ -289,6 +307,31 @@ func (l lack) card(note string, color int, offer bool) discord.ContainerComponen
 	return brand.Card(color, "provision", "grant", body+"\n-# grant gives it that "+l.where(),
 		discord.NewSeparator(discord.SeparatorSpacingSizeSmall),
 		discord.NewActionRow(discord.NewSuccessButton("grant "+l.bird, id)))
+}
+
+// selfWant is everything cygnet's role needs in l's server: what her
+// running modules declare, what its layout hands out, and what she was just
+// refused. Re-adding her sets her role to exactly this, so it has to be all
+// of it.
+func (m *Module) selfWant(l lack) discord.Permissions {
+	want := m.want() | discord.Permissions(l.lacks)
+	if v, ok := m.kept.Load(l.guild); ok {
+		if lay, ok := layout(v.(Kept).Layout); ok {
+			want |= needs(lay)
+		}
+	}
+	return want
+}
+
+// self is the report of cygnet's own refusal server wide: Discord lets
+// only a person give her more, so it carries her install link for this
+// server, which updates her role in place.
+func (l lack) self(link string) discord.ContainerComponent {
+	body := "! **cygnet** was refused `" + string(l.op) + "`\n-# she lacks " + l.lacks.Names() +
+		"; discord lets only a person give a bot more, and the button does it in one go: her role gets everything she needs here"
+	return brand.Card(brand.ColorWarn, "provision", "grant", body,
+		discord.NewSeparator(discord.SeparatorSpacingSizeSmall),
+		discord.NewActionRow(discord.NewLinkButton("give cygnet what she needs", link)))
 }
 
 // granted is the report once cygnet granted it.

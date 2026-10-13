@@ -168,6 +168,22 @@ func run(log *slog.Logger) error {
 	var prov atomic.Pointer[provision.Module]
 	// inv answers cygnet.lol's redemptions the same way.
 	var inv atomic.Pointer[invite.Module]
+	// watched is cygnet's HTTP client for Discord, under the fleet's one
+	// refusal watcher (link/perms): Discord refusing her for want of a
+	// permission, from any module, goes to provision as the bird cygnet,
+	// which reports it to the server's admins or gives it back herself.
+	watched := &http.Client{Timeout: 20 * time.Second, Transport: perms.Watch(nil, func(m perms.Missing) {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			body, _ := json.Marshal(m)
+			if p := prov.Load(); p != nil {
+				if _, err := p.Missing(ctx, hub.Self, body); err != nil {
+					log.Warn("answering cygnet's own refusal", "op", m.Op, "err", err)
+				}
+			}
+		}()
+	})}
 	if v := os.Getenv("CYGNET_BOTS"); v != "" {
 		bots, err := hub.Parse(v)
 		if err != nil {
@@ -216,7 +232,7 @@ func run(log *slog.Logger) error {
 	if codes != nil {
 		// The member add carries a member's own token, so it goes through
 		// REST that logs nothing, even at debug.
-		quiet := rest.NewClient(token, rest.WithLogger(slog.New(slog.DiscardHandler)))
+		quiet := rest.NewClient(token, rest.WithLogger(slog.New(slog.DiscardHandler)), rest.WithHTTPClient(watched))
 		inv.Store(invite.New(codes, members{func() *bot.Client { return client }, quiet}, links(), func(i discord.Interaction) bool { return router.Admin(i) }, g, log))
 		all = append(all, inv.Load())
 	} else {
@@ -334,7 +350,10 @@ func run(log *slog.Logger) error {
 		bot.WithLogger(log),
 		// Every REST call's rate limit wait and round trip, for /perf, and a
 		// route's 429 waited out to the millisecond rather than the second.
-		bot.WithRestClientConfigOpts(rest.WithRateLimiter(obs.Limiter(ratelimit.Precise(rest.NewRateLimiter(rest.WithRateLimiterLogger(log)), userReset), obs.Default))),
+		bot.WithRestClientConfigOpts(
+			rest.WithRateLimiter(obs.Limiter(ratelimit.Precise(rest.NewRateLimiter(rest.WithRateLimiterLogger(log)), userReset), obs.Default)),
+			rest.WithHTTPClient(watched),
+		),
 		bot.WithGatewayConfigOpts(
 			gateway.WithIntents(identify),
 			gateway.WithPresenceOpts(gateway.WithCustomActivity(brand.StatusAt(0))),

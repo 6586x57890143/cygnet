@@ -96,6 +96,7 @@ const say = {
   tooNewHere: (days: number) => `discord accounts need to be at least ${days} days old to come in this way`,
   banned: "you cant join this server",
   full: "youre in as many servers as discord allows\nleave one and try again",
+  unready: "this server isnt ready for new people yet\nwe told its admins so try again a bit later",
 };
 
 // denied is what a server's link refused for, in a person's words: the
@@ -105,6 +106,7 @@ const denied: Record<string, string> = {
   young: say.tooNewHere(30),
   banned: say.banned,
   full: say.full,
+  unready: say.unready,
 };
 
 export default {

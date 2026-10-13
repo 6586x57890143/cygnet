@@ -16,6 +16,9 @@ func TestRoute(t *testing.T) {
 		{"PUT", "/channels/42/permissions/9", Missing{Channel: "42", Op: ChannelPerms}, true},
 		{"PUT", "/guilds/3/members/5/roles/6", Missing{Guild: "3", Op: RoleManage}, true},
 		{"DELETE", "/guilds/3/members/5", Missing{Guild: "3", Op: MemberKick}, true},
+		{"PUT", "/guilds/3/members/5", Missing{Guild: "3", Op: MemberAdd}, true},
+		{"GET", "/guilds/3/bans/5", Missing{Guild: "3", Op: MemberBan}, true},
+		{"POST", "/channels/42/invites", Missing{Channel: "42", Op: InviteCreate}, true},
 		{"PUT", "/guilds/3/onboarding", Missing{Guild: "3", Op: GuildManage}, true},
 		{"GET", "/guilds/3/audit-logs?limit=1", Missing{Guild: "3", Op: GuildAudit}, true},
 		// What the body decides, or the table doesn't name, isn't read.
