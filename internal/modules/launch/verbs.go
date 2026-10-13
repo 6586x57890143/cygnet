@@ -76,6 +76,7 @@ type View struct {
 	Left      int      `json:"left"`
 	Sealed    bool     `json:"sealed"`
 	Admitted  int64    `json:"admitted,omitempty"`
+	Here      bool     `json:"here,omitempty"`
 	Invites   []Invite `json:"invites"`
 }
 
@@ -176,7 +177,7 @@ func (m *Module) place(ctx context.Context, caller string, body json.RawMessage)
 	if err != nil {
 		return nil, refused(err)
 	}
-	v := View{Place: p.Place, Rank: p.Rank, Sponsored: p.Sponsor != 0, Held: p.Held, Released: p.Released, Left: p.Left, Sealed: p.Sealed, Admitted: ms(p.Admitted), Invites: []Invite{}}
+	v := View{Place: p.Place, Rank: p.Rank, Sponsored: p.Sponsor != 0, Held: p.Held, Released: p.Released, Left: p.Left, Sealed: p.Sealed, Admitted: ms(p.Admitted), Here: p.Here, Invites: []Invite{}}
 	for _, c := range p.Invites {
 		v.Invites = append(v.Invites, Invite{Code: hex.EncodeToString(c.Hash), Made: ms(c.Made), Expires: ms(c.Expires), SpentAt: ms(c.SpentAt), Revoked: ms(c.Revoked)})
 	}

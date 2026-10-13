@@ -146,6 +146,15 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
     card.style.transform = "none";
     const k = card.getBoundingClientRect();
     card.style.transform = held;
+    // The notes ride with the card as one raft: they turn about its middle,
+    // measured from where they sit.
+    if (notes) {
+      const nheld = notes.style.transform;
+      notes.style.transform = "none";
+      const n = notes.getBoundingClientRect();
+      notes.style.transform = nheld;
+      notes.style.transformOrigin = `${(k.left + k.width / 2 - n.left).toFixed(1)}px ${(k.top + k.height / 2 - n.top).toFixed(1)}px`;
+    }
     float = k.left + k.width / 2;
     span = k.width;
     const wide = w >= 900;
@@ -410,11 +419,9 @@ const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
       const lift = (left + right) / 2;
       const tip = (Math.atan2(right - left, span) * 180) / Math.PI;
       card.style.transform = `translateY(${lift.toFixed(2)}px) rotate(${tip.toFixed(3)}deg)`;
-      // The privacy notes are its reflection, held to it on one line through
-      // both that pivots at the water: they turn by the same angle about the
-      // card's bottom edge, so they swing the other way beneath it, and they
-      // sink as it rises.
-      if (notes) notes.style.transform = `translateY(${(-lift).toFixed(2)}px) rotate(${tip.toFixed(3)}deg)`;
+      // The privacy notes ride with it: the same rise, and the same turn
+      // about the card's middle, so the two move as one.
+      if (notes) notes.style.transform = card.style.transform;
     }
     sky(s);
     // Below the surface the water is darker than the night above it, and

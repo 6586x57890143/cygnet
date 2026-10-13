@@ -180,7 +180,7 @@ async function landing(req: Request, env: Env, l: Launch): Promise<Response> {
   const now = Date.now();
   if (user) {
     const r = await ask<Place>(env, "cygnet.place", { launch: l.name, user });
-    if (r.ok) return html(env, l, { kind: "in", rank: r.body.sponsored ? null : r.body.rank, held: r.body.held ?? null, released: r.body.released, left: r.body.left, invites: invitesOf(r.body), now, sealed: r.body.sealed, seal: !!env.CYGNET_SEAL_PUBLIC && !r.body.admitted && l.stage !== "open", admitted: !!r.body.admitted });
+    if (r.ok) return html(env, l, { kind: "in", rank: r.body.sponsored ? null : r.body.rank, held: r.body.held ?? null, released: r.body.released, left: r.body.left, invites: invitesOf(r.body), now, sealed: r.body.sealed, seal: !!env.CYGNET_SEAL_PUBLIC && !r.body.admitted && l.stage !== "open", admitted: !!r.body.admitted, here: !!r.body.here });
     if (!refused(r, "not_on_list")) return html(env, l, { kind: "error", why: say.broke }, 502);
   }
   // Signing in again still works when the list isn't taking anyone new.

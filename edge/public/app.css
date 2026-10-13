@@ -179,6 +179,10 @@ button.quiet:hover { color: var(--text); transform: none; }
   opacity: .8; transition: opacity .3s ease;
 }
 .privacy .by:hover, .privacy .by:focus-within { opacity: 1; }
+/* An action that submits through the page's one check, under the form
+   that holds it. */
+.also { margin-top: 10px; }
+.note a { color: inherit; text-decoration: underline 1px dotted; text-underline-offset: 3px; }
 .privacy p { margin: 0 0 10px; }
 .privacy .by { display: inline-flex; align-items: center; gap: 6px; margin-top: 14px; }
 .privacy .by img { border-radius: 3px; image-rendering: pixelated; }
@@ -219,7 +223,7 @@ header { flex-direction: column; gap: 10px; }
 
 /* The privacy notes hang from the water line as the card's reflection,
    turning about the card's bottom edge (their top, less the gap). */
-.privacy { transform-origin: 50% -30px; will-change: transform; }
+.privacy { will-change: transform; }
 
 /* The privacy notice: one term a row, label then text, greyed like the
    compact one but readable at length. */

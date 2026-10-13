@@ -240,7 +240,9 @@ type Place struct {
 	Released, Left int
 	Sealed         bool
 	Admitted       time.Time
-	Invites        []Code
+	// Here is whether they're in the server now, by any way in.
+	Here    bool
+	Invites []Code
 }
 
 // open counts owner's ($2) invites in launch ($1) at $3 that are out or
@@ -254,9 +256,10 @@ func (s *Launches) Where(ctx context.Context, name string, user snowflake.ID, no
 	var held *string
 	var admitted *time.Time
 	var sponsor int64
-	err := s.pool.QueryRow(ctx, `select l.place, l.held, l.released, l.sealed is not null, l.admitted, coalesce(c.owner_id, 0), `+open+`
+	err := s.pool.QueryRow(ctx, `select l.place, l.held, l.released, l.sealed is not null, l.admitted, coalesce(c.owner_id, 0), `+open+`,
+			exists (select 1 from joined j join launch x on x.guild_id = j.guild_id where x.name = $1 and j.user_id = $2 and j.left_at is null)
 		from line l left join code c on c.hash = l.code where l.launch = $1 and l.user_id = $2`,
-		name, int64(user), now).Scan(&p.Place, &held, &p.Released, &p.Sealed, &admitted, &sponsor, &p.Left)
+		name, int64(user), now).Scan(&p.Place, &held, &p.Released, &p.Sealed, &admitted, &sponsor, &p.Left, &p.Here)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return p, ErrNotOnList
 	}
