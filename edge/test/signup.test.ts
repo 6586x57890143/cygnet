@@ -249,6 +249,7 @@ test("every page, in the voice", () => {
   assert.match(views.adding, /cygnet is adding you now/);
   assert.match(views.forgetting, /action="\/privacy\/forget">[\s\S]*forget me everywhere/);
   assert.match(views.forgotten, /forgotten you everywhere/);
+  assert.doesNotMatch(views.forgotten, /people on the list|coming soon/, "the notice's page, not a launch's");
   assert.doesNotMatch(views.adding, /action="\/silcord\/in"/);
   assert.match(views.mine, /#7/);
   assert.match(views.mine, /aria-label="2 of 3 left"/);

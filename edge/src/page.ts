@@ -150,7 +150,7 @@ export function page(l: Launch, total: number, view: View, sitekey: string, icon
       turnstile = true;
       body = `
       <form method="post" action="/${esc(l.name)}/join">${widget(sitekey)}<button type="submit">count me in</button>${view.seal ? `<button class="quiet" type="submit" name="how" value="seal">count me in and add me when it opens</button>` : ""}</form>
-      <p class="fine">you sign in with discord<br>we only see your account id and your email${view.seal ? "<br>if you want to be added when it opens your sign in is locked so only cygnet can open it<br>she uses it once at your turn and drops it" : ""}</p>`;
+      <p class="fine">you sign in with discord<br>we only see your account id and your email${view.seal ? "<br>add me when it opens locks your sign in to cygnet<br>she uses it once at your turn and drops it" : ""}</p>`;
       break;
     case "in":
       turnstile = (view.left > 0 && !view.held) || (!!view.seal && !view.sealed) || (!!view.admitted && !view.sealed);
@@ -290,10 +290,10 @@ ${refresh}
   <section class="card">
     <header>
       <span class="ring">${mark}</span>
-      <span><span class="kicker">${view.kind === "privacy" ? "cygnet lol" : view.kind === "list" ? "the list" : view.kind === "home" ? "by invitation" : l.server ? "an invite" : l.stage === "open" ? "open now" : "coming soon"}</span><h1>${esc(l.title ?? l.name)}</h1></span>
+      <span><span class="kicker">${view.kind === "privacy" || view.kind === "forgotten" ? "cygnet lol" : view.kind === "list" ? "the list" : view.kind === "home" ? "by invitation" : l.server ? "an invite" : l.stage === "open" ? "open now" : "coming soon"}</span><h1>${esc(l.title ?? l.name)}</h1></span>
     </header>
     ${
-      view.kind === "privacy" || view.kind === "list" || l.server
+      view.kind === "privacy" || view.kind === "forgotten" || view.kind === "list" || l.server
         ? ""
         : view.kind === "home"
           ? `<p class="line">${lines(l.line)}</p>`
