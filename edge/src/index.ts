@@ -34,6 +34,7 @@ import {
 } from "./signup.ts";
 import { Store, type DB, type Hashes } from "./store.ts";
 import { call, hubOf, type CodeInfo, type ListRow, type Place, type Redeemed, type Reply } from "./hub.ts";
+import { sealed } from "./seal.ts";
 
 interface Env {
   DB: D1Database;
@@ -58,6 +59,9 @@ interface Env {
   CYGNET_HUB_TOKEN?: string;
   CF_ACCESS_CLIENT_ID?: string;
   CF_ACCESS_CLIENT_SECRET?: string;
+  // cygnet's public key for sealed sign ins (tools/sealkey), base64url.
+  // Unset, nobody is offered to be added when their launch opens.
+  CYGNET_SEAL_PUBLIC?: string;
 }
 
 type Purpose = "join" | "issue" | "redeem" | "list" | "server";
@@ -141,8 +145,10 @@ export default {
       if (req.method === "POST") {
         if (second === "join") {
           if ((l.stage ?? "gathering") !== "gathering") return html(env, l, { kind: "error", why: say.closed }, 403);
-          return await human(req, env, l, () => oauth(env, url, "join", l));
+          return await human(req, env, l, (form) => oauth(env, url, "join", l, form.get("how") === "seal" && env.CYGNET_SEAL_PUBLIC ? "seal" : "-"));
         }
+        if (second === "seal") return await sealStart(req, env, l, url);
+        if (second === "unseal") return await unseal(req, env, l);
         if (second === "issue") return await issueStart(req, env, l, url);
         if (second === "revoke") return await revoke(req, env, l);
         if (second === "leave") return await leave(req, env, l);
@@ -171,12 +177,12 @@ async function landing(req: Request, env: Env, l: Launch): Promise<Response> {
   const now = Date.now();
   if (user) {
     const r = await ask<Place>(env, "cygnet.place", { launch: l.name, user });
-    if (r.ok) return html(env, l, { kind: "in", rank: r.body.sponsored ? null : r.body.rank, held: r.body.held ?? null, released: r.body.released, left: r.body.left, invites: invitesOf(r.body), now });
+    if (r.ok) return html(env, l, { kind: "in", rank: r.body.sponsored ? null : r.body.rank, held: r.body.held ?? null, released: r.body.released, left: r.body.left, invites: invitesOf(r.body), now, sealed: r.body.sealed, seal: !!env.CYGNET_SEAL_PUBLIC && !r.body.admitted && l.stage !== "open" });
     if (!refused(r, "not_on_list")) return html(env, l, { kind: "error", why: say.broke }, 502);
   }
   // Signing in again still works when the list isn't taking anyone new.
   const stage = l.stage ?? "gathering";
-  return html(env, l, { kind: stage === "gathering" ? "open" : stage === "open" ? "opened" : "closed" });
+  return html(env, l, stage === "gathering" ? { kind: "open", seal: !!env.CYGNET_SEAL_PUBLIC } : { kind: stage === "open" ? "opened" : "closed" });
 }
 
 // human runs next once Turnstile says a person sent the form, handing it
@@ -196,7 +202,8 @@ async function human(req: Request, env: Env, l: Launch, next: (form: FormData) =
 }
 
 // oauth sends the person to Discord with a state only this browser holds,
-// which says what the sign in is for.
+// which says what the sign in is for. A join that asks to be added when
+// the launch opens ("seal") asks for guilds.join too.
 async function oauth(env: Env, url: URL, purpose: Purpose, l: Launch, invite = "-"): Promise<Response> {
   const nonce = token();
   const to = new URL("https://discord.com/oauth2/authorize");
@@ -205,7 +212,7 @@ async function oauth(env: Env, url: URL, purpose: Purpose, l: Launch, invite = "
     response_type: "code",
     redirect_uri: `https://${url.host}/auth/discord`,
     // The list needs only who you are; everything else needs your email.
-    scope: purpose === "list" ? "identify" : "identify email",
+    scope: purpose === "list" ? "identify" : invite === "seal" ? "identify email guilds.join" : "identify email",
     state: nonce,
     prompt: "none",
   }).toString();
@@ -216,6 +223,24 @@ async function oauth(env: Env, url: URL, purpose: Purpose, l: Launch, invite = "
 async function issueStart(req: Request, env: Env, l: Launch, url: URL): Promise<Response> {
   if (!(await who(req, env, l))) return back(l);
   return human(req, env, l, () => oauth(env, url, "issue", l));
+}
+
+// sealStart is someone on the list asking to be added when it opens: a
+// fresh sign in that lets cygnet add them, sealed to her.
+async function sealStart(req: Request, env: Env, l: Launch, url: URL): Promise<Response> {
+  if (!(await who(req, env, l)) || !env.CYGNET_SEAL_PUBLIC) return back(l);
+  return human(req, env, l, () => oauth(env, url, "join", l, "seal"));
+}
+
+// unseal is never mind: cygnet forgets the sealed sign in, and they get
+// their way in on this page when their wave opens.
+async function unseal(req: Request, env: Env, l: Launch): Promise<Response> {
+  const user = await who(req, env, l);
+  if (user) {
+    const r = await ask(env, "cygnet.seal", { launch: l.name, user, sealed: "" });
+    if (!r.ok && !refused(r, "not_on_list")) return html(env, l, { kind: "error", why: say.broke }, 502);
+  }
+  return back(l);
 }
 
 // invited is an invite's page, and taking it: a launch's, which puts
@@ -325,17 +350,25 @@ async function callback(req: Request, env: Env, ctx: ExecutionContext, url: URL)
     body: new URLSearchParams({ grant_type: "authorization_code", code, redirect_uri: `https://${url.host}/auth/discord` }),
   });
   if (!grant.ok) return html(env, l, { kind: "error", why: say.discordNo }, 502);
-  const { access_token } = await grant.json<{ access_token: string }>();
+  const { access_token, refresh_token, scope } = await grant.json<{ access_token: string; refresh_token?: string; scope?: string }>();
   const me = await fetch(`${api}/users/@me`, { headers: { authorization: `Bearer ${access_token}` } });
-  // Read once, then given back: cygnet keeps no Discord token for a list.
-  ctx.waitUntil(
-    fetch(`${api}/oauth2/token/revoke`, {
-      method: "POST",
-      headers: { authorization: basic, "content-type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ token: access_token, token_type_hint: "access_token" }),
-    }),
-  );
-  if (!me.ok) return html(env, l, { kind: "error", why: say.discordWho }, 502);
+  // Read once, then given back: cygnet keeps no Discord token for a list,
+  // except one sealed to her for someone who asked to be added when it
+  // opens. Revoking either token ends the whole grant, so that one isn't.
+  const sealing = purpose === "join" && invite === "seal" && !!refresh_token && !!env.CYGNET_SEAL_PUBLIC && (scope ?? "").split(" ").includes("guilds.join");
+  const revoke = () =>
+    ctx.waitUntil(
+      fetch(`${api}/oauth2/token/revoke`, {
+        method: "POST",
+        headers: { authorization: basic, "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ token: access_token, token_type_hint: "access_token" }),
+      }),
+    );
+  if (!sealing) revoke();
+  if (!me.ok) {
+    if (sealing) revoke();
+    return html(env, l, { kind: "error", why: say.discordWho }, 502);
+  }
   const user = await me.json<{ id: string; email?: string | null; verified?: boolean }>();
   // The list: only for whoever may see it, for an hour.
   if (purpose === "list") {
@@ -343,7 +376,17 @@ async function callback(req: Request, env: Env, ctx: ExecutionContext, url: URL)
     const c = cookie(`cy_list_${l.name}`, await sign(env, `${l.name}.${user.id}.${Date.now() + 3_600_000}`), 3600);
     return new Response(null, { status: 303, headers: secure({ location: `/${l.name}/list`, "set-cookie": c }) });
   }
-  if (!user.email || !user.verified) return html(env, l, { kind: "error", why: say.unverified }, 403);
+  // keepSeal hands cygnet the sealed sign in once they're on her list, and
+  // gives the grant back if she won't keep it.
+  const keepSeal = async () => {
+    if (!sealing) return;
+    const r = await ask(env, "cygnet.seal", { launch: l.name, user: user.id, sealed: await sealed(env.CYGNET_SEAL_PUBLIC!, refresh_token!) });
+    if (!r.ok) revoke();
+  };
+  if (!user.email || !user.verified) {
+    if (sealing) revoke();
+    return html(env, l, { kind: "error", why: say.unverified }, 403);
+  }
   const s = store(env);
   const now = Date.now();
   const email = await keyed(env.HMAC_KEY, "email", normalEmail(user.email));
@@ -363,9 +406,14 @@ async function callback(req: Request, env: Env, ctx: ExecutionContext, url: URL)
     // Signed up here: cygnet has them too, unless a join's answer was lost
     // on the way back, and then this puts them on.
     const r = await ask(env, "cygnet.join", { launch: l.name, user: user.id });
-    if (!r.ok && !refused(r, "on_list", "closed")) return html(env, l, { kind: "error", why: say.broke }, 502);
+    if (!r.ok && !refused(r, "on_list", "closed")) {
+      if (sealing) revoke();
+      return html(env, l, { kind: "error", why: say.broke }, 502);
+    }
+    await keepSeal();
     return signedIn(env, l, user.id);
   }
+  if (sealing && (now - created(user.id) < l.minAgeDays * day || (await s.emailTaken(l, email)))) revoke();
   if (now - created(user.id) < l.minAgeDays * day) return html(env, l, { kind: "error", why: say.tooNew(l.minAgeDays) }, 403);
   if (await s.emailTaken(l, email)) return html(env, l, { kind: "error", why: say.emailTaken }, 409);
   const net = networks(req.headers.get("cf-connecting-ip") ?? "");
@@ -384,9 +432,12 @@ async function callback(req: Request, env: Env, ctx: ExecutionContext, url: URL)
     // cygnet first, then the hashes: a retry after a failed keep finds
     // them on her list, and keeps them then.
     const r = await ask<{ place: number }>(env, "cygnet.join", { launch: l.name, user: user.id, held: why ?? "" });
-    if (refused(r, "closed")) return html(env, l, { kind: "error", why: say.closed }, 403);
-    if (!r.ok && !refused(r, "on_list")) return html(env, l, { kind: "error", why: say.broke }, 502);
+    if (!r.ok && !refused(r, "on_list")) {
+      if (sealing) revoke();
+      return html(env, l, { kind: "error", why: refused(r, "closed") ? say.closed : say.broke }, refused(r, "closed") ? 403 : 502);
+    }
     await s.keep(l, user.id, h, now);
+    await keepSeal();
     return signedIn(env, l, user.id);
   }
 
