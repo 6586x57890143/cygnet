@@ -305,11 +305,17 @@ func (m *Module) click(ctx context.Context, e *events.ComponentInteractionCreate
 		}
 	}
 	admin := m.isAdmin(e, g)
-	if len(parts) == 3 && parts[1] == "tree" {
+	// "invite:tree:<guild>" is its first page, "invite:tree:<page>:<guild>"
+	// any other.
+	if len(parts) >= 3 && parts[1] == "tree" {
 		if !m.canSet(e, g) {
 			return core.Tell("only this server's admins can see its tree, from inside it")
 		}
-		card, err := m.tree(ctx, g)
+		page := 0
+		if len(parts) == 4 {
+			page, _ = strconv.Atoi(parts[2])
+		}
+		card, err := m.tree(ctx, g, page)
 		if err != nil {
 			return err
 		}

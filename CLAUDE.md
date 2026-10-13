@@ -35,7 +35,7 @@ in logs, and a bot is told only what is addressed to it.
 
 ```sh
 go build ./... && go vet ./...
-golangci-lint run
+go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0 run ./...   # CI's exact linter
 scripts/coverage.sh                    # race tests + 85% floor per internal/ package
 scripts/prose.sh                       # no em dashes, ellipses or curly quotes
 go -C link vet ./... && go -C link test -race ./...   # the client module

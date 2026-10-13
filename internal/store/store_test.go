@@ -14,7 +14,7 @@ import (
 
 // The test needs a real Postgres: CI runs one, and locally `docker compose up
 // postgres` with CYGNET_TEST_DATABASE_URL pointing at it. Unset, it skips.
-func dsn(t *testing.T) string {
+func dsn(t testing.TB) string {
 	t.Helper()
 	d := os.Getenv("CYGNET_TEST_DATABASE_URL")
 	if d == "" {
