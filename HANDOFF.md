@@ -12,24 +12,22 @@ No branch is open. Worktrees under `cygnet.worktrees/` are from merged work and 
 
 ## Next: M4's last checks
 
-M4 is deployed (2026-10-13): cygnet from `main` by CI (migration 005 ran), the Worker by
-hand (D1 0004 applied; the export taken just before is in the session's scratchpad, not
-the repo). silcord is registered in Postgres (inserted directly, as naming its page
-would), `CYGNET_LEDGER_KEY` and `CYGNET_SEAL_KEY` are on foundry, and the seal's public
-half is in `wrangler.jsonc`. Still open:
+M4 is deployed and was run for real on 2026-10-13. silcord moved over: the two people
+on its old list were put on cygnet's by `cygnet.join` and their places set to the old
+order (one hand transaction on `line.place`, which the ledger doesn't hold), so the
+line stays first come first served. Then the launch was opened: a hold lifted, a
+release of 3 each, and wave 1 admitted all three. One of them had sealed a sign in,
+and cygnet refreshed it with the app's secret (reset that day, set on both sides),
+added them, and the join was traced to wave 1. Their page now says they're in.
 
-1. **`CYGNET_CLIENT_SECRET` on foundry**, typed in by the owner (it's the Worker's
-   `DISCORD_CLIENT_SECRET`): `ssh foundry-deploy 'read -rs s && echo "CYGNET_CLIENT_SECRET=$s" >> ~/cygnet/.env'`,
-   then restart cygnet, loading `deployed-tag.env` first (CLAUDE.md, foundry compose
-   tag). Until then a sealed sign in can't be refreshed, and its person gets their way
-   in on their page instead.
-2. **The two people on silcord's list sign in once more** (count me in): the Worker
-   kept their hashes, and signing in puts them on cygnet's list.
-3. **The end to end check**: join with *add me when it opens* from a second account,
-   release, make and take an invite, open the launch, and watch wave 1 add the sealed
-   person and attribute the invitee to its invite; `/launch` shows `ledger ✓`.
-4. **skua.pace**: skua PR #16, then the pace module switched on in silcord. skua takes
-   `link/v0.8.0` (`Manifest.Serves`) to list it.
+Still open:
+
+1. **An invite made and taken** on silcord, from a second account, to see `vouch`
+   and the invitee following its giver into a wave live.
+2. **skua.pace switched on** in silcord (skua's `/help`, pace). Until then the valve
+   is told `denied` and each wave's reason says skua didn't say. skua serves it and
+   lists it in its manifest (`Serves`, link v0.8.0).
+3. **Experiment 6 against a recorded launch**, and experiment 2.
 
 ## What M4 changed
 
