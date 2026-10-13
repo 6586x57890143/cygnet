@@ -1,4 +1,4 @@
-# Handoff: Milestone 4 built, waiting to deploy
+# Handoff: Milestone 4 deployed, its last checks open
 
 Written 2026-10-13. Read this with `CLAUDE.md` and `SPEC.md`.
 
@@ -10,24 +10,26 @@ Written 2026-10-13. Read this with `CLAUDE.md` and `SPEC.md`.
 
 No branch is open. Worktrees under `cygnet.worktrees/` are from merged work and can go.
 
-## Next: deploy M4
+## Next: M4's last checks
 
-Order matters: cygnet first, then the Worker.
+M4 is deployed (2026-10-13): cygnet from `main` by CI (migration 005 ran), the Worker by
+hand (D1 0004 applied; the export taken just before is in the session's scratchpad, not
+the repo). silcord is registered in Postgres (inserted directly, as naming its page
+would), `CYGNET_LEDGER_KEY` and `CYGNET_SEAL_KEY` are on foundry, and the seal's public
+half is in `wrangler.jsonc`. Still open:
 
-1. On foundry, in `~/cygnet/.env`, before the image with #41 to #46 starts:
-   `CYGNET_LEDGER_KEY` (`openssl rand -base64 32`, set once: it keys the ledger and the
-   pseudonyms), `CYGNET_CLIENT_SECRET` (the Worker's `DISCORD_CLIENT_SECRET`), and
-   `CYGNET_SEAL_KEY` from `go run ./tools/sealkey`. Without the ledger key cygnet runs
-   no launches and says so.
-2. The stack is merged; CI deploys cygnet, and migration 005 runs.
-3. In silcord, `/launch` and name its page `silcord` again: that registers it in
-   Postgres and sends the Worker its stage.
-4. `CYGNET_SEAL_PUBLIC` from step 1 into `edge/wrangler.jsonc`'s `vars`, then
-   `npm -C edge run deploy`, which applies D1 0004 (the 2 people on the list keep their
-   hashes; each is put on cygnet's list the next time they sign in, without any hold).
-5. Check by hand: join with *add me when it opens* from a second account, release,
-   make and take an invite, open the launch, and watch wave 1 add the sealed person and
-   attribute the invitee to its invite; `/launch` shows `ledger ✓`.
+1. **`CYGNET_CLIENT_SECRET` on foundry**, typed in by the owner (it's the Worker's
+   `DISCORD_CLIENT_SECRET`): `ssh foundry-deploy 'read -rs s && echo "CYGNET_CLIENT_SECRET=$s" >> ~/cygnet/.env'`,
+   then restart cygnet, loading `deployed-tag.env` first (CLAUDE.md, foundry compose
+   tag). Until then a sealed sign in can't be refreshed, and its person gets their way
+   in on their page instead.
+2. **The two people on silcord's list sign in once more** (count me in): the Worker
+   kept their hashes, and signing in puts them on cygnet's list.
+3. **The end to end check**: join with *add me when it opens* from a second account,
+   release, make and take an invite, open the launch, and watch wave 1 add the sealed
+   person and attribute the invitee to its invite; `/launch` shows `ledger ✓`.
+4. **skua.pace**: skua PR #16, then the pace module switched on in silcord. skua takes
+   `link/v0.8.0` (`Manifest.Serves`) to list it.
 
 ## What M4 changed
 
