@@ -158,10 +158,13 @@ export function page(l: Launch, total: number, view: View, sitekey: string, icon
         <span class="k">${view.rank === null ? "youre in through a friend" : "your spot"}</span>
         <span class="rank" data-count="${view.rank ?? ""}">${view.rank === null ? "in" : `#${view.rank}`}</span>
       </div>
+      ${view.admitted ? when(l, view, sitekey) : ""}
       ${view.held ? "" : invites(l, view, sitekey)}
-      ${when(l, view, sitekey)}
+      ${view.admitted ? "" : when(l, view, sitekey)}
       ${
-        view.held
+        view.admitted
+          ? ""
+          : view.held
           ? `<p class="note warn">your invites are on hold while we take a quick look<br>${esc(view.held)}<br>your spot in line stays the same</p>`
           : view.rank === null
             ? `<p class="note ok">you get in with the friend who invited you</p>`

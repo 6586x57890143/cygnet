@@ -229,6 +229,8 @@ test("every page, in the voice", () => {
   assert.doesNotMatch(views.sealed, /action="\/silcord\/seal"/);
   assert.match(views.turn, /your way in is ready[\s\S]*action="\/silcord\/in"[\s\S]*value="add">take me in[\s\S]*value="invite">send me an invite instead/);
   assert.match(views.turn, /cf-turnstile/);
+  assert.ok(views.turn.indexOf("your way in is ready") < views.turn.indexOf("invites"), "the way in first");
+  assert.doesNotMatch(views.turn, /invites go out from the front/);
   assert.match(views.adding, /cygnet is adding you now/);
   assert.doesNotMatch(views.adding, /action="\/silcord\/in"/);
   assert.match(views.mine, /#7/);
