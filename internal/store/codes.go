@@ -35,6 +35,9 @@ type Code struct {
 	Guild, Owner, SpentBy           snowflake.ID
 	Made, Expires, SpentAt, Revoked time.Time
 	Arrived                         time.Time
+	// Launch is the launch a code puts its spender in line for, or "" for
+	// a link straight into the server.
+	Launch string
 }
 
 // Open is whether c can still be spent at now.
@@ -42,14 +45,14 @@ func (c Code) Open(now time.Time) bool {
 	return c.SpentBy == 0 && c.Revoked.IsZero() && now.Before(c.Expires)
 }
 
-const codeCols = "hash, guild_id, owner_id, made, expires, spent_by, spent_at, revoked, arrived"
+const codeCols = "hash, guild_id, owner_id, made, expires, spent_by, spent_at, revoked, arrived, coalesce(launch, '')"
 
 func scanCode(row pgx.Row) (Code, error) {
 	var c Code
 	var guild, owner int64
 	var by *int64
 	var spent, revoked, arrived *time.Time
-	err := row.Scan(&c.Hash, &guild, &owner, &c.Made, &c.Expires, &by, &spent, &revoked, &arrived)
+	err := row.Scan(&c.Hash, &guild, &owner, &c.Made, &c.Expires, &by, &spent, &revoked, &arrived, &c.Launch)
 	c.Guild, c.Owner = snowflake.ID(guild), snowflake.ID(owner)
 	if by != nil {
 		c.SpentBy = snowflake.ID(*by)
@@ -66,8 +69,9 @@ func scanCode(row pgx.Row) (Code, error) {
 }
 
 // counted is how many links owner ($2) has out or used in guild ($1) at
-// $3: one taken back, or run out unused, is back in their hands.
-const counted = `(select count(*) from code where guild_id = $1 and owner_id = $2
+// $3: one taken back, or run out unused, is back in their hands. A
+// launch's invites count against what its line released, not this.
+const counted = `(select count(*) from code where guild_id = $1 and owner_id = $2 and launch is null
 	and revoked is null and (spent_by is not null or expires > $3))`
 
 // lock takes a transaction's turn on one key, made of parts: a mint's
@@ -108,11 +112,11 @@ func (s *Codes) Left(ctx context.Context, guild, owner snowflake.ID, now time.Ti
 	return max(0, limit-n), nil
 }
 
-// Mine is owner's last n codes in guild at now, newest first: the ones
+// Mine is owner's last n links into guild at now, newest first: the ones
 // still open and the ones used, and with all, those taken back or run out
 // unused as well. Those stay kept, as the record behind the counts.
 func (s *Codes) Mine(ctx context.Context, guild, owner snowflake.ID, now time.Time, n int, all bool) ([]Code, error) {
-	rows, _ := s.pool.Query(ctx, "select "+codeCols+` from code where guild_id = $1 and owner_id = $2
+	rows, _ := s.pool.Query(ctx, "select "+codeCols+` from code where guild_id = $1 and owner_id = $2 and launch is null
 		and ($5 or spent_by is not null or (revoked is null and expires > $4))
 		order by made desc limit $3`,
 		int64(guild), int64(owner), n, now, all)
