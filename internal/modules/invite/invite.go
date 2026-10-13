@@ -54,7 +54,7 @@ var eachChoices = []int{0, 1, 2, 3, 5, 10}
 type Store interface {
 	Mint(ctx context.Context, hash []byte, guild, owner snowflake.ID, now, expires time.Time, limit int) error
 	Left(ctx context.Context, guild, owner snowflake.ID, now time.Time, limit int) (int, error)
-	Mine(ctx context.Context, guild, owner snowflake.ID, n int) ([]store.Code, error)
+	Mine(ctx context.Context, guild, owner snowflake.ID, now time.Time, n int, all bool) ([]store.Code, error)
 	Revoke(ctx context.Context, hash []byte, owner snowflake.ID, now time.Time) (bool, error)
 	Each(ctx context.Context, guild snowflake.ID) (int, error)
 	SetEach(ctx context.Context, guild snowflake.ID, n int) error
@@ -409,7 +409,9 @@ func (m *Module) panel(ctx context.Context, g discord.Guild, user snowflake.ID, 
 	if err != nil {
 		return discord.ContainerComponent{}, err
 	}
-	mine, err := m.store.Mine(ctx, g.ID, user, shown)
+	// A member sees what still matters, the links open and used; an admin
+	// sees every link of theirs, taken back and run out too.
+	mine, err := m.store.Mine(ctx, g.ID, user, now, shown, admin)
 	if err != nil {
 		return discord.ContainerComponent{}, err
 	}

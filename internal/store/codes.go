@@ -108,10 +108,14 @@ func (s *Codes) Left(ctx context.Context, guild, owner snowflake.ID, now time.Ti
 	return max(0, limit-n), nil
 }
 
-// Mine is owner's last n codes in guild, newest first.
-func (s *Codes) Mine(ctx context.Context, guild, owner snowflake.ID, n int) ([]Code, error) {
-	rows, _ := s.pool.Query(ctx, "select "+codeCols+" from code where guild_id = $1 and owner_id = $2 order by made desc limit $3",
-		int64(guild), int64(owner), n)
+// Mine is owner's last n codes in guild at now, newest first: the ones
+// still open and the ones used, and with all, those taken back or run out
+// unused as well. Those stay kept, as the record behind the counts.
+func (s *Codes) Mine(ctx context.Context, guild, owner snowflake.ID, now time.Time, n int, all bool) ([]Code, error) {
+	rows, _ := s.pool.Query(ctx, "select "+codeCols+` from code where guild_id = $1 and owner_id = $2
+		and ($5 or spent_by is not null or (revoked is null and expires > $4))
+		order by made desc limit $3`,
+		int64(guild), int64(owner), n, now, all)
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (Code, error) { return scanCode(row) })
 }
 

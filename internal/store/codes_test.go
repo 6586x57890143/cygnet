@@ -85,9 +85,17 @@ func TestMintKeepsToTheLimit(t *testing.T) {
 	if err := s.Mint(ctx, hash("m3"), guild, owner, t0, life, -1); err != nil {
 		t.Fatalf("no limit: %v", err)
 	}
-	mine, err := s.Mine(ctx, guild, owner, 10)
+	mine, err := s.Mine(ctx, guild, owner, t0, 10, true)
 	if err != nil || len(mine) != 4 {
 		t.Fatalf("mine: %d %v", len(mine), err)
+	}
+	// Without all: open and used, not taken back (m0); later, m2 and m3
+	// have run out and only the used m1 is left.
+	if live, _ := s.Mine(ctx, guild, owner, t0, 10, false); len(live) != 3 {
+		t.Fatalf("live now: %d", len(live))
+	}
+	if live, _ := s.Mine(ctx, guild, owner, later, 10, false); len(live) != 1 || live[0].SpentBy != 9 {
+		t.Fatalf("live once m2 ran out: %d", len(live))
 	}
 	if ok, _ := s.Revoke(ctx, hash("m1"), owner, t0); ok {
 		t.Fatal("took back a spent link")
