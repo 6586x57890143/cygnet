@@ -1,4 +1,4 @@
-# Handoff: Milestone 3 done, Milestone 4 (launches) next
+# Handoff: Milestone 4 built, waiting to deploy
 
 Written 2026-10-13. Read this with `CLAUDE.md` and `SPEC.md`.
 
@@ -6,49 +6,80 @@ Written 2026-10-13. Read this with `CLAUDE.md` and `SPEC.md`.
 
 | Branch | State |
 |---|---|
-| `main` | M0 to M3 (M3 is #31 to #40), and the edge's launch list (M4, started). Deployed to foundry; the Worker deployed by hand |
+| `main` | M0 to M4. M4 is #41 to #47, merged 2026-10-13; cygnet deploys from CI, the Worker by hand |
 
-No branch is open. Old worktrees under `cygnet.worktrees/` are from merged work and can
-go.
+No branch is open. Worktrees under `cygnet.worktrees/` are from merged work and can go.
 
-M3 is live. The tunnel runs on foundry (`COMPOSE_PROFILES=tunnel`), `hub.cygnet.lol`
-answers only to Access's service token, the Worker links as the bird `edge`, and both
-ways in (added, and the invite only they can take) have been used for real. Links point
-at cygnet.lol only while `edge=` is in `CYGNET_BOTS`.
+## Next: deploy M4
 
-## Next: M4, launches
+Order matters: cygnet first, then the Worker.
 
-SPEC.md, milestone 4, and the decision in memory that **Postgres owns membership**: codes,
-the tree and the ledger live in cygnet's Postgres; D1 keeps only the edge's own state
-(sign ups, places in line, email proofs, hashes) and, where a page needs it, a read model.
-Every hand-off between them gets an idempotency key and a reconcile sweep, as M3's
-redemption does (`Spend` returns a code its spender already spent; the sweep finds
-missed joins).
+1. On foundry, in `~/cygnet/.env`, before the image with #41 to #46 starts:
+   `CYGNET_LEDGER_KEY` (`openssl rand -base64 32`, set once: it keys the ledger and the
+   pseudonyms), `CYGNET_CLIENT_SECRET` (the Worker's `DISCORD_CLIENT_SECRET`), and
+   `CYGNET_SEAL_KEY` from `go run ./tools/sealkey`. Without the ledger key cygnet runs
+   no launches and says so.
+2. The stack is merged; CI deploys cygnet, and migration 005 runs.
+3. In silcord, `/launch` and name its page `silcord` again: that registers it in
+   Postgres and sends the Worker its stage.
+4. `CYGNET_SEAL_PUBLIC` from step 1 into `edge/wrangler.jsonc`'s `vars`, then
+   `npm -C edge run deploy`, which applies D1 0004 (the 2 people on the list keep their
+   hashes; each is put on cygnet's list the next time they sign in, without any hold).
+5. Check by hand: join with *add me when it opens* from a second account, release,
+   make and take an invite, open the launch, and watch wave 1 add the sealed person and
+   attribute the invitee to its invite; `/launch` shows `ledger ✓`.
 
-Where it starts:
+## What M4 changed
 
-- **The launch list's invites move to Postgres.** `edge/src/store.ts` issues, spends and
-  revokes them in D1 today (`invite`, `member.sponsor`, `ledger`). They become `code`
-  rows (migration 004 has no launch column yet: a launch has a server, `launch.guild`,
-  so a `launch` column beside `guild_id` is the likely shape) and the Worker asks cygnet
-  over the hub as `edge`, as `/i/<code>` already does for server links. A code D1 knows
-  is a launch's today; that check goes when the move lands.
-- **The ledger moves with them**: append only, each entry keyed over the one before
-  (`edge/src/store.ts`, `commit` and `verify`), in Postgres with a trigger refusing
-  update and delete. Erasure keeps the edge's scheme: a person's Discord ID becomes the
-  keyed hash the ledger knows them by (`h:`), which also gives `joined` its erasure.
-- **Sealed tokens**: someone who ticks *add me when it opens* leaves a refresh token the
-  Worker encrypts to cygnet's public key and can't read itself. At their wave cygnet
-  opens it, refreshes it and adds them through the same path as a redemption
-  (`invite.add`, the quiet client), then forgets it.
-- **The valve**: waves sized by measured load (joins a minute, which cygnet sees with
-  Server Members; messages a minute from skua as a question, never data), SPEC
-  experiment 6. A wave waits until the last one settled.
-- **Sponsor standing**: invitees removed, not just gone, need bans and kicks told apart
-  from leaving: take the intents and the audit log read that needs.
-- `/launch` reads the Worker's admin endpoints with `CYGNET_EDGE_TOKEN` today; with the
-  tunnel live, the edge's questions to cygnet go the bird's way, and the admin bearer
-  can shrink to what only the Worker knows.
+- **Postgres owns launches** (`internal/store/launch.go`, `wave.go`, migration 005). A
+  launch's line (place, hold, invites released, a sealed sign in, the wave that let
+  them in), its invites (codes with a `launch` column, so a spender stays pending until
+  their wave and `Arrive` attributes them), its waves, and a ledger: every change and
+  its entry in one transaction under the launch's chain, each entry's HMAC keyed over
+  the one before, a trigger refusing update and delete until the list is gone.
+  `Verify` walks it on every `/launch`.
+- **Pseudonyms, not new column types.** Someone who leaves or is forgotten becomes a
+  negative ID derived from the ledger's keyed name for them (`store.Pseudonym`), so
+  `code`, `line` and `joined` keep their bigints and the tree keeps its shape.
+- **The Worker asks** (`edge/src/index.ts`): `cygnet.join`, `place`, `issue`, `revoke`,
+  `vouch`, `leave`, `mine`, `list`, `lift`, `seal`, `admit`, `forget`; `cygnet.code`
+  says whether a code is a launch's. D1 keeps `signup` (the hashes), `challenge`,
+  `sends`, `bird`, and `launch` as a read model cygnet pushes (now with stage and
+  opens). The admin bearer covers only those pushes.
+- **Sealed sign ins**: HPKE (RFC 9180 base mode, X25519, HKDF-SHA256, AES-128-GCM),
+  written on WebCrypto in the Worker and held to the RFC's vectors, opened with Go's
+  `crypto/hpke`; a Go test opens a token the Worker sealed.
+- **The valve** (`internal/modules/launch/valve.go`): the rule is `next`, every wave
+  keeps its why, the panel sets the ceiling and pauses it. Sealed people are added a
+  ceiling's worth a minute; anyone else's way in is on their page. Both go through
+  `invite.Let`, wired in `main` as the launch's `Door`. A join traced to no code but a
+  wave is recorded with `joined.wave`. The launch module requires Server Members.
+- **Forget me everywhere** on `/privacy`: off every list, every link and join
+  pseudonymised.
+
+Decisions worth keeping:
+
+- **The line is cygnet's**, not the Worker's (decided 2026-10-13): the valve picks
+  waves from it, so every input to a wave is in one store.
+- **Waves double when calm** (decided): read as the last wave's *peak* joins a minute,
+  and a wave counts as settled once its rush has passed (joins under half the ceiling
+  a window after it opened), or 9 in 10 are in, or 15 minutes. Experiment 6 is why: read
+  as the trailing rate, the rule peaked at 28 a minute against a ceiling of 10.
+- **The Worker makes invite codes**; cygnet keeps only their hashes, as with `/invite`.
+- **Revoking either OAuth token ends the grant**, so a sealed sign in's grant isn't
+  revoked at sign up; every refusal along the way revokes it, and cygnet gives it back
+  after using it.
+
+## Not done yet, deliberately (M4)
+
+- **`skua.pace`**: the valve asks it and words the answer's absence; skua doesn't answer
+  it yet. A skua PR: messages a minute now and as usual, from its purge index, opt in
+  per server like `skua.check`.
+- **Experiment 6 against a recorded launch**: the replay uses a modelled arrival curve.
+  Record silcord's opening and replay it.
+- **Experiment 2** (redemption round trip, p50 and p99 from the Worker): still open.
+- **Sponsor standing** and the audit log read: M5, with earning (decided).
+- A hold isn't carried across the D1 move for the 2 people on silcord's list.
 
 ## What M3 changed
 
@@ -122,8 +153,7 @@ who brought many over several lines.
 - The pixel unfurl for a link: SPEC says it goes out as a skua experiment first
   (experiment 5) and moves to cygnet when the numbers say so.
 - Earning links by rules (M5): the allowance is a number an admin sets.
-- Erasure for `joined`: with M4's ledger and its `h:` pseudonyms; until then the
-  notice says to write in.
+- Erasure for `joined`: done in M4 (forget me everywhere).
 
 ## What M2 has so far
 
@@ -235,35 +265,10 @@ Decisions worth keeping:
 - **The glyph is drawn here**, three sliders on pixelarticons' grid, not traced from a
   pixelarticons icon like the others.
 
-## The edge (M4, started)
-
-Since #23 the copy is cygnet's flavour (UX.md, Voice), and every page carries the
-home page's footer: the flock, live from the hub (`launch/flock.go` pushes each linked
-bird's avatar, `PUT /admin/bird/<name>`), and a link to `/privacy`, whose terms are
-centred. The Worker is deployed by hand (`npm -C edge run deploy`, which applies D1
-migrations first); CI only tests it.
-
-
-`edge/` is the Worker at `cygnet.lol` (`docs/edge.md`): `/silcord` takes sign ups
-through Turnstile and Discord (`identify email`), one place per Discord account and per
-verified email. Admins release invites to the front of the line; a member makes one
-after a fresh Discord sign in and an email proof, and the person it's for takes it with
-their own, which links them to their sponsor in one D1 batch. An email is proven by a
-link emailed to it (Scaleway Transactional Email, pay per use), opened on any device and
-acted on only in the browser that asked; a page that confirms itself keeps mail scanners
-from clicking it for them. Sends are capped at 2,900 in any 31 days, about €0.65 at
-worst, and the rest runs on Cloudflare's free plan.
-Every change lands in a keyed, chained, append only ledger in the same batch, and
-`/admin/verify` checks it. Identifiers are HMACs under `HMAC_KEY`, forgotten by a daily
-cron. The copy is a person texting: lowercase, no punctuation, one thought a line, and
-a test fails any page with punctuation or a capital. Tested with `node --test` against
-`node:sqlite`, including tampering, typed with `wrangler types`, in CI's `edge` job.
-Live at cygnet.lol, with the tunnel behind it since M3.
-
 ## Not done yet, deliberately
 
 - More layouts than `flock`, and a way to choose channel positions.
-- M4 and M5 in `SPEC.md`; M4's starting points are under **Next: M4** above.
+- M5 in `SPEC.md`.
 
 ## From M0 and M1, still true
 

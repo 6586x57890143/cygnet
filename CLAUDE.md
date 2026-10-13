@@ -16,8 +16,10 @@ sees follows [`UX.md`](./UX.md).
   the frame types, a module of its own (`github.com/6586x57890143/cygnet/link`) so a bird
   imports it without cygnet's dependencies; cygnet uses it through a `replace`. A change
   to the protocol changes both, and is tagged `link/vX.Y.Z` for the birds.
-- `internal/modules/*`: `status` (the reference), `perf`, `help`, `provision`, `launch`,
-  `invite` (codes: the panel, redemption for cygnet.lol, attribution, the tree).
+- `internal/modules/*`: `status` (the reference), `perf`, `help`, `provision`, `launch`
+  (the campaign, the Worker's verbs, sealed sign ins, the valve), `invite` (codes: the
+  panel, redemption for cygnet.lol, attribution, the tree). `launch` lets a wave in
+  through `invite.Let`, wired in `main.go`: modules still never import each other.
 - `tools/sprites`: the art. `art/source/cygnet_avatar_source.png` is the drawing; the
   generator keeps its disc, quantises it to its own palette and computes the banner.
 
@@ -43,6 +45,7 @@ go test ./internal/hub -run x -bench Call             # a call's round trip thro
 go run ./tools/hubbench                               # live: cygnet.ping through the running hub, as bird `bench`
 govulncheck ./...
 go run ./tools/sprites                 # regenerate internal/brand/assets and emoji
+go run ./tools/sealkey                 # CYGNET_SEAL_KEY for cygnet, CYGNET_SEAL_PUBLIC for the Worker
 
 cp .env.example .env && docker compose up --build   # local bot + Postgres
 go run ./cmd/cygnet                                 # native, DB optional
