@@ -45,6 +45,8 @@ export interface Place {
   left: number;
   sealed: boolean;
   admitted?: number;
+  // here is whether they're in the server now.
+  here?: boolean;
   invites: { code: string; made: number; expires: number; spent_at?: number; revoked?: number }[];
 }
 

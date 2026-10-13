@@ -61,6 +61,12 @@ func TestWavesLetTheFrontInWithWhoeverTheyBrought(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if p, _ := s.Where(ctx, "wav", 101, t0); !p.Here {
+		t.Fatal("101 arrived, not here")
+	}
+	if p, _ := s.Where(ctx, "wav", 102, t0); p.Here {
+		t.Fatal("102 hasn't arrived, here")
+	}
 	last, _ := s.Last(ctx, "wav")
 	if last.ID != w.ID || last.Admitted != 4 || last.Arrived != 2 || last.Why != "two to start" {
 		t.Fatalf("last %+v", last)

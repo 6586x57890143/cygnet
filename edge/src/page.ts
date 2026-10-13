@@ -24,7 +24,7 @@ export type View =
   | { kind: "open"; seal?: boolean }
   | { kind: "closed" }
   | { kind: "opened" }
-  | { kind: "in"; rank: number | null; held: string | null; released: number; left: number; invites: Invite[]; now: number; sealed?: boolean; seal?: boolean; admitted?: boolean }
+  | { kind: "in"; rank: number | null; held: string | null; released: number; left: number; invites: Invite[]; now: number; sealed?: boolean; seal?: boolean; admitted?: boolean; here?: boolean }
   | { kind: "invited"; code: string; expires: number; now: number }
   | { kind: "server"; code: string; from: string; expires: number; now: number }
   | { kind: "sent"; to: string; expires: number; now: number; what: string }
@@ -103,11 +103,35 @@ const widget = (sitekey: string) =>
 
 // when is how someone on the list gets in at their turn: cygnet adds them
 // with the sign in they sealed to her, or their way in waits on this page.
-function when(l: Launch, v: Extract<View, { kind: "in" }>, sitekey: string): string {
+// Gate is the one Turnstile check a page carries: the first action on it
+// holds the widget in its form, and every other action's buttons submit
+// through that form to their own address, so a person is asked once.
+class Gate {
+  private placed = false;
+  private sitekey: string;
+  constructor(sitekey: string) {
+    this.sitekey = sitekey;
+  }
+  // form is an action at action with buttons, a form of its own the first
+  // time and buttons into the first one's after.
+  form(action: string, buttons: string): string {
+    if (!this.placed) {
+      this.placed = true;
+      return `<form id="act" method="post" action="${action}">${widget(this.sitekey)}${buttons}</form>`;
+    }
+    return `<div class="also">${buttons.replaceAll("<button ", `<button form="act" formaction="${action}" `)}</div>`;
+  }
+}
+
+function when(l: Launch, v: Extract<View, { kind: "in" }>, gate: Gate): string {
+  if (v.admitted && v.here) {
+    const open = l.guild ? `<br><a href="https://discord.com/channels/${esc(l.guild)}">open ${esc(l.title ?? l.name)} in discord</a>` : "";
+    return `<p class="note ok">youre in${open}</p>`;
+  }
   if (v.admitted && v.sealed) return `<p class="note ok">its your turn<br>cygnet is adding you now so look for the server in discord</p>`;
   if (v.admitted) {
     return `<p class="note ok">its your turn<br>your way in is ready</p>
-      <form method="post" action="/${esc(l.name)}/in">${widget(sitekey)}<button type="submit" name="how" value="add">take me in</button><button class="quiet" type="submit" name="how" value="invite">send me an invite instead</button></form>
+      ${gate.form(`/${esc(l.name)}/in`, `<button type="submit" name="how" value="add">take me in</button><button class="quiet" type="submit" name="how" value="invite">send me an invite instead</button>`)}
       <p class="fine">you sign in with discord and cygnet adds you to the server<br>or she makes an invite only you can use for 5 minutes</p>`;
   }
   if (v.sealed) {
@@ -116,10 +140,10 @@ function when(l: Launch, v: Extract<View, { kind: "in" }>, sitekey: string): str
   }
   if (!v.seal) return "";
   return `<div class="row"><span class="k">when it opens</span><span>your way in shows up here<br><span class="dim">or cygnet can add you herself</span></span></div>
-      <form method="post" action="/${esc(l.name)}/seal">${widget(sitekey)}<button class="quiet" type="submit">add me when it opens</button></form>`;
+      ${gate.form(`/${esc(l.name)}/seal`, `<button class="quiet" type="submit">add me when it opens</button>`)}`;
 }
 
-function invites(l: Launch, v: Extract<View, { kind: "in" }>, sitekey: string): string {
+function invites(l: Launch, v: Extract<View, { kind: "in" }>, gate: Gate): string {
   if (!v.released) return `<div class="row"><span class="k">invites</span><span>not yet<br><span class="dim">they go to the front of the line first</span></span></div>`;
   const rows = v.invites
     .map((i) => {
@@ -131,7 +155,7 @@ function invites(l: Launch, v: Extract<View, { kind: "in" }>, sitekey: string): 
     })
     .join("");
   const make = v.left
-    ? `<form method="post" action="/${esc(l.name)}/issue">${widget(sitekey)}<button type="submit">make an invite</button></form>
+    ? `${gate.form(`/${esc(l.name)}/issue`, `<button type="submit">make an invite</button>`)}
       <p class="fine">each invite is a link for one person and lasts 2 days<br>we email you a link first to make sure its really you<br>whoever you bring in is tied to you</p>`
     : "";
   const pips = Array.from({ length: v.released }, (_, i) => `<i class="${i < v.left ? "on" : ""}"></i>`).join("");
@@ -152,16 +176,17 @@ export function page(l: Launch, total: number, view: View, sitekey: string, icon
       <form method="post" action="/${esc(l.name)}/join">${widget(sitekey)}<button type="submit">count me in</button>${view.seal ? `<button class="quiet" type="submit" name="how" value="seal">count me in and add me when it opens</button>` : ""}</form>
       <p class="fine">you sign in with discord<br>we only see your account id and your email${view.seal ? "<br>add me when it opens locks your sign in to cygnet<br>she uses it once at your turn and drops it" : ""}</p>`;
       break;
-    case "in":
-      turnstile = (view.left > 0 && !view.held) || (!!view.seal && !view.sealed) || (!!view.admitted && !view.sealed);
+    case "in": {
+      const gate = new Gate(sitekey);
+      turnstile = (view.left > 0 && !view.held) || (!!view.seal && !view.sealed) || (!!view.admitted && !view.sealed && !view.here);
       body = `
       <div class="place">
         <span class="k">${view.rank === null ? "youre in through a friend" : "your spot"}</span>
         <span class="rank" data-count="${view.rank ?? ""}">${view.rank === null ? "in" : `#${view.rank}`}</span>
       </div>
-      ${view.admitted ? when(l, view, sitekey) : ""}
-      ${view.held ? "" : invites(l, view, sitekey)}
-      ${view.admitted ? "" : when(l, view, sitekey)}
+      ${view.admitted ? when(l, view, gate) : ""}
+      ${view.held ? "" : invites(l, view, gate)}
+      ${view.admitted ? "" : when(l, view, gate)}
       ${
         view.admitted
           ? ""
@@ -173,6 +198,7 @@ export function page(l: Launch, total: number, view: View, sitekey: string, icon
       }
       <div class="leave"><a class="quiet" href="/${esc(l.name)}/mine">download my data</a><form method="post" action="/${esc(l.name)}/leave"><button type="submit" class="quiet">leave the list and delete my data</button></form></div>`;
       break;
+    }
     case "closed":
       body = `
       <p class="note">the list is closed for now<br>if someone on it invites you that still works</p>`;

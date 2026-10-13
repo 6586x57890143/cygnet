@@ -217,6 +217,8 @@ test("every page, in the voice", () => {
     forgetting: page(l, 1, { kind: "privacy", controller: "c", contact: "x", forget: true }, "key"),
     forgotten: page(l, 1, { kind: "forgotten" }, "key"),
     turn: page(l, 1, { kind: "in", rank: 3, held: null, released: 0, left: 0, now, invites: [], admitted: true }, "key"),
+    arrived: page(l, 1, { kind: "in", rank: 3, held: null, released: 3, left: 3, now, invites: [], admitted: true, here: true }, "key"),
+    both: page(l, 1, { kind: "in", rank: 3, held: null, released: 3, left: 3, now, invites: [], admitted: true }, "key"),
     adding: page(l, 1, { kind: "in", rank: 3, held: null, released: 0, left: 0, now, invites: [], admitted: true, sealed: true }, "key"),
     held: page(l, 1, { kind: "in", rank: 2, held: "someone on your connection is already on the list", released: 3, left: 3, now, invites: [] }, "key"),
     invited: page(l, 1, { kind: "invited", code: "c", expires: now + 3_600_000, now }, "key"),
@@ -247,6 +249,11 @@ test("every page, in the voice", () => {
   assert.ok(views.turn.indexOf("your way in is ready") < views.turn.indexOf("invites"), "the way in first");
   assert.doesNotMatch(views.turn, /invites go out from the front/);
   assert.match(views.adding, /cygnet is adding you now/);
+  assert.match(views.arrived, /youre in/);
+  assert.doesNotMatch(views.arrived, /your way in is ready/);
+  assert.equal(views.both.match(/class="cf-turnstile"/g)?.length, 1, "one check a page");
+  assert.match(views.both, /<form id="act" method="post" action="\/silcord\/in">/);
+  assert.match(views.both, /<button form="act" formaction="\/silcord\/issue" type="submit">make an invite/);
   assert.match(views.forgetting, /action="\/privacy\/forget">[\s\S]*forget me everywhere/);
   assert.match(views.forgotten, /forgotten you everywhere/);
   assert.doesNotMatch(views.forgotten, /people on the list|coming soon/, "the notice's page, not a launch's");
