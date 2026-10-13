@@ -177,8 +177,8 @@ func (s *Codes) Spend(ctx context.Context, hash []byte, user snowflake.ID, now t
 }
 
 // Arrive records user joining guild at at, caused by the code they spent
-// there and haven't arrived by yet, or untraced if there is none: the
-// cause is read, never guessed. A member already recorded as in keeps
+// there and haven't arrived by yet, or else the launch wave that let them
+// in, or untraced if there is neither: the cause is read, never guessed. A member already recorded as in keeps
 // their row, so a direct add and its gateway event record one join; a code
 // they spent meanwhile is marked arrived, so it isn't pending forever. It
 // returns who vouched for them, or 0.
@@ -208,9 +208,18 @@ func (s *Codes) Arrive(ctx context.Context, guild, user snowflake.ID, at time.Ti
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
-		_, err = tx.Exec(ctx, `insert into joined (guild_id, user_id, at, code, sponsor) values ($1, $2, $3, $4, $5)
-			on conflict (guild_id, user_id) do update set at = excluded.at, code = excluded.code, sponsor = excluded.sponsor, left_at = null`,
-			int64(guild), int64(user), at, hash, sponsor)
+		// No code: a launch's wave that let them in, if one did.
+		var wave *int64
+		if hash == nil {
+			err := tx.QueryRow(ctx, "select l.wave from line l join launch x on x.name = l.launch where x.guild_id = $1 and l.user_id = $2 and l.wave is not null",
+				int64(guild), int64(user)).Scan(&wave)
+			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				return err
+			}
+		}
+		_, err = tx.Exec(ctx, `insert into joined (guild_id, user_id, at, code, sponsor, wave) values ($1, $2, $3, $4, $5, $6)
+			on conflict (guild_id, user_id) do update set at = excluded.at, code = excluded.code, sponsor = excluded.sponsor, wave = excluded.wave, left_at = null`,
+			int64(guild), int64(user), at, hash, sponsor, wave)
 		return err
 	})
 	if err != nil || sponsor == nil {

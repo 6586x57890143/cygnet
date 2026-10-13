@@ -99,6 +99,8 @@ func launches(t *testing.T) *store.Launches {
 		"delete from ledger where launch in (select name from launch where guild_id in (3, 4))",
 		"delete from gone where launch in (select name from launch where guild_id in (3, 4))",
 		"delete from line where launch in (select name from launch where guild_id in (3, 4))",
+		"delete from joined where guild_id in (3, 4)",
+		"delete from wave where launch in (select name from launch where guild_id in (3, 4))",
 		"delete from code where guild_id in (3, 4)",
 		"delete from launch where guild_id in (3, 4)",
 	} {

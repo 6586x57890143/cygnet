@@ -184,26 +184,62 @@ func (m *Module) redeem(ctx context.Context, caller string, body json.RawMessage
 	case err != nil:
 		return nil, err
 	}
-	if ask.Token != "" {
-		err := m.add(ctx, g.ID, user, ask.Token)
+	return m.in(ctx, g, user, ask.Token)
+}
+
+// Let lets user into guild by a cause cygnet already holds, a launch's
+// wave: added with token, their own sign in, or else with a Discord invite
+// only they can take. Someone already in is let through as added; someone
+// banned is refused Banned. launch reaches it through main, as its Door.
+func (m *Module) Let(ctx context.Context, guild, user snowflake.ID, token string) (out Redeemed, err error) {
+	defer func() {
+		if rest.IsJSONErrorCode(err, rest.JSONErrorCodeLackPermissionsToPerformAction) {
+			out, err = Redeemed{}, link.Err(link.Denied, Unready)
+		}
+	}()
+	g, ok := m.guild(guild)
+	if !ok {
+		return Redeemed{}, link.Err(link.Denied, Gone)
+	}
+	mem, err := m.member(ctx, guild, user)
+	if err != nil {
+		return Redeemed{}, err
+	}
+	if mem != nil {
+		m.arrive(ctx, guild, user, m.joined(*mem))
+		return Redeemed{Guild: guild.String(), Added: true}, nil
+	}
+	if _, err := m.discord.Rest().GetBan(guild, user, rest.WithCtx(ctx)); err == nil {
+		return Redeemed{}, link.Err(link.Denied, Banned)
+	} else if !rest.IsJSONErrorCode(err, rest.JSONErrorCodeUnknownBan) {
+		return Redeemed{}, err
+	}
+	return m.in(ctx, g, user, token)
+}
+
+// in lets user into g once their cause is kept: added with token if they
+// gave one Discord takes, or else with an invite only they can take.
+func (m *Module) in(ctx context.Context, g discord.Guild, user snowflake.ID, token string) (Redeemed, error) {
+	if token != "" {
+		err := m.add(ctx, g.ID, user, token)
 		if err == nil {
-			m.arrive(ctx, g.ID, user, now)
+			m.arrive(ctx, g.ID, user, m.now())
 			return Redeemed{Guild: g.ID.String(), Added: true}, nil
 		}
 		switch {
 		case rest.IsJSONErrorCode(err, rest.JSONErrorCodeUserBannedFromGuild):
-			return nil, link.Err(link.Denied, Banned)
+			return Redeemed{}, link.Err(link.Denied, Banned)
 		case rest.IsJSONErrorCode(err, rest.JSONErrorCodeMaximumGuildsReached):
-			return nil, link.Err(link.Denied, Full)
+			return Redeemed{}, link.Err(link.Denied, Full)
 		// A token Discord won't take (expired, revoked, without
 		// guilds.join) leaves the other way in.
 		case !rest.IsJSONErrorCode(err, rest.JSONErrorCodeInvalidOAuth2AccessToken, rest.JSONErrorCodeMissingRequiredOAuth2Scope):
-			return nil, err
+			return Redeemed{}, err
 		}
 	}
 	code, err := m.invite(ctx, g, user)
 	if err != nil {
-		return nil, err
+		return Redeemed{}, err
 	}
 	return Redeemed{Guild: g.ID.String(), Invite: code}, nil
 }

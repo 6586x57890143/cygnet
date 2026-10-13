@@ -151,6 +151,39 @@ func TestRedeemAdds(t *testing.T) {
 	}
 }
 
+// Let is a launch's wave letting someone in: no code, the same two ways.
+func TestLet(t *testing.T) {
+	m, _, f, _ := minted(t)
+	ctx := context.Background()
+	got, err := m.Let(ctx, 3, newcomer, "tok")
+	if err != nil || got != (Redeemed{Guild: "3", Added: true}) || len(f.added) != 1 {
+		t.Fatalf("let with a token: %+v %v, added %v", got, err, f.added)
+	}
+	if got, err := m.Let(ctx, 3, young, ""); err != nil || got.Invite != "onlyyou" {
+		t.Fatalf("let without one: %+v %v", got, err)
+	}
+	if got, err := m.Let(ctx, 3, 50, "tok"); err != nil || !got.Added || len(f.added) != 1 {
+		t.Fatalf("someone already in: %+v %v", got, err)
+	}
+	f.bans[3] = []snowflake.ID{newcomer}
+	if _, err := m.Let(ctx, 3, newcomer, "tok"); !denied(err, Banned) {
+		t.Fatalf("banned: %v", err)
+	}
+	f.bans[3] = nil
+	if _, err := m.Let(ctx, 99, newcomer, "tok"); !denied(err, Gone) {
+		t.Fatalf("a server cygnet isn't in: %v", err)
+	}
+	f.addErr = &rest.Error{Code: rest.JSONErrorCodeLackPermissionsToPerformAction}
+	if _, err := m.Let(ctx, 3, young, "tok"); !denied(err, Unready) {
+		t.Fatalf("cygnet refused: %v", err)
+	}
+	f.addErr = nil
+	f.fail = errors.New("discord down")
+	if _, err := m.Let(ctx, 3, young, "tok"); err == nil {
+		t.Fatal("discord failing, no error")
+	}
+}
+
 func TestRedeemInvites(t *testing.T) {
 	m, s, f, code := minted(t)
 	f.jobs = []discord.TargetUsersJobStatusCode{discord.TargetUsersJobStatusCodeProcessing, discord.TargetUsersJobStatusCodeProcessing}
