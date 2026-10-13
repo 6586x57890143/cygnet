@@ -24,7 +24,10 @@
     "TURNSTILE_SITEKEY": "0x4AAAAAAFTug37RCCpuOI3k",
     // The Scaleway project Transactional Email bills; its secret key is
     // SCW_SECRET_KEY, a secret.
-    "SCW_PROJECT_ID": "64f0e035-b3dd-41ac-a0c9-2d066bac57e6"
+    "SCW_PROJECT_ID": "64f0e035-b3dd-41ac-a0c9-2d066bac57e6",
+    // cygnet's public key for sealed sign ins (go run ./tools/sealkey): its
+    // private half is her CYGNET_SEAL_KEY. Public, so a var.
+    "CYGNET_SEAL_PUBLIC": "1InjX3MGA5WJd_9dwkOcHg2ZkpP8NMboSaCfHbxQ234"
   },
   // Off: a request's URL can hold an invite code, and logs keep URLs.
   "observability": { "enabled": false }
