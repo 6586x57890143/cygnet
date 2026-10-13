@@ -34,7 +34,8 @@ export type View =
   | { kind: "error"; why: string }
   | { kind: "list"; rows: Row[] }
   | { kind: "home" }
-  | { kind: "privacy"; controller: string; contact: string };
+  | { kind: "privacy"; controller: string; contact: string; forget?: boolean }
+  | { kind: "forgotten" };
 
 // esc escapes text for HTML; lines also turns each line into its own.
 // Row is one member as the list shows them to the launch's owner.
@@ -220,7 +221,18 @@ export function page(l: Launch, total: number, view: View, sitekey: string, icon
       <a class="again" href="/${esc(l.name)}">back to your spot</a>`;
       break;
     case "privacy":
-      body = notice(view.controller, view.contact);
+      turnstile = !!view.forget;
+      body =
+        notice(view.controller, view.contact) +
+        (view.forget
+          ? `
+      <form method="post" action="/privacy/forget">${widget(sitekey)}<button class="quiet" type="submit">forget me everywhere</button></form>
+      <p class="fine">you sign in with discord so cygnet knows its you<br>she takes you off every list and wherever your id stood it becomes a keyed hash<br>who you brought in stays under that hash</p>`
+          : "");
+      break;
+    case "forgotten":
+      body = `
+      <p class="note ok">done<br>cygnet has forgotten you everywhere<br>who you brought in stays under a name that isnt yours</p>`;
       break;
     case "list":
       body = list(l, view.rows);
@@ -326,10 +338,10 @@ function notice(controller: string, contact: string): string {
     ${row("when you leave", "your entry is deleted at once<br>where you invited someone your id is replaced by a keyed hash so the invite tree still adds up<br>the step record keeps that hash until the launch data is deleted")}
     ${row("cookies", "only ones that keep you signed in and in the middle of a step<br>your browser also remembers your theme and how grown the swan is<br>no analytics no tracking so there is nothing to consent to")}
     ${row("add me when it opens", "if you ask to be added when the server opens your discord sign in is kept locked to cygnets own key<br>this site cant open it again<br>cygnet opens it once at your turn to add you and then drops it<br>never mind on your page drops it right away")}
-    ${row("links into a server", "a link someone made with cygnet in discord lets one person into their server<br>you sign in with discord so cygnet knows who you are and nothing else<br>if you let cygnet add you your discord token is used once to add you and then dropped<br>otherwise she makes a discord invite only you can use for 5 minutes<br>cygnet keeps your discord id with the link you came in by and when you joined and left so the server can see who brought whom<br>for as long as cygnet keeps that server or until you write to us to have it removed")}
+    ${row("links into a server", "a link someone made with cygnet in discord lets one person into their server<br>you sign in with discord so cygnet knows who you are and nothing else<br>if you let cygnet add you your discord token is used once to add you and then dropped<br>otherwise she makes a discord invite only you can use for 5 minutes<br>cygnet keeps your discord id with the link you came in by and when you joined and left so the server can see who brought whom<br>for as long as cygnet keeps that server or until you ask her to forget you below")}
     ${row("who sees the list", "the server owner and cygnets admin can see the list after signing in with discord<br>they see discord ids your place who invited you and any hold<br>never your email or ip")}
     ${row("decisions", "nothing is decided about you by profiling<br>a second sign up from the same connection only holds invites until a person looks")}
-    ${row("your rights", "see and download your data from your page<br>delete it by leaving the list<br>object to or ask to limit anything here or correct it by writing to us<br>complain to the data protection authority where you live")}
+    ${row("your rights", "see and download your data from your page<br>delete it by leaving the list or with forget me everywhere below<br>object to or ask to limit anything here or correct it by writing to us<br>complain to the data protection authority where you live")}
   </div>`;
 }
 

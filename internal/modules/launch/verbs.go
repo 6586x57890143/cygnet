@@ -96,7 +96,7 @@ type Row struct {
 func (m *Module) Verbs() map[string]func(context.Context, string, json.RawMessage) (any, error) {
 	return map[string]func(context.Context, string, json.RawMessage) (any, error){
 		"join": m.join, "place": m.place, "issue": m.issue, "revoke": m.revoke, "vouch": m.vouch,
-		"leave": m.leave, "mine": m.mine, "list": m.list, "lift": m.lift, "seal": m.seal, "admit": m.admit,
+		"leave": m.leave, "mine": m.mine, "list": m.list, "lift": m.lift, "seal": m.seal, "admit": m.admit, "forget": m.forget,
 	}
 }
 
@@ -243,6 +243,17 @@ func (m *Module) leave(ctx context.Context, caller string, body json.RawMessage)
 		return nil, err
 	}
 	return map[string]bool{}, m.store.Leave(ctx, a.Launch, user, m.now())
+}
+
+// forget is cygnet.forget: user forgotten everywhere cygnet knows them,
+// every launch and every server (store.Forget), asked for on cygnet.lol's
+// privacy page after a Discord sign in.
+func (m *Module) forget(ctx context.Context, caller string, body json.RawMessage) (any, error) {
+	_, user, err := m.read(caller, body)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]bool{"forgotten": true}, m.store.Forget(ctx, user, m.now())
 }
 
 // mine is cygnet.mine: everything cygnet keeps about user in a launch, for

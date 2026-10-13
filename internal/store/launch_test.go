@@ -414,3 +414,59 @@ func TestSealIsKeptUntilTheyAreIn(t *testing.T) {
 		t.Fatalf("history %+v", h)
 	}
 }
+
+func TestForgetLeavesNothingThatNamesThem(t *testing.T) {
+	s, pool := launches(t, "fgt", 915)
+	ctx := context.Background()
+	line(t, s, "fgt", 1, 121)
+	_ = s.Issue(ctx, "fgt", hash("fgt0"), 121, t0, t0.Add(time.Hour))
+	if _, err := s.Vouch(ctx, hash("fgt0"), 122, "", t0); err != nil {
+		t.Fatal(err)
+	}
+	// A server link of theirs, used and unused, and joins either way.
+	c := &Codes{pool}
+	_ = c.Mint(ctx, hash("fgt1"), 915, 121, t0, t0.Add(time.Hour), -1)
+	_ = c.Mint(ctx, hash("fgt2"), 915, 121, t0, t0.Add(time.Hour), -1)
+	if _, err := c.Spend(ctx, hash("fgt1"), 123, t0); err != nil {
+		t.Fatal(err)
+	}
+	for _, u := range []int64{121, 123} {
+		if _, err := c.Arrive(ctx, 915, snowflakeOf(u), t0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.Forget(ctx, 121, t0); err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		"select count(*) from line where user_id = 121",
+		"select count(*) from code where owner_id = 121 or spent_by = 121",
+		"select count(*) from joined where user_id = 121 or sponsor = 121",
+	} {
+		var n int
+		if err := pool.QueryRow(ctx, q).Scan(&n); err != nil || n != 0 {
+			t.Fatalf("%s: %d %v", q, n, err)
+		}
+	}
+	tree, _ := c.Tree(ctx, 915)
+	if len(tree) != 2 {
+		t.Fatalf("tree %+v", tree)
+	}
+	for _, j := range tree {
+		if j.User == 123 && (!Forgotten(j.Sponsor) || int64(j.Sponsor) != Pseudonym(s.Who(121))) {
+			t.Fatalf("123's sponsor is %d", int64(j.Sponsor))
+		}
+	}
+	if left, _ := c.Find(ctx, hash("fgt2")); left.Revoked.IsZero() {
+		t.Fatal("their unused link wasn't taken back")
+	}
+	if p, _ := s.Where(ctx, "fgt", 122, t0); !Forgotten(p.Sponsor) {
+		t.Fatal("the invitee's sponsor still names them")
+	}
+	if v, _ := s.Verify(ctx, "fgt"); v.Broken != 0 || len(v.Mismatches) != 0 {
+		t.Fatalf("verify after forgetting: %+v", v)
+	}
+	if err := s.Forget(ctx, 121, t0); err != nil {
+		t.Fatalf("forgetting twice: %v", err)
+	}
+}

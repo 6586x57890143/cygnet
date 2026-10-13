@@ -64,7 +64,7 @@ interface Env {
   CYGNET_SEAL_PUBLIC?: string;
 }
 
-type Purpose = "join" | "issue" | "redeem" | "list" | "server" | "admit";
+type Purpose = "join" | "issue" | "redeem" | "list" | "server" | "admit" | "forget";
 
 const api = "https://discord.com/api/v10";
 // stay is how long the page remembers who you are.
@@ -136,6 +136,7 @@ export default {
       if (first === "v" && second) return await confirm(req, env, second);
       if (first === "admin") return await admin(req, env, second, third);
       if (first === "privacy" && !second) return await privacy(env);
+      if (first === "privacy" && second === "forget" && req.method === "POST") return await human(req, env, privacyPage(env), () => oauth(env, url, "forget", launches.silcord));
       if (first === "bird" && second && !third && req.method === "GET") return await birdArt(env, second);
       if (!first && req.method === "GET") return await home(env);
       if (!l) return new Response("nothing here", { status: 404, headers: secure(text) });
@@ -214,7 +215,7 @@ async function oauth(env: Env, url: URL, purpose: Purpose, l: Launch, invite = "
     response_type: "code",
     redirect_uri: `https://${url.host}/auth/discord`,
     // The list needs only who you are; everything else needs your email.
-    scope: purpose === "list" ? "identify" : purpose === "admit" ? (invite === "add" ? "identify guilds.join" : "identify") : invite === "seal" ? "identify email guilds.join" : "identify email",
+    scope: purpose === "list" || purpose === "forget" ? "identify" : purpose === "admit" ? (invite === "add" ? "identify guilds.join" : "identify") : invite === "seal" ? "identify email guilds.join" : "identify email",
     state: nonce,
     prompt: "none",
   }).toString();
@@ -381,6 +382,13 @@ async function callback(req: Request, env: Env, ctx: ExecutionContext, url: URL)
     return html(env, l, { kind: "error", why: say.discordWho }, 502);
   }
   const user = await me.json<{ id: string; email?: string | null; verified?: boolean }>();
+  // Forget me everywhere: cygnet first, then what the Worker keeps.
+  if (purpose === "forget") {
+    const r = await ask(env, "cygnet.forget", { user: user.id });
+    if (!r.ok) return html(env, privacyPage(env), { kind: "error", why: say.broke }, 502);
+    await store(env).dropEverywhere(user.id);
+    return html(env, privacyPage(env), { kind: "forgotten" });
+  }
   if (purpose === "admit") {
     try {
       if ((await who(req, env, l)) !== user.id) return html(env, l, { kind: "error", why: say.otherAccount }, 403);
@@ -608,10 +616,13 @@ async function home(env: Env): Promise<Response> {
   return html(env, { name: "cygnet", title: "cygnet", line: "we keep the quiet places\nlit from below like water at dusk\nand let you in by name", minAgeDays: 30, icon: "/art/cygnet.png" }, { kind: "home" });
 }
 
-// privacy is the full privacy notice, for every launch.
+// privacyPage is the page the notice and forgetting are on.
+const privacyPage = (_env: Env): Launch => ({ ...launches.silcord, title: "privacy" });
+
+// privacy is the full privacy notice, for every launch, and the way to be
+// forgotten everywhere.
 async function privacy(env: Env): Promise<Response> {
-  const l = launches.silcord;
-  return html(env, { ...l, title: "privacy" }, { kind: "privacy", controller: env.CONTROLLER || "the people running cygnet.lol", contact: env.CONTACT || "privacy@cygnet.lol" });
+  return html(env, privacyPage(env), { kind: "privacy", controller: env.CONTROLLER || "the people running cygnet.lol", contact: env.CONTACT || "privacy@cygnet.lol", forget: hubOf(env) !== null });
 }
 
 async function revoke(req: Request, env: Env, l: Launch): Promise<Response> {
