@@ -137,6 +137,14 @@ func TestVerbs(t *testing.T) {
 		t.Fatalf("list after a leave: %v %v", got, err)
 	}
 
+	// Forgotten everywhere: off the list, and named nowhere.
+	if got, err := ask(t, m, "forget", map[string]any{"user": "13"}); err != nil || got["forgotten"] != true {
+		t.Fatalf("forget: %v %v", got, err)
+	}
+	if _, err := ask(t, m, "place", with("user", "13")); !denied(err, NotOnList) {
+		t.Fatalf("still on the list: %v", err)
+	}
+
 	// Who may ask, and how.
 	b, _ := json.Marshal(l)
 	if _, err := m.join(ctx, "skua", b); !errors.Is(err, link.Err(link.Denied)) {

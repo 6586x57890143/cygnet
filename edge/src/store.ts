@@ -117,6 +117,15 @@ export class Store {
     ]);
   }
 
+  // dropEverywhere forgets user's sign up for every launch, and any link
+  // they were sent.
+  async dropEverywhere(user: string): Promise<void> {
+    await this.db.batch([
+      this.db.prepare("DELETE FROM challenge WHERE user = ?1").bind(user),
+      this.db.prepare("DELETE FROM signup WHERE user = ?1").bind(user),
+    ]);
+  }
+
   // total is how many signed up for l, for its page.
   async total(l: Launch): Promise<number> {
     return (await this.db.prepare("SELECT COUNT(*) AS n FROM signup WHERE launch = ?1").bind(l.name).first<{ n: number }>())?.n ?? 0;

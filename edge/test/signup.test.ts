@@ -171,6 +171,19 @@ test("a link: sent, rate limited, clicked, used once", async () => {
   assert.equal(await s.waiting("id6", t0), null);
 });
 
+test("forgotten everywhere: every launch's sign up and link", async () => {
+  const { sql, s } = fresh();
+  await s.keep(l, "1", h("1"), t0);
+  await s.keep({ ...l, name: "wren" }, "1", h("9"), t0);
+  await s.keep(l, "2", h("2"), t0);
+  await s.challenge({ id: "c", link: "k", launch: "wren", user: "1", purpose: "issue", made: t0, expires: t0 + 1000, email: "E" }, 5);
+  await s.dropEverywhere("1");
+  for (const table of ["signup", "challenge"]) {
+    assert.ok(!sql.prepare(`SELECT * FROM ${table}`).all().some((r) => (r as { user: string }).user === "1"), table);
+  }
+  assert.ok(await s.signup(l, "2"));
+});
+
 test("the email budget can't be overspent, in any window", async () => {
   const { s } = fresh();
   const d = 86_400_000;
@@ -201,6 +214,8 @@ test("every page, in the voice", () => {
     sealOffered: page(l, 1, { kind: "open", seal: true }, "key"),
     sealable: page(l, 1, { kind: "in", rank: 3, held: null, released: 0, left: 0, now, invites: [], seal: true }, "key"),
     sealed: page(l, 1, { kind: "in", rank: 3, held: null, released: 0, left: 0, now, invites: [], seal: true, sealed: true }, "key"),
+    forgetting: page(l, 1, { kind: "privacy", controller: "c", contact: "x", forget: true }, "key"),
+    forgotten: page(l, 1, { kind: "forgotten" }, "key"),
     turn: page(l, 1, { kind: "in", rank: 3, held: null, released: 0, left: 0, now, invites: [], admitted: true }, "key"),
     adding: page(l, 1, { kind: "in", rank: 3, held: null, released: 0, left: 0, now, invites: [], admitted: true, sealed: true }, "key"),
     held: page(l, 1, { kind: "in", rank: 2, held: "someone on your connection is already on the list", released: 3, left: 3, now, invites: [] }, "key"),
@@ -232,6 +247,9 @@ test("every page, in the voice", () => {
   assert.ok(views.turn.indexOf("your way in is ready") < views.turn.indexOf("invites"), "the way in first");
   assert.doesNotMatch(views.turn, /invites go out from the front/);
   assert.match(views.adding, /cygnet is adding you now/);
+  assert.match(views.forgetting, /action="\/privacy\/forget">[\s\S]*forget me everywhere/);
+  assert.match(views.forgotten, /forgotten you everywhere/);
+  assert.doesNotMatch(views.forgotten, /people on the list|coming soon/, "the notice's page, not a launch's");
   assert.doesNotMatch(views.adding, /action="\/silcord\/in"/);
   assert.match(views.mine, /#7/);
   assert.match(views.mine, /aria-label="2 of 3 left"/);

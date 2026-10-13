@@ -457,6 +457,42 @@ func (s *Launches) Leave(ctx context.Context, name string, user snowflake.ID, no
 	})
 }
 
+// Forget forgets user everywhere cygnet knows them: off every launch's
+// list (each a Leave, in its own ledger), every unused link of theirs taken
+// back, and wherever their ID stood in a code or a join, in any server,
+// their Pseudonym. Who they brought in, and that they came, stay as the
+// record of who vouched for whom, naming nobody.
+func (s *Launches) Forget(ctx context.Context, user snowflake.ID, now time.Time) error {
+	rows, _ := s.pool.Query(ctx, "select launch from line where user_id = $1", int64(user))
+	names, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return err
+	}
+	for _, name := range names {
+		if err := s.Leave(ctx, name, user, now); err != nil {
+			return err
+		}
+	}
+	p := Pseudonym(s.Who(user))
+	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		for _, q := range []struct {
+			sql string
+			arg any
+		}{
+			{"update code set revoked = $2 where owner_id = $1 and spent_by is null and revoked is null", now},
+			{"update code set owner_id = $2 where owner_id = $1", p},
+			{"update code set spent_by = $2 where spent_by = $1", p},
+			{"update joined set sponsor = $2 where sponsor = $1", p},
+			{"update joined set user_id = $2 where user_id = $1", p},
+		} {
+			if _, err := tx.Exec(ctx, q.sql, int64(user), q.arg); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 // Mark is one ledger entry about someone, as they may read it: what
 // happened, when, and whether they did it.
 type Mark struct {
