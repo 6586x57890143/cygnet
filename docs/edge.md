@@ -1,9 +1,33 @@
 # The edge Worker
 
 `edge/` is `cygnet.lol`: a launch's page (`/silcord`), its sign in with Discord, the
-invites its members give, and the list and ledger it keeps in D1, and the page behind
+invites its members give and take, the way in when their turn comes, and the page behind
 every link a member makes with `/invite`. It holds no bot token, opens nothing on
 foundry, and emails only the one link a person asks for.
+
+**cygnet owns the list.** A launch's line, its invites, the waves that let it in and the
+ledger of all of it live in cygnet's Postgres (`internal/store`, migration 005). The
+Worker asks her for them as the bird `edge`, with `POST /v1/call` on her hub through the
+tunnel (below), and keeps in D1 only what a sign up needs: the keyed hashes that stop
+one person signing up twice, the emailed links that prove an address, the email budget,
+the birds in the footer, and what cygnet sends for each launch's page (its server's name
+and picture, who may see its list, its stage and when it first opened).
+
+| Verb | What the Worker asks |
+|---|---|
+| `cygnet.code` | whether a link works: a server's (its name, who it's from) or a launch's |
+| `cygnet.redeem` | a server's link spent, and the person let in |
+| `cygnet.join`, `cygnet.place` | onto a launch's list; where someone stands |
+| `cygnet.issue`, `cygnet.revoke` | an invite kept by its hash (the Worker makes the code); taken back |
+| `cygnet.vouch` | an invite spent, and its taker put on the list under its giver |
+| `cygnet.seal` | a sign in sealed to cygnet for *add me when it opens*, or dropped |
+| `cygnet.admit` | someone a wave let in, added or given an invite only they can take |
+| `cygnet.leave`, `cygnet.mine`, `cygnet.forget` | off a list; everything kept about them; forgotten everywhere |
+| `cygnet.list`, `cygnet.lift` | the list and its holds, for the server's owner and the breakglass admin |
+
+Each refusal is `denied` with a reason the Worker says in its own words. A join goes to
+cygnet first and the hashes are kept after; someone signed up here she doesn't know is
+put on her list when they next sign in.
 
 ## Links into a server
 
@@ -12,8 +36,8 @@ server cygnet keeps. cygnet keeps the code (its SHA-256, in Postgres); the Worke
 asks her, as the bird `edge`, with `POST /v1/call` on her hub through the tunnel (below).
 
 1. The page asks `cygnet.code {code}` (the hash) for whether the link still works, the
-   server's name and picture, who it's from and how long it has left. A code D1 knows is
-   a launch's invite, and goes the launch's way instead.
+   server's name and picture, who it's from and how long it has left. A launch's invite
+   says so, and goes the launch's way instead.
 2. **take me in** passes Turnstile and goes to Discord with `identify guilds.join`;
    **send me an invite instead** with `identify` alone.
 3. Back at `/auth/discord`, the Worker reads who they are and asks
@@ -37,29 +61,30 @@ when they joined and left, which is the tree.
 3. They need a verified email on their Discord account, and an account at least
    `minAgeDays` (30) old. One place per account and per email (lowercased, `+tag`
    dropped, Gmail dots dropped).
-4. Their email, connection (IPv4 address or IPv6 /64), network (/24 or /48) and area
-   (country and a half degree square) are stored as HMACs under `HMAC_KEY`. A second
-   person on the same connection, or the same network in the same area, gets a place
-   with their invites held for an admin (`held` says why).
+4. cygnet gives them the next place (`cygnet.join`). Their email, connection (IPv4
+   address or IPv6 /64), network (/24 or /48) and area (country and a half degree
+   square) are kept in D1 as HMACs under `HMAC_KEY` (`signup`). A second person on the
+   same connection, or the same network in the same area, gets a place with their
+   invites held for an admin (`held` says why).
 5. A signed cookie (`cy_silcord`, 30 days) shows them their place after that.
 
 ## Invites, and the tree they make
 
-- **Released, not reserved.** An admin releases a contingent to the front of the line:
-  `POST /admin/silcord/release {"count": 100, "invites": 3}` gives 3 each to the first
-  100 people in line who have none and aren't held.
+- **Released, not reserved.** An admin releases a contingent to the front of the line
+  from `/launch`: 3 invites each to the next people in line who have none and aren't
+  held.
 - **Issued with a proof.** `make an invite` takes a fresh Discord sign in (the same
   account, the same email as when they joined) and a proof of the email (below). Only
-  then is a code made: 20 random bytes, shown once as `cygnet.lol/i/<code>`, stored as
-  its SHA-256, good for 48 hours. An invite nobody took is back with its issuer when
-  it runs out, or when they take it back.
+  then is a code made: 20 random bytes, shown once as `cygnet.lol/i/<code>`. cygnet
+  keeps its SHA-256 (`cygnet.issue`), good for 48 hours. An invite nobody took is back
+  with its issuer when it runs out, or when they take it back.
 - **Taken with a proof.** The person it's for signs in with Discord (verified email,
-  30 days old, not on the list, not the issuer) and proves their email. Spending the
-  invite and putting them on the list under its issuer are one D1 batch, so an invite
-  is spent once, and only by someone who got in.
-- **The tree.** Every member who came in through an invite has a `sponsor`. Leaving
-  takes back a member's unspent invites but keeps whoever they brought in under them:
-  the tree is the record of who vouched for whom. `GET /admin/silcord/tree` reads it.
+  30 days old, not on the list) and proves their email. Then `cygnet.vouch` spends the
+  invite and puts them on the list under its issuer in one transaction, so an invite is
+  spent once, and only by someone who got in. Sent again, it answers the same.
+- **The tree.** Every member who came in through an invite hangs from whoever gave it.
+  Leaving takes back a member's unspent invites but keeps whoever they brought in under
+  them, under a name that isn't theirs: the tree is the record of who vouched for whom.
 
 ## Proving an email with a link
 
@@ -85,21 +110,35 @@ Turnstile, static assets) runs on Cloudflare's free plan.
 
 ## Running a campaign
 
-In the launch's server, an admin runs `/launch`. cygnet asks the Worker which launch
-the server has and shows its panel: how many are on the list and held, in line and
-waiting, how many have invites and how many invites were made, used and still open.
+In the launch's server, an admin runs `/launch`. The first time, they name its page, and
+cygnet registers the launch in Postgres and sends the Worker what the page shows. After
+that the panel is the campaign: how many are on the list and held, in line and waiting,
+how many have invites and how many invites were made, used and still open, and
+`ledger ✓ n entries` from a walk of the ledger.
 
 - **Stages**, one button each: **gathering** (anyone can get on the list), **closed** (no
-  new sign ups; invites already out still work) and **open** (the server is open; the
-  page says so and invites still bring friends in). The first time it opens starts the
-  12 month clock on deleting the launch's data.
+  new sign ups; invites already out still work) and **open** (the valve lets the line
+  in; invites still bring friends in). The first time it opens starts the 12 month
+  clock on deleting the launch's list.
 - **Releases**: *release to next 10* and *next 50* give 3 invites each to the next people
   in line who have none and aren't held.
+- **The valve**: a ceiling (5 to 100 joins a minute) and a pause. Once open, each minute
+  cygnet lets in whoever followed someone already in, and once the last wave has settled
+  opens the next: the next people waiting on their own, by place, with everyone they
+  brought in. The first wave is five minutes of joins at the ceiling; then it doubles
+  when joins stayed under half the ceiling and skua says the server isn't busier than
+  twice usual, halves when joins went over, and holds otherwise (SPEC.md, experiment 6).
+  The panel shows the last wave and why it was that size.
+- **Their way in.** Someone who asked to be added when it opens is added by cygnet with
+  the sign in they sealed to her (below). Anyone else finds their way in on their page
+  when their wave comes: **take me in** (cygnet adds them with a fresh sign in) or **send
+  me an invite instead** (one only they can use, for five minutes).
 
-The same lives on the Worker's admin API, with `ADMIN_TOKEN` as a bearer:
-`GET /admin/<launch>` (the numbers), `POST /admin/<launch>/stage {"stage": "closed"}`,
-`POST /admin/<launch>/release {"count": 10, "invites": 3}`, `POST /admin/<launch>/lift
-{"user": "<discord id>"}`, `GET /admin/<launch>/tree` and `GET /admin/verify`.
+The list itself is on the web at `/<launch>/list`, behind a Discord sign in, for the
+server's owner and cygnet's breakglass admin, who can lift a hold there.
+
+The Worker's admin API, with `ADMIN_TOKEN` as a bearer, is now only what cygnet sends it:
+`PUT /admin/<launch>` (the page) and `PUT /admin/bird/<name>` (the footer).
 
 ## The flock in the footer
 
@@ -115,6 +154,17 @@ Worker keeps the last one per bird (`bird`, migration 0003) and serves it at
 bird seen in the last day is shown, cygnet first and the rest in the order they first
 linked, so a deploy doesn't make one blink out. When merlin links, merlin appears.
 
+## Add me when it opens
+
+Someone on a launch's list can ask to be added when it opens, when they join or later
+from their page. Their sign in then asks Discord for `guilds.join` too, and the Worker
+seals the refresh token to cygnet's public key (`CYGNET_SEAL_PUBLIC`): HPKE, RFC 9180 base
+mode with DHKEM(X25519, HKDF-SHA256), HKDF-SHA256 and AES-128-GCM (`src/seal.ts`, held to
+the RFC's own vectors). The Worker can't open it again; cygnet keeps it sealed, opens it
+once at their wave, refreshes it with the app's secret, adds them, and gives the grant
+back. **never mind and drop it** on their page forgets it at once. A sign in that no
+longer adds them is dropped, and their page shows their way in instead.
+
 ## GDPR, by design
 
 - **Notice:** a compact one under every card, and the full one at `/privacy`: who's
@@ -123,14 +173,17 @@ linked, so a deploy doesn't make one blink out. When merlin links, merlin appear
   long, the rights, and that nothing is decided by profiling. The voice test holds it to
   the page's voice.
 - **Access and portability:** `/<launch>/mine` downloads everything kept about the person
-  signed in, as JSON, ledger entries included.
-- **Erasure:** leaving deletes their row at once, and wherever their Discord ID stood in
-  someone else's record (an invite, a sponsor) it becomes the keyed hash the ledger knows
-  them by, `h:`. The ledger keeps that hash, for the tree's tamper evidence, until the
-  launch's data goes.
+  signed in, as JSON: cygnet's record (`cygnet.mine`, ledger entries included) and which
+  hashes the Worker keeps.
+- **Erasure:** leaving takes them off cygnet's list and deletes their sign up here.
+  Wherever their Discord ID stood in someone else's record (an invite, a sponsor) it
+  becomes their pseudonym, a negative ID derived from the keyed hash the ledger knows
+  them by. **forget me everywhere** on `/privacy` does the same across every launch and
+  every server cygnet keeps (`cygnet.forget`): their links, their joins and who they
+  brought in.
 - **Storage limitation:** network and area hashes go after 30 days, email hashes 30 days
-  after launch, and a launch's whole list, invites and ledger 12 months after it opens
-  (`keepList`); each launch's ledger chains on its own so it can go alone.
+  after launch, and a launch's whole list, unused invites and ledger 12 months after it
+  opens: cygnet's daily sweep (`store.Expire`) and the Worker's cron.
 - **Cookies:** only the ones a sign in and a step in progress need, and local storage for
   the theme and the swan: nothing to consent to, so no banner.
 - **Who:** `CONTROLLER` and `CONTACT` are set as secrets at deploy, so no name is in the
@@ -139,23 +192,26 @@ linked, so a deploy doesn't make one blink out. When merlin links, merlin appear
 
 ## The ledger
 
-Every join, release, lift, issue, revoke, redeem and leave is appended to `ledger`, in
-the same batch as the change it records. Each entry's MAC is keyed over the one before
-it, so an entry changed, dropped or inserted breaks the chain from there on, and
-triggers refuse any `UPDATE` or `DELETE`. `GET /admin/verify` walks the chain, then
-checks that each member's released invites and each issuer's invites match what the
-ledger says happened, so a grant made around the code shows up too. Actors and subjects
-are keyed hashes of Discord IDs.
+Every join, stage, release, lift, issue, revoke, redemption, seal, admission and leave is
+appended to cygnet's `ledger` in the same transaction as the change it records. Each
+entry's MAC (HMAC-SHA256 under `CYGNET_LEDGER_KEY`) is keyed over the one before it in its
+launch, so an entry changed, dropped or inserted breaks the chain from there on, and a
+trigger refuses any `UPDATE` or `DELETE` until the launch's list is gone. `/launch` walks
+the chain each time it opens, then checks that each person's released invites and each
+issuer's invites match what the ledger says happened, so a grant made around the code
+shows up too. Actors and subjects are keyed hashes of Discord IDs.
 
 ## What is kept, and for how long
 
-| | Kept as | Until |
-|---|---|---|
-| Discord ID, place, sponsor | plain | they leave (as a sponsor, in their invitees' rows) |
-| email | HMAC | 30 days after the launch opens |
-| connection, network, area | HMAC | 30 days after they joined |
-| invite codes, proof tokens | SHA-256 | invites stay as the tree's record; proofs go with the daily cron |
-| the address a link is sent to | not kept | used for the send, shown masked from a cookie |
+| | Kept as | Where | Until |
+|---|---|---|---|
+| Discord ID, place, who brought them in, invites released | plain | cygnet | they leave (as a sponsor, as a pseudonym) |
+| a sealed sign in | HPKE ciphertext | cygnet | their wave, or never mind |
+| email | HMAC | the Worker | 30 days after the launch opens |
+| connection, network, area | HMAC | the Worker | 30 days after they joined |
+| invite codes | SHA-256 | cygnet | the launch's list goes; the ones someone came in by stay as the server's tree |
+| proof tokens | SHA-256 | the Worker | the daily cron |
+| the address a link is sent to | not kept | | used for the send, shown masked from a cookie |
 
 Worker logs are off (`observability`): a URL can hold an invite code.
 
@@ -212,9 +268,11 @@ On the Cloudflare account that holds `cygnet.lol` (the free plan is enough):
    ledger's chain unverifiable, so set it once.
 6. `npm run deploy` applies the migrations and deploys to the `cygnet.lol` custom
    domain.
-7. On foundry, in `~/cygnet/.env`: `CYGNET_EDGE_URL=https://cygnet.lol` and
-   `CYGNET_EDGE_TOKEN` set to the same value as the Worker's `ADMIN_TOKEN`, then restart
-   cygnet. In the launch's server, run `/launch` and name its page `silcord`: cygnet reads the
+7. On foundry, in `~/cygnet/.env`: `CYGNET_EDGE_URL=https://cygnet.lol`,
+   `CYGNET_EDGE_TOKEN` set to the same value as the Worker's `ADMIN_TOKEN`,
+   `CYGNET_LEDGER_KEY` (`openssl rand -base64 32`, set once), `CYGNET_CLIENT_SECRET` (the
+   Worker's `DISCORD_CLIENT_SECRET`), and `CYGNET_SEAL_KEY` from `go run ./tools/sealkey`,
+   whose `CYGNET_SEAL_PUBLIC` goes in `wrangler.jsonc`'s `vars`. Then restart cygnet. In the launch's server, run `/launch` and name its page `silcord`: cygnet reads the
    server's name and picture with its own token and registers them, and keeps them current.
    Any server can launch this way; a name the code doesn't know gets the default line.
 8. Before announcing it: one real link each to Gmail, Outlook and a custom domain, to

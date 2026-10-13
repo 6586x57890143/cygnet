@@ -208,7 +208,7 @@ about activity.
 | Discord | `disgoorg/disgo` v0.19, zstd-stream gateway, every cache off except guilds; intents `GUILDS`, `GUILD_MEMBERS`, `GUILD_INVITES`, `GUILD_SCHEDULED_EVENTS`, `GUILD_VOICE_STATES` |
 | Database | Postgres 18 via `pgx/v5`; migrations compiled in. Required once membership lands |
 | Hub | WebSocket on the private `fleet` Docker network. An off-host bot comes in through a Cloudflare Tunnel whose hostname answers only to an Access service token; foundry opens no port |
-| Edge | `cygnet.lol`: a Cloudflare Worker with D1 (launch lists) and Turnstile, OG card images drawn at the edge. Worker to cygnet goes through the same tunnel and Access |
+| Edge | `cygnet.lol`: a Cloudflare Worker with D1 (sign up hashes, email proofs, a read model of each launch's page) and Turnstile, OG card images drawn at the edge. cygnet's Postgres owns the lists; Worker to cygnet goes through the same tunnel and Access |
 | Build | Go 1.27.2, `CGO_ENABLED=0 -trimpath -s -w`, distroless nonroot, PGO when present |
 | Deploy | as skua: CI image to GHCR, foundry pulls by SHA; `scripts/deploy.sh` by hand |
 
@@ -221,7 +221,7 @@ about activity.
 | 3 | Code spend under a race: 1000 concurrent redemptions of one code, exactly one wins, and the cost of the conditional `UPDATE` | done: 1000 concurrent spends of one code, one wins, all answered in 226 ms through a 12 connection pool (`TestSpendRaceHasOneWinner`). A winning spend, one conditional `UPDATE` and its commit, takes 1.6 ms; a losing one, which reads why, 1.8 ms (`go test ./internal/store -bench Spend`). Postgres 18 in Docker Desktop on Windows, where the commit's WAL flush is most of it |
 | 4 | Invites restricted to chosen users by Discord itself, if the API offers it, against cygnet's own one-use binding | answered: the API restricts an invite to listed users (`target_users_file`, after a job cygnet waits on), so the fallback invite is theirs alone and attribution needs no binding of cygnet's |
 | 5 | The unfurl: an OG card drawn in the Worker against one pre-drawn per code, time to first byte and Discord's cache behaviour | open |
-| 6 | Wave sizing: the valve's rule replayed against a recorded launch, joins a minute held under a ceiling with no idle gap | open |
+| 6 | Wave sizing: the valve's rule replayed against a recorded launch, joins a minute held under a ceiling with no idle gap | rule built, replayed against a modelled launch (`replay_test.go`: 2000 in line, ceiling 10). Read as the trailing rate when a wave settled, joins doubled too eagerly and peaked at 28 a minute; read as the wave's peak, with a wave settled once its rush passed, everyone was in by minute 311, never past 8 a minute, waves at most 7 minutes apart. A recorded launch is still to replay |
 
 ## Milestones
 
@@ -231,7 +231,7 @@ about activity.
 | 1 | `internal/hub` and the public `link` module: hello, calls, events, deadlines, backpressure, goaway, manifests; the fleet on `/status`; skua linked | done; skua linked in production |
 | 2 | `/provision`: compiled-in layouts applied by diff with a preview, the live install card from each bird's manifest, role order, onboarding; drift cards at `watch`, `propose` or `act` | done: the `/provision` panel, with the live fleet card, the layout preview (role colours, a confirmed fresh start, onboarding) and the drift mode, with drift reports |
 | 3 | Codes: `/invite` (in the server and user-installed), the Worker's redemption page, direct add with the one-use invite fallback, attribution, the tree | done and live: `/invite` (in the server and from a DM) and its allowance, `cygnet.lol/i/<code>` through the tunnel past Access, the direct add and the targeted invite both used for real, attribution with a sweep, the tree on the admin's panel, and cygnet's own refusals fixed or reported |
-| 4 | Launches: interest pages, places in line, sealed tokens, the valve and its waves | started: `cygnet.lol/silcord`, places in line, contingents released to the front, invites issued and taken with an email proof, the tree and its ledger; sealed tokens, the valve and the hand-off to cygnet open |
+| 4 | Launches: interest pages, places in line, sealed tokens, the valve and its waves | built, not yet deployed: the line, its invites, waves and chained ledger in Postgres, the Worker asking cygnet over the hub; sealed sign ins (HPKE); the valve's waves, a sealed person added by cygnet and anyone else's way in on their page; forget me everywhere |
 | 5 | Earning: rules in the layout, `skua.check` for activity, progress on `/invite`, sponsor standing | open |
 
 Not planned: leases, failover between birds and sharding. The birds do different jobs
