@@ -69,6 +69,8 @@ type Module struct {
 	expiring sync.Once
 	// flock is the birds sent to cygnet.lol's footer; nil without the hub.
 	flock *flock
+	// opener opens sealed sign ins; nil without CYGNET_SEAL_KEY.
+	opener *Opener
 }
 
 func New(edge *Edge, s *store.Launches, guild func(snowflake.ID) (discord.Guild, bool), admin func(discord.Interaction) bool, log *slog.Logger) *Module {

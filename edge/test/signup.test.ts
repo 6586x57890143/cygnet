@@ -198,6 +198,9 @@ test("every page, in the voice", () => {
     open: page(l, 1204, { kind: "open" }, "key"),
     mine: page(l, 1, { kind: "in", rank: 7, held: null, released: 3, left: 2, now, invites: [{ hash: "h1", made: now - 3_600_000, expires: now + 7_200_000, spent_at: null, revoked: null }, { hash: "h2", made: now - 60_000, expires: now, spent_at: now, revoked: null }, { hash: "h3", made: now - 60_000, expires: now + 1, spent_at: null, revoked: now }, { hash: "h4", made: now - 3 * 86400_000, expires: now - 1, spent_at: null, revoked: null }] }, "key"),
     invitee: page(l, 1, { kind: "in", rank: null, held: null, released: 0, left: 0, now, invites: [] }, "key"),
+    sealOffered: page(l, 1, { kind: "open", seal: true }, "key"),
+    sealable: page(l, 1, { kind: "in", rank: 3, held: null, released: 0, left: 0, now, invites: [], seal: true }, "key"),
+    sealed: page(l, 1, { kind: "in", rank: 3, held: null, released: 0, left: 0, now, invites: [], seal: true, sealed: true }, "key"),
     held: page(l, 1, { kind: "in", rank: 2, held: "someone on your connection is already on the list", released: 3, left: 3, now, invites: [] }, "key"),
     invited: page(l, 1, { kind: "invited", code: "c", expires: now + 3_600_000, now }, "key"),
     sent: page(l, 1, { kind: "sent", to: "st***@gm***.com", expires: now + 600_000, now, what: "take your invite" }, "k"),
@@ -216,6 +219,12 @@ test("every page, in the voice", () => {
   }
   assert.match(views.open, /<b data-count="1204">1204<\/b> people on the list/);
   assert.match(views.open, /data-sitekey="key"/);
+  assert.doesNotMatch(views.open, /add me when it opens/, "no seal without cygnet's key");
+  assert.match(views.sealOffered, /name="how" value="seal">count me in and add me when it opens/);
+  assert.match(views.sealable, /action="\/silcord\/seal">[\s\S]*add me when it opens/);
+  assert.match(views.sealable, /cf-turnstile/);
+  assert.match(views.sealed, /cygnet adds you[\s\S]*action="\/silcord\/unseal"/);
+  assert.doesNotMatch(views.sealed, /action="\/silcord\/seal"/);
   assert.match(views.mine, /#7/);
   assert.match(views.mine, /aria-label="2 of 3 left"/);
   assert.equal(views.mine.match(/<i class="on">/g)?.length, 2);

@@ -281,6 +281,25 @@ func (s *Launches) Where(ctx context.Context, name string, user snowflake.ID, no
 	return p, err
 }
 
+// Seal keeps user's sealed sign in, for cygnet to add them with when their
+// wave opens, or with none forgets it. Once they're let in it can't change.
+func (s *Launches) Seal(ctx context.Context, name string, user snowflake.ID, sealed []byte, now time.Time) error {
+	return s.commit(ctx, name, func(tx pgx.Tx, add func(entry) error) error {
+		tag, err := tx.Exec(ctx, "update line set sealed = $3 where launch = $1 and user_id = $2 and admitted is null", name, int64(user), sealed)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return ErrNotOnList
+		}
+		kind := "seal"
+		if sealed == nil {
+			kind = "unseal"
+		}
+		return add(entry{kind: kind, actor: s.Who(user), subject: s.Who(user), at: now})
+	})
+}
+
 // Release gives each invites to each of the first count people waiting on
 // their own who haven't had any and aren't held: the front of the line.
 // It returns how many it gave them to.

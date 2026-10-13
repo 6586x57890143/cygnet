@@ -39,6 +39,8 @@ const (
 	Gone      = "gone"
 	Own       = "own"
 	NotYours  = "not_yours"
+	// NoSeal: cygnet has no key to open a sealed sign in with.
+	NoSeal = "no_seal"
 )
 
 // Ask is every verb's body: the launch, who signed in, and, as the verb
@@ -92,7 +94,7 @@ type Row struct {
 func (m *Module) Verbs() map[string]func(context.Context, string, json.RawMessage) (any, error) {
 	return map[string]func(context.Context, string, json.RawMessage) (any, error){
 		"join": m.join, "place": m.place, "issue": m.issue, "revoke": m.revoke, "vouch": m.vouch,
-		"leave": m.leave, "mine": m.mine, "list": m.list, "lift": m.lift,
+		"leave": m.leave, "mine": m.mine, "list": m.list, "lift": m.lift, "seal": m.seal,
 	}
 }
 

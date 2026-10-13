@@ -21,10 +21,10 @@ export interface Invite {
 }
 
 export type View =
-  | { kind: "open" }
+  | { kind: "open"; seal?: boolean }
   | { kind: "closed" }
   | { kind: "opened" }
-  | { kind: "in"; rank: number | null; held: string | null; released: number; left: number; invites: Invite[]; now: number }
+  | { kind: "in"; rank: number | null; held: string | null; released: number; left: number; invites: Invite[]; now: number; sealed?: boolean; seal?: boolean }
   | { kind: "invited"; code: string; expires: number; now: number }
   | { kind: "server"; code: string; from: string; expires: number; now: number }
   | { kind: "sent"; to: string; expires: number; now: number; what: string }
@@ -100,6 +100,18 @@ export function still(t: number): string {
 const widget = (sitekey: string) =>
   `<div class="cf-turnstile" data-sitekey="${esc(sitekey)}" data-theme="auto" data-size="flexible" data-appearance="interaction-only"></div>`;
 
+// when is how someone on the list gets in at their turn: cygnet adds them
+// with the sign in they sealed to her, or their way in waits on this page.
+function when(l: Launch, v: Extract<View, { kind: "in" }>, sitekey: string): string {
+  if (v.sealed) {
+    return `<div class="row"><span class="k">when it opens</span><span>cygnet adds you<br><span class="dim">with the sign in you locked for her</span></span></div>
+      <form method="post" action="/${esc(l.name)}/unseal"><button class="quiet" type="submit">never mind and drop it</button></form>`;
+  }
+  if (!v.seal) return "";
+  return `<div class="row"><span class="k">when it opens</span><span>your way in shows up here<br><span class="dim">or cygnet can add you herself</span></span></div>
+      <form method="post" action="/${esc(l.name)}/seal">${widget(sitekey)}<button class="quiet" type="submit">add me when it opens</button></form>`;
+}
+
 function invites(l: Launch, v: Extract<View, { kind: "in" }>, sitekey: string): string {
   if (!v.released) return `<div class="row"><span class="k">invites</span><span>not yet<br><span class="dim">they go to the front of the line first</span></span></div>`;
   const rows = v.invites
@@ -130,17 +142,18 @@ export function page(l: Launch, total: number, view: View, sitekey: string, icon
     case "open":
       turnstile = true;
       body = `
-      <form method="post" action="/${esc(l.name)}/join">${widget(sitekey)}<button type="submit">count me in</button></form>
-      <p class="fine">you sign in with discord<br>we only see your account id and your email</p>`;
+      <form method="post" action="/${esc(l.name)}/join">${widget(sitekey)}<button type="submit">count me in</button>${view.seal ? `<button class="quiet" type="submit" name="how" value="seal">count me in and add me when it opens</button>` : ""}</form>
+      <p class="fine">you sign in with discord<br>we only see your account id and your email${view.seal ? "<br>if you want to be added when it opens your sign in is locked so only cygnet can open it<br>she uses it once at your turn and drops it" : ""}</p>`;
       break;
     case "in":
-      turnstile = view.left > 0 && !view.held;
+      turnstile = (view.left > 0 && !view.held) || (!!view.seal && !view.sealed);
       body = `
       <div class="place">
         <span class="k">${view.rank === null ? "youre in through a friend" : "your spot"}</span>
         <span class="rank" data-count="${view.rank ?? ""}">${view.rank === null ? "in" : `#${view.rank}`}</span>
       </div>
       ${view.held ? "" : invites(l, view, sitekey)}
+      ${when(l, view, sitekey)}
       ${
         view.held
           ? `<p class="note warn">your invites are on hold while we take a quick look<br>${esc(view.held)}<br>your spot in line stays the same</p>`
@@ -303,6 +316,7 @@ function notice(controller: string, contact: string): string {
     ${row("how long", "ip and location hashes 30 days<br>email hashes until 30 days after launch<br>everything else until 12 months after launch<br>or until you leave the list whichever comes first")}
     ${row("when you leave", "your entry is deleted at once<br>where you invited someone your id is replaced by a keyed hash so the invite tree still adds up<br>the step record keeps that hash until the launch data is deleted")}
     ${row("cookies", "only ones that keep you signed in and in the middle of a step<br>your browser also remembers your theme and how grown the swan is<br>no analytics no tracking so there is nothing to consent to")}
+    ${row("add me when it opens", "if you ask to be added when the server opens your discord sign in is kept locked to cygnets own key<br>this site cant open it again<br>cygnet opens it once at your turn to add you and then drops it<br>never mind on your page drops it right away")}
     ${row("links into a server", "a link someone made with cygnet in discord lets one person into their server<br>you sign in with discord so cygnet knows who you are and nothing else<br>if you let cygnet add you your discord token is used once to add you and then dropped<br>otherwise she makes a discord invite only you can use for 5 minutes<br>cygnet keeps your discord id with the link you came in by and when you joined and left so the server can see who brought whom<br>for as long as cygnet keeps that server or until you write to us to have it removed")}
     ${row("who sees the list", "the server owner and cygnets admin can see the list after signing in with discord<br>they see discord ids your place who invited you and any hold<br>never your email or ip")}
     ${row("decisions", "nothing is decided about you by profiling<br>a second sign up from the same connection only holds invites until a person looks")}

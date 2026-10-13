@@ -380,3 +380,37 @@ func TestPseudonymIsNeverADiscordID(t *testing.T) {
 		}
 	}
 }
+
+func TestSealIsKeptUntilTheyAreIn(t *testing.T) {
+	s, pool := launches(t, "seal", 912)
+	ctx := context.Background()
+	line(t, s, "seal", 0, 91)
+	if err := s.Seal(ctx, "seal", 91, []byte("sealed"), t0); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := s.Where(ctx, "seal", 91, t0); !p.Sealed {
+		t.Fatal("not sealed")
+	}
+	if err := s.Seal(ctx, "seal", 91, nil, t0); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := s.Where(ctx, "seal", 91, t0); p.Sealed {
+		t.Fatal("still sealed after never mind")
+	}
+	if err := s.Seal(ctx, "seal", 92, []byte("x"), t0); !errors.Is(err, ErrNotOnList) {
+		t.Fatalf("sealing for someone not on the list: %v", err)
+	}
+	if _, err := pool.Exec(ctx, "insert into wave (launch, size, opened, why) values ('seal', 1, $1, 'test')", t0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, "update line set wave = (select max(id) from wave where launch = 'seal'), admitted = $1 where launch = 'seal'", t0); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Seal(ctx, "seal", 91, []byte("late"), t0); !errors.Is(err, ErrNotOnList) {
+		t.Fatalf("sealing after they're in: %v", err)
+	}
+	h, _ := s.History(ctx, "seal", 91)
+	if len(h) != 3 || h[1].Kind != "seal" || h[2].Kind != "unseal" {
+		t.Fatalf("history %+v", h)
+	}
+}

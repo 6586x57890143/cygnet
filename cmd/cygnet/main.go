@@ -247,6 +247,15 @@ func run(log *slog.Logger) error {
 		}
 		return client.Caches.Guild(id)
 	}, func(i discord.Interaction) bool { return router.Admin(i) }, log).Flock(fleet))
+	// The key sealed sign ins are opened with (tools/sealkey): without it,
+	// nobody can ask to be added when their launch opens.
+	if k := os.Getenv("CYGNET_SEAL_KEY"); k != "" {
+		o, err := launch.NewOpener(k)
+		if err != nil {
+			return err
+		}
+		lau.Load().Seal(o)
+	}
 	all := []core.Module{
 		st,
 		perf.New(obs.Default),
