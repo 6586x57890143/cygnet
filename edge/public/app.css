@@ -171,7 +171,7 @@ button.quiet:hover { color: var(--text); transform: none; }
    no one ink reads at every hour: it carries its own small surface, the
    card's glass, and the card's colours on it. Quiet at rest, full when
    someone reaches for it. */
-.privacy { grid-area: privacy; align-self: start; margin-top: 30px; max-width: 52ch; color: var(--muted); font: 11.5px/1.6 var(--mono); }
+.privacy { grid-area: privacy; align-self: start; margin-top: 30px; max-width: 72ch; color: var(--muted); font: 11.5px/1.6 var(--mono); }
 .privacy .by {
   padding: 3px 12px; border-radius: 999px;
   background: var(--glass); border: 1px solid var(--edge);
