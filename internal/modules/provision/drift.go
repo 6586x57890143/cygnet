@@ -63,7 +63,7 @@ func (m *Module) OnEvent(ev bot.Event) {
 		// Reports from the birds come in over the hub, not an interaction:
 		// they're answered with the client cygnet connected with.
 		m.grants.mu.Lock()
-		m.grants.rest = e.Client().Rest
+		m.grants.rest, m.grants.self = e.Client().Rest, e.Client().ApplicationID
 		m.grants.mu.Unlock()
 		return
 	case *events.RoleCreate:

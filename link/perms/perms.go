@@ -139,10 +139,16 @@ const (
 	MemberKick     Op = "member.kick"
 	MemberBan      Op = "member.ban"
 	MemberNickname Op = "member.nickname"
-	GuildManage    Op = "guild.manage"
-	GuildAudit     Op = "guild.audit"
-	GuildEvents    Op = "guild.events"
-	GuildEmoji     Op = "guild.emoji"
+	// MemberAdd is adding someone to a server with their own sign in
+	// (guilds.join).
+	MemberAdd Op = "member.add"
+	// InviteCreate is making an invite to a channel. One limited to chosen
+	// people takes Manage Server as well, so the table asks for it.
+	InviteCreate Op = "invite.create"
+	GuildManage  Op = "guild.manage"
+	GuildAudit   Op = "guild.audit"
+	GuildEvents  Op = "guild.events"
+	GuildEmoji   Op = "guild.emoji"
 )
 
 // Needs is the table: what each Op takes. A channel's own Manage Permissions
@@ -168,6 +174,8 @@ var Needs = map[Op]Need{
 	MemberKick:     {KickMembers, false},
 	MemberBan:      {BanMembers, false},
 	MemberNickname: {ManageNicknames, false},
+	MemberAdd:      {CreateInvite, false},
+	InviteCreate:   {ViewChannel | CreateInvite | ManageGuild, true},
 	GuildManage:    {ManageGuild, false},
 	GuildAudit:     {ViewAuditLog, false},
 	GuildEvents:    {ManageEvents, false},

@@ -48,6 +48,13 @@ sees before the tunnel is set up.
   what a server's link keeps.
 - **The tunnel**: cloudflared in the prod compose behind the `tunnel` profile, on the
   fleet network only. Setup is in `docs/edge.md`, The tunnel.
+- **cygnet's own refusals** (after M3's first live link, refused for want of Ban
+  Members): her REST clients run under `perms.Watch`, and a refusal goes to provision as
+  the bird `cygnet`. A channel that takes a permission from her is fixed on the channel
+  by the drift mode; one she lacks server wide is a `#cygnet` card with her install
+  link, asking for everything her modules and the layout need. A redemption refused so
+  tells its person the server isn't ready yet (`unready`). `link/perms` gained
+  `member.add` and `invite.create`, and the ban read.
 - **The tree**: on an admin's `/invite` panel, one line a sponsor ("brought ..."), the
   untraced on their own line, leavers struck through, cut at a card's room.
 

@@ -171,7 +171,10 @@ The contract every bird speaks, the same over the WebSocket and `POST /v1/call`.
   refuses for want of a permission calls `cygnet.missing {guild, channel, op}`, read from
   the request by `perms.Route` under `perms.Watch`, one wrapper on its HTTP client; cygnet
   works out from its roles what it lacks and grants it, by the server's drift mode, on
-  the bird's role or, when only a channel takes it away, on that channel. Each manifest
+  the bird's role or, when only a channel takes it away, on that channel. cygnet's own
+  client is watched the same way: what a channel takes from her she gives back herself,
+  and what she lacks server wide is reported with her install link, since Discord lets
+  only a person raise a bot's role. Each manifest
   says the intents a bird wants beside those it was granted, and the fleet card links
   a gap to that bird's portal.
 - **cygnet authenticates, the callee authorizes.** Every frame's `from` is stamped by

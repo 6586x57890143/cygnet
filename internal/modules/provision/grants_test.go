@@ -3,6 +3,7 @@ package provision
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -208,5 +209,57 @@ func TestFleetIntents(t *testing.T) {
 	}
 	if intentNames(gateway.IntentGuilds) != "an intent it asks for" || intentNames(gateway.IntentMessageContent|gateway.IntentGuildPresences) != "presence, message content" {
 		t.Error("names")
+	}
+}
+
+// cygnet's own refusals come in as the bird cygnet. Server wide, Discord
+// lets only a person give her more: the report carries her install link
+// for this server, asking for all she needs here. When only a channel takes
+// it away, she gives it back herself, as she would a bird.
+func TestRefusedCygnet(t *testing.T) {
+	m, g, reports := birdsIn(t, Act)
+	m.want = func() discord.Permissions { return discord.PermissionCreateInstantInvite }
+	m.grants.self = self
+	body, _ := json.Marshal(perms.Missing{Guild: guild.String(), Op: perms.MemberBan})
+	out, err := m.Missing(context.Background(), cygnet, body)
+	if err != nil || out.(map[string]string)["did"] != "reported" {
+		t.Fatalf("%v, %v", out, err)
+	}
+	post := g.posts(reports)[0]
+	if text := say(post); !strings.Contains(text, "! **cygnet** was refused `member.ban`\n-# she lacks ban members; discord lets only a person give a bot more") {
+		t.Fatal(text)
+	}
+	var url string
+	for _, c := range post.Components[0].(discord.ContainerComponent).Components {
+		if row, ok := c.(discord.ActionRowComponent); ok {
+			url = row.Components[0].(discord.ButtonComponent).URL
+		}
+	}
+	want := needs(flock) | discord.PermissionCreateInstantInvite | discord.PermissionBanMembers
+	if !strings.HasSuffix(url, fmt.Sprintf("client_id=%d&scope=bot+applications.commands&permissions=%d&guild_id=%d&disable_guild_select=true", self, want, guild)) {
+		t.Fatalf("install link %q", url)
+	}
+	if g.roles[1].ID != selfRole || g.roles[1].Permissions != needs(flock) {
+		t.Fatalf("cygnet's role was touched: %+v", g.roles[1])
+	}
+
+	// #rules denies her sending, which she has server wide: given back on
+	// the channel, for her role.
+	rules := chanID(g, "rules")
+	for i, c := range g.chans {
+		if c.id == rules {
+			g.chans[i].ows = append(g.chans[i].ows, discord.RolePermissionOverwrite{RoleID: selfRole, Deny: discord.PermissionSendMessages})
+		}
+	}
+	body, _ = json.Marshal(perms.Missing{Guild: guild.String(), Channel: rules.String(), Op: perms.MessageSend})
+	if out, err := m.Missing(context.Background(), cygnet, body); err != nil || out.(map[string]string)["did"] != "granted" {
+		t.Fatalf("in a channel: %v, %v", out, err)
+	}
+	for _, c := range g.chans {
+		for _, o := range c.ows {
+			if c.id == rules && o.RoleID == selfRole && o.Deny&discord.PermissionSendMessages != 0 {
+				t.Fatalf("still denied: %+v", o)
+			}
+		}
 	}
 }
