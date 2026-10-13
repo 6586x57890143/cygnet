@@ -35,6 +35,7 @@ import {
 import { Store, type DB, type Hashes } from "./store.ts";
 import { call, hubOf, type CodeInfo, type ListRow, type Place, type Redeemed, type Reply } from "./hub.ts";
 import { sealed } from "./seal.ts";
+import { automatic, proof, type Letter } from "./mail.ts";
 
 interface Env {
   DB: D1Database;
@@ -491,15 +492,9 @@ async function start(env: Env, l: Launch, url: URL, c: { purpose: "issue" | "red
   );
   if (!ok) return html(env, l, { kind: "error", why: say.tooMany }, 429);
   if (!(await s.spend(c.now, budget.emails, budget.days))) return html(env, l, { kind: "error", why: say.noBudget }, 503);
-  const what = c.purpose === "issue" ? "make your invite" : "take your invite";
   const href = `https://${url.host}/v/${link}`;
   try {
-    await mail(env, {
-      to: c.address,
-      subject: `your ${l.name} link`,
-      text: `hey\n\nclick this to ${what} on ${l.name}\n${href}\n\nit works once and only for 30 minutes\nif you didnt ask for this you can ignore it and nothing happens\n\ncygnet`,
-      html: `<p>hey</p><p>click this to ${what} on ${l.name}<br><a href="${href}">${href}</a></p><p>it works once and only for 30 minutes<br>if you didnt ask for this you can ignore it and nothing happens</p><p>cygnet</p>`,
-    });
+    await mail(env, c.address, proof(l.name, c.purpose, href, proofLife / 60_000, url.host), c.now + proofLife);
   } catch (err) {
     console.error("edge send", err instanceof Error ? err.message : "unknown");
     return html(env, l, { kind: "error", why: say.sendFailed }, 502);
@@ -508,12 +503,23 @@ async function start(env: Env, l: Launch, url: URL, c: { purpose: "issue" | "red
   return new Response(null, { status: 303, headers: secure({ location: `https://${url.host}/${l.name}/wait`, "set-cookie": cookie("cy_proof", value, proofLife / 1000) }) });
 }
 
-// mail sends one email through Scaleway's Transactional Email, in Paris.
-async function mail(env: Env, m: { to: string; subject: string; text: string; html: string }): Promise<void> {
+// mail sends one email through Scaleway's Transactional Email, in Paris,
+// marked as automatic, and never delivered after until, when its link has
+// run out anyway.
+async function mail(env: Env, to: string, m: Letter, until: number): Promise<void> {
   const r = await fetch("https://api.scaleway.com/transactional-email/v1alpha1/regions/fr-par/emails", {
     method: "POST",
     headers: { "x-auth-token": env.SCW_SECRET_KEY, "content-type": "application/json" },
-    body: JSON.stringify({ from: { email: from.email, name: from.name }, to: [{ email: m.to }], subject: m.subject, text: m.text, html: m.html, project_id: env.SCW_PROJECT_ID }),
+    body: JSON.stringify({
+      from: { email: from.email, name: from.name },
+      to: [{ email: to }],
+      subject: m.subject,
+      text: m.text,
+      html: m.html,
+      project_id: env.SCW_PROJECT_ID,
+      send_before: new Date(until).toISOString(),
+      additional_headers: automatic,
+    }),
   });
   if (!r.ok) throw new Error(`scaleway ${r.status}`);
 }
