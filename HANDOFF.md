@@ -1,4 +1,4 @@
-# Handoff: Milestone 3 (codes), done
+# Handoff: Milestone 3 done, Milestone 4 (launches) next
 
 Written 2026-10-13. Read this with `CLAUDE.md` and `SPEC.md`.
 
@@ -6,12 +6,49 @@ Written 2026-10-13. Read this with `CLAUDE.md` and `SPEC.md`.
 
 | Branch | State |
 |---|---|
-| `main` | M0 to M3 (M3 is #31 to #38), and the edge's launch list (M4, started). Deployed to foundry; the Worker deployed by hand |
+| `main` | M0 to M3 (M3 is #31 to #40), and the edge's launch list (M4, started). Deployed to foundry; the Worker deployed by hand |
+
+No branch is open. Old worktrees under `cygnet.worktrees/` are from merged work and can
+go.
 
 M3 is live. The tunnel runs on foundry (`COMPOSE_PROFILES=tunnel`), `hub.cygnet.lol`
 answers only to Access's service token, the Worker links as the bird `edge`, and both
 ways in (added, and the invite only they can take) have been used for real. Links point
 at cygnet.lol only while `edge=` is in `CYGNET_BOTS`.
+
+## Next: M4, launches
+
+SPEC.md, milestone 4, and the decision in memory that **Postgres owns membership**: codes,
+the tree and the ledger live in cygnet's Postgres; D1 keeps only the edge's own state
+(sign ups, places in line, email proofs, hashes) and, where a page needs it, a read model.
+Every hand-off between them gets an idempotency key and a reconcile sweep, as M3's
+redemption does (`Spend` returns a code its spender already spent; the sweep finds
+missed joins).
+
+Where it starts:
+
+- **The launch list's invites move to Postgres.** `edge/src/store.ts` issues, spends and
+  revokes them in D1 today (`invite`, `member.sponsor`, `ledger`). They become `code`
+  rows (migration 004 has no launch column yet: a launch has a server, `launch.guild`,
+  so a `launch` column beside `guild_id` is the likely shape) and the Worker asks cygnet
+  over the hub as `edge`, as `/i/<code>` already does for server links. A code D1 knows
+  is a launch's today; that check goes when the move lands.
+- **The ledger moves with them**: append only, each entry keyed over the one before
+  (`edge/src/store.ts`, `commit` and `verify`), in Postgres with a trigger refusing
+  update and delete. Erasure keeps the edge's scheme: a person's Discord ID becomes the
+  keyed hash the ledger knows them by (`h:`), which also gives `joined` its erasure.
+- **Sealed tokens**: someone who ticks *add me when it opens* leaves a refresh token the
+  Worker encrypts to cygnet's public key and can't read itself. At their wave cygnet
+  opens it, refreshes it and adds them through the same path as a redemption
+  (`invite.add`, the quiet client), then forgets it.
+- **The valve**: waves sized by measured load (joins a minute, which cygnet sees with
+  Server Members; messages a minute from skua as a question, never data), SPEC
+  experiment 6. A wave waits until the last one settled.
+- **Sponsor standing**: invitees removed, not just gone, need bans and kicks told apart
+  from leaving: take the intents and the audit log read that needs.
+- `/launch` reads the Worker's admin endpoints with `CYGNET_EDGE_TOKEN` today; with the
+  tunnel live, the edge's questions to cygnet go the bird's way, and the admin bearer
+  can shrink to what only the Worker knows.
 
 ## What M3 changed
 
@@ -74,15 +111,19 @@ Decisions worth keeping:
   a local fake hub from the sandbox, so the server views were looked at in Chrome from a
   node server with the same assets.
 
+Closed at the end (#40): SPEC experiment 3 measured (1000 racing spends, one winner;
+a spend's `UPDATE` and commit about 1.6 ms), and the tree goes on over pages, a sponsor
+who brought many over several lines.
+
 ## Not done yet, deliberately (M3)
 
-- SPEC experiment 3 past 50 racing spends: the 1000-way race and the `UPDATE`'s cost.
-- An admin's view of other members' links: a member sees their own open and used ones,
-  an admin all of their own, and the tree shows who brought whom.
-- The pixel unfurl for a link (SPEC experiment 5) and earning links by rules (M5): the
-  allowance is a number an admin sets.
-- Erasure for `joined`: the notice says to write in; there's no button.
-- The tree past one card: the first lines are shown, then a count.
+- An admin's view of other members' links: not in the spec; the tree shows who brought
+  whom, a member sees their own links open and used, an admin all of their own.
+- The pixel unfurl for a link: SPEC says it goes out as a skua experiment first
+  (experiment 5) and moves to cygnet when the numbers say so.
+- Earning links by rules (M5): the allowance is a number an admin sets.
+- Erasure for `joined`: with M4's ledger and its `h:` pseudonyms; until then the
+  notice says to write in.
 
 ## What M2 has so far
 
@@ -217,14 +258,12 @@ Every change lands in a keyed, chained, append only ledger in the same batch, an
 cron. The copy is a person texting: lowercase, no punctuation, one thought a line, and
 a test fails any page with punctuation or a capital. Tested with `node --test` against
 `node:sqlite`, including tampering, typed with `wrangler types`, in CI's `edge` job.
-Not live until the steps in `docs/edge.md` are done.
+Live at cygnet.lol, with the tunnel behind it since M3.
 
 ## Not done yet, deliberately
 
 - More layouts than `flock`, and a way to choose channel positions.
-- M3 to M5 in `SPEC.md`. For M4: sealed tokens, the valve, standing for sponsors whose
-  invitees are removed, and how cygnet reads the list and the tree (through the tunnel,
-  as the spec says; the admin endpoints are a bearer token until then).
+- M4 and M5 in `SPEC.md`; M4's starting points are under **Next: M4** above.
 
 ## From M0 and M1, still true
 
@@ -235,5 +274,5 @@ Not live until the steps in `docs/edge.md` are done.
   on the `fleet` network.
 - Callee-side idempotency is each bird's job; `link` gives `NewID`/`CallID`.
 - The voice lines in `internal/brand/voice.go` are still skua's.
-- The local `golangci-lint` predates Go 1.27's export data and can't typecheck; CI's is
-  current.
+- The installed `golangci-lint` predates Go 1.27's export data and can't typecheck;
+  `go run ...golangci-lint@v2.14.0 run ./...` (CLAUDE.md) is CI's exact one.

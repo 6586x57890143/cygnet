@@ -13,17 +13,23 @@ import (
 	"github.com/6586x57890143/cygnet/internal/store"
 )
 
-// treeRoom is how much of a card the tree's lines may take: Discord
-// allows 4000 characters of text in a message, and the head and counts
-// need the rest.
-const treeRoom = 3400
+const (
+	// treeRoom is how much of a card one page of the tree's lines may take:
+	// Discord allows 4000 characters of text in a message, and the head,
+	// the counts and the footer need the rest.
+	treeRoom = 3400
+	// perLine is the most members one line names; one who brought more
+	// goes on over more lines, so no line outgrows a page.
+	perLine = 60
+)
 
 // tree is the tree card (SPEC.md, What an admin sees): every join cygnet
 // saw in g and its cause. One line a member who brought someone in, naming
 // whoever they brought, so each member's line back is there to follow
 // without a glyph that wraps on a phone. A join she can't trace is shown
-// as such, never guessed.
-func (m *Module) tree(ctx context.Context, g discord.Guild) (discord.ContainerComponent, error) {
+// as such, never guessed. Past one card it goes on over pages, page
+// counted from 0.
+func (m *Module) tree(ctx context.Context, g discord.Guild, page int) (discord.ContainerComponent, error) {
 	joins, err := m.store.Tree(ctx, g.ID)
 	if err != nil {
 		return discord.ContainerComponent{}, err
@@ -55,28 +61,74 @@ func (m *Module) tree(ctx context.Context, g discord.Guild) (discord.ContainerCo
 	}))
 	var lines []string
 	for _, s := range order {
-		lines = append(lines, fmt.Sprintf("<@%d> brought %s", s, names(by[s])))
+		for i, chunk := range chunks(by[s]) {
+			verb := "brought"
+			if i > 0 {
+				verb = "also brought"
+			}
+			lines = append(lines, fmt.Sprintf("<@%d> %s %s", s, verb, names(chunk)))
+		}
 	}
-	if len(untraced) > 0 {
-		lines = append(lines, "-# untraced: "+names(untraced))
+	for i, chunk := range chunks(untraced) {
+		lead := "-# untraced: "
+		if i > 0 {
+			lead = "-# untraced, more: "
+		}
+		lines = append(lines, lead+names(chunk))
 	}
 	if len(joins) == 0 {
 		lines = append(lines, "-# nobody has joined since cygnet started watching; members from before have no line")
 	}
-	// ponytail: cut at the card's room, so a server with hundreds of joins
-	// shows its first; pages, or the tree on the web, when one needs more.
-	used := 0
-	for i, l := range lines {
-		if used+len(l) > treeRoom {
-			fmt.Fprintf(&b, "-# and %d more lines\n", len(lines)-i)
-			break
-		}
+	pages := paginate(lines)
+	page = min(max(page, 0), len(pages)-1)
+	for _, l := range pages[page] {
 		b.WriteString(l + "\n")
-		used += len(l) + 1
+	}
+	if len(pages) > 1 {
+		fmt.Fprintf(&b, "-# page %d of %d\n", page+1, len(pages))
 	}
 	b.WriteString("-# a member brought in by a link hangs from whoever made it; one who left is struck through")
-	back := discord.NewActionRow(discord.NewSecondaryButton("◂ back", fmt.Sprintf("%s:%s", id, g.ID)))
-	return brand.Card(brand.ColorInfo, "invite", "the tree", b.String(), discord.NewSeparator(discord.SeparatorSpacingSizeSmall), back), nil
+	at := func(p int) string { return fmt.Sprintf("%s:tree:%d:%s", id, p, g.ID) }
+	row := discord.NewActionRow(discord.NewSecondaryButton("◂ back", fmt.Sprintf("%s:%s", id, g.ID)))
+	if len(pages) > 1 {
+		prev, next := discord.NewSecondaryButton("◂ earlier", at(page-1)), discord.NewSecondaryButton("later ▸", at(page+1))
+		if page == 0 {
+			prev = prev.AsDisabled()
+		}
+		if page == len(pages)-1 {
+			next = next.AsDisabled()
+		}
+		row = discord.NewActionRow(prev, next, row.Components[0])
+	}
+	return brand.Card(brand.ColorInfo, "invite", "the tree", b.String(), discord.NewSeparator(discord.SeparatorSpacingSizeSmall), row), nil
+}
+
+// chunks is js in runs of at most perLine.
+func chunks(js []store.Join) [][]store.Join {
+	var out [][]store.Join
+	for len(js) > perLine {
+		out = append(out, js[:perLine])
+		js = js[perLine:]
+	}
+	if len(js) > 0 {
+		out = append(out, js)
+	}
+	return out
+}
+
+// paginate packs lines, in order, into pages of at most treeRoom
+// characters each; there is always at least one page.
+func paginate(lines []string) [][]string {
+	pages := [][]string{nil}
+	used := 0
+	for _, l := range lines {
+		if used > 0 && used+len(l)+1 > treeRoom {
+			pages, used = append(pages, nil), 0
+		}
+		pages[len(pages)-1] = append(pages[len(pages)-1], l)
+		used += len(l) + 1
+	}
+	return pages
 }
 
 // names is who joined, as mentions, in the order they did; one who left

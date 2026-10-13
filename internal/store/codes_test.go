@@ -14,7 +14,7 @@ import (
 )
 
 // codes is a migrated store with guild's rows cleared, for one test.
-func codes(t *testing.T, guild snowflake.ID) *Codes {
+func codes(t testing.TB, guild snowflake.ID) *Codes {
 	t.Helper()
 	ctx := context.Background()
 	pool, err := Open(ctx, dsn(t))
@@ -127,7 +127,8 @@ func TestMintRaceMakesOne(t *testing.T) {
 	}
 }
 
-// Fifty people spending one code at once: one gets in. SPEC experiment 3.
+// A thousand people spending one code at once: one gets in. SPEC
+// experiment 3.
 func TestSpendRaceHasOneWinner(t *testing.T) {
 	const guild, owner = 803, 1
 	s, ctx := codes(t, guild), context.Background()
@@ -137,7 +138,8 @@ func TestSpendRaceHasOneWinner(t *testing.T) {
 	}
 	var won atomic.Int64
 	var wg sync.WaitGroup
-	for user := range snowflake.ID(50) {
+	start := time.Now()
+	for user := range snowflake.ID(1000) {
 		wg.Go(func() {
 			c, err := s.Spend(ctx, h, 100+user, t0)
 			switch {
@@ -152,9 +154,58 @@ func TestSpendRaceHasOneWinner(t *testing.T) {
 		})
 	}
 	wg.Wait()
+	t.Logf("1000 racing spends of one code: %v", time.Since(start))
 	if won.Load() != 1 {
 		t.Fatalf("%d spent it, want 1", won.Load())
 	}
+}
+
+// BenchmarkSpend is what a spend costs (SPEC experiment 3): the winner's
+// one conditional UPDATE, and a loser's, which finds the code spent.
+func BenchmarkSpend(b *testing.B) {
+	const guild, owner = 810, 1
+	s, ctx := codes(b, guild), context.Background()
+	mint := func(i int) []byte {
+		h := hash(fmt.Sprint("bench", i, time.Now().UnixNano()))
+		if err := s.Mint(ctx, h, guild, owner, t0, t0.Add(time.Hour), -1); err != nil {
+			b.Fatal(err)
+		}
+		return h
+	}
+	// Each run spends as people new to the server: the framework runs a
+	// benchmark more than once, and someone already holding a code there
+	// would get that one back instead.
+	next := snowflake.ID(1_000_000)
+	people := func(n int) snowflake.ID {
+		first := next
+		next += snowflake.ID(n)
+		return first
+	}
+	b.Run("wins", func(b *testing.B) {
+		first := people(b.N)
+		hs := make([][]byte, b.N)
+		for i := range hs {
+			hs[i] = mint(i)
+		}
+		b.ResetTimer()
+		for i := range b.N {
+			if _, err := s.Spend(ctx, hs[i], first+snowflake.ID(i), t0); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+	b.Run("loses", func(b *testing.B) {
+		h, first := mint(-1), people(b.N+1)
+		if _, err := s.Spend(ctx, h, first, t0); err != nil {
+			b.Fatal(err)
+		}
+		b.ResetTimer()
+		for i := range b.N {
+			if _, err := s.Spend(ctx, h, first+1+snowflake.ID(i), t0); !errors.Is(err, ErrGone) {
+				b.Fatal(err)
+			}
+		}
+	})
 }
 
 func TestSpend(t *testing.T) {

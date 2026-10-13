@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
@@ -387,12 +388,66 @@ func TestTree(t *testing.T) {
 	if text, _, _ := press(t, m, "invite:tree:3", as("50", false)); !strings.Contains(text, "nobody has joined since cygnet started watching") {
 		t.Fatal(text)
 	}
+	// 300 sponsors with one each, and one who brought 130: past one card,
+	// in pages, each inside Discord's 4000, the 130 over three lines.
 	for i := range 300 {
 		s.tree[3] = append(s.tree[3], store.Join{User: snowflake.ID(1_000_000_000_000_000 + i), Sponsor: snowflake.ID(2_000_000_000_000_000 + i), At: now})
 	}
-	text, _, _ = press(t, m, "invite:tree:3", as("50", false))
-	if !strings.Contains(text, "more lines") || len(text) > 4000 {
-		t.Fatalf("%d characters, cut: %v", len(text), strings.Contains(text, "more lines"))
+	for i := range 130 {
+		s.tree[3] = append(s.tree[3], store.Join{User: snowflake.ID(3_000_000_000_000_000 + i), Sponsor: 5, At: now})
+	}
+	seen := map[string]bool{}
+	for page := 0; ; page++ {
+		text, got, err := press(t, m, fmt.Sprintf("invite:tree:%d:3", page), as("50", false))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(text) > 4000 {
+			t.Fatalf("page %d: %d characters", page, len(text))
+		}
+		for _, l := range strings.Split(text, "\n") {
+			if strings.HasPrefix(l, "<@") {
+				if seen[l] {
+					t.Fatalf("on two pages: %s", l[:40])
+				}
+				seen[l] = true
+			}
+		}
+		if page == 0 && !strings.Contains(got, "!invite:tree:-1:3 invite:tree:1:3 ") {
+			t.Fatalf("first page's buttons: %s", got)
+		}
+		if strings.Contains(text, fmt.Sprintf("page %d of %d", page+1, page+1)) {
+			if !strings.Contains(got, fmt.Sprintf("!invite:tree:%d:3", page+1)) {
+				t.Fatalf("the last page's later button works: %s", got)
+			}
+			break
+		}
+		if page > 20 {
+			t.Fatal("no last page")
+		}
+	}
+	if len(seen) != 300+3 {
+		t.Fatalf("%d lines over the pages, want 303", len(seen))
+	}
+	// A page past the end shows the last; one before the start, the first.
+	far, _, _ := press(t, m, "invite:tree:99:3", as("50", false))
+	if !strings.Contains(far, "page ") || strings.Contains(far, "page 1 of") {
+		t.Fatal("page 99 wasn't the last")
+	}
+	if first, _, _ := press(t, m, "invite:tree:-5:3", as("50", false)); !strings.Contains(first, "page 1 of") {
+		t.Fatal("page -5 wasn't the first")
+	}
+	brought, also := 0, 0
+	for l := range seen {
+		switch {
+		case strings.HasPrefix(l, "<@5> brought "):
+			brought++
+		case strings.HasPrefix(l, "<@5> also brought "):
+			also++
+		}
+	}
+	if brought != 1 || also != 2 {
+		t.Fatalf("130 brought by 5: %d lines, %d more", brought, also)
 	}
 	s.fail = errors.New("db down")
 	if _, _, err := press(t, m, "invite:tree:3", as("50", false)); err == nil {
