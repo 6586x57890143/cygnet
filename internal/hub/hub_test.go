@@ -417,7 +417,7 @@ func BenchmarkCall(b *testing.B) {
 // A manifest crosses the hub intact: what /provision will read.
 func TestManifest(t *testing.T) {
 	h, url := fleet(t)
-	want := link.Manifest{Build: "abc", Perms: "2048", Intents: 1, Commands: []link.Command{{Name: "status", Tier: link.Admin}}}
+	want := link.Manifest{Build: "abc", Perms: "2048", Intents: 1, Commands: []link.Command{{Name: "status", Tier: link.Admin}}, Serves: []string{"pace"}}
 	bird(t, url, "skua", func(c *link.Client) {
 		c.Handle(link.ManifestMethod, func(context.Context, link.Call) (any, error) { return want, nil })
 	})
