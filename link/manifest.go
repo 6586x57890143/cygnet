@@ -17,6 +17,9 @@ type Manifest struct {
 	Intents  uint64    `json:"intents"`
 	Wants    uint64    `json:"wants,omitempty"`
 	Commands []Command `json:"commands"`
+	// Serves is the verbs it answers besides manifest, bare ("pace" for
+	// skua.pace), so a caller can see what it may ask before it does.
+	Serves []string `json:"serves,omitempty"`
 }
 
 // Command is one top-level command and who may run it.
