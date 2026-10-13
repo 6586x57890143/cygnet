@@ -1,4 +1,4 @@
-# Handoff: Milestone 3 (codes), built
+# Handoff: Milestone 3 (codes), done
 
 Written 2026-10-13. Read this with `CLAUDE.md` and `SPEC.md`.
 
@@ -6,15 +6,12 @@ Written 2026-10-13. Read this with `CLAUDE.md` and `SPEC.md`.
 
 | Branch | State |
 |---|---|
-| `main` | M0 to M2, the edge's launch list (M4, started), and M3's store (#31) and user installed commands (#32). Deployed to foundry |
-| `feat/invite` (#33) | `/invite`, the panel |
-| `feat/redeem` (#34) | cygnet's side of redemption, attribution and the sweep; on `feat/invite` |
-| `feat/edge-redeem` (#35) | the Worker's `/i/<code>` for server codes, and the tunnel; on `feat/redeem` |
-| `feat/tree` | the tree, and these docs; on `feat/edge-redeem` |
+| `main` | M0 to M3 (M3 is #31 to #38), and the edge's launch list (M4, started). Deployed to foundry; the Worker deployed by hand |
 
-They go in in that order. Until `edge=` is in `CYGNET_BOTS`, `/invite` says cygnet
-isn't connected to cygnet.lol and makes no links, so merging changes nothing a member
-sees before the tunnel is set up.
+M3 is live. The tunnel runs on foundry (`COMPOSE_PROFILES=tunnel`), `hub.cygnet.lol`
+answers only to Access's service token, the Worker links as the bird `edge`, and both
+ways in (added, and the invite only they can take) have been used for real. Links point
+at cygnet.lol only while `edge=` is in `CYGNET_BOTS`.
 
 ## What M3 changed
 
@@ -66,14 +63,22 @@ Decisions worth keeping:
   Postgres (the "Postgres owns membership" decision); nothing new was put in D1.
 - **No ledger table in Postgres yet**: `code` and `joined` are the record. The edge's
   chained ledger moves with the launch hand-off.
+- **Intents, like permissions, are taken, not designed around**: cygnet identifies
+  with every intent a feature needs, within reason (Server Members is on in
+  production). New work declares what it needs and builds no "without it" path. Message
+  Content stays off: cygnet reads no messages (SPEC principle 7).
+- **A manual restart on foundry loads `deployed-tag.env` first**, or compose runs the
+  stale `:latest`:
+  `set -a && . ./deployed-tag.env && set +a && docker compose -f docker-compose.prod.yml up -d`.
 - **Pages were checked by rendering `page()`**: `wrangler dev`'s workerd couldn't reach
   a local fake hub from the sandbox, so the server views were looked at in Chrome from a
   node server with the same assets.
 
 ## Not done yet, deliberately (M3)
 
-- Going live: the tunnel, Access, `edge=` in `CYGNET_BOTS` and the Worker's secrets
-  (`docs/edge.md`, The tunnel), then a real link end to end.
+- SPEC experiment 3 past 50 racing spends: the 1000-way race and the `UPDATE`'s cost.
+- An admin's view of other members' links: a member sees their own open and used ones,
+  an admin all of their own, and the tree shows who brought whom.
 - The pixel unfurl for a link (SPEC experiment 5) and earning links by rules (M5): the
   allowance is a number an admin sets.
 - Erasure for `joined`: the notice says to write in; there's no button.
