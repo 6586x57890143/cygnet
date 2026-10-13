@@ -65,12 +65,12 @@ func (s *memory) Left(_ context.Context, guild, owner snowflake.ID, now time.Tim
 	return max(0, limit-s.counted(guild, owner, now)), s.fail
 }
 
-func (s *memory) Mine(_ context.Context, guild, owner snowflake.ID, n int) ([]store.Code, error) {
+func (s *memory) Mine(_ context.Context, guild, owner snowflake.ID, now time.Time, n int, all bool) ([]store.Code, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var out []store.Code
 	for _, c := range s.codes {
-		if c.Guild == guild && c.Owner == owner && len(out) < n {
+		if c.Guild == guild && c.Owner == owner && len(out) < n && (all || c.SpentBy != 0 || c.Open(now)) {
 			out = append(out, c)
 		}
 	}
@@ -400,7 +400,10 @@ func TestMemberMakesAndTakesBack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	has(t, text, "✓ taken back", "2 of 2 links left", "`"+label[:4]+"` taken back")
+	has(t, text, "✓ taken back", "2 of 2 links left")
+	if strings.Contains(text, label[:4]) {
+		t.Fatal("a member still sees the link they took back")
+	}
 	if _, _, err := press(t, m, "invite:back:3", nil, label); err == nil || !strings.Contains(err.Error(), "taken back already") {
 		t.Fatalf("taking back twice: %v", err)
 	}
@@ -416,7 +419,14 @@ func TestMemberMakesAndTakesBack(t *testing.T) {
 	s.codes[0].SpentBy, s.codes[0].SpentAt = 9, m.now().Add(-2*time.Hour)
 	s.codes[1].Expires = m.now()
 	text, got, _ = press(t, m, "invite:3", nil)
-	has(t, text, "used by <@9> 2h 0m ago", "ran out", "1 of 2 links left")
+	has(t, text, "used by <@9> 2h 0m ago", "1 of 2 links left")
+	if strings.Contains(text, "ran out") || strings.Contains(text, "` taken back") {
+		t.Fatalf("a member sees links that are done with:\n%s", text)
+	}
+	// An admin sees all of theirs, done with or not.
+	s.codes[0].Owner, s.codes[1].Owner, s.codes[2].Owner = 50, 50, 50
+	text, _, _ = press(t, m, "invite:3", as("50", false))
+	has(t, text, "used by <@9> 2h 0m ago", "ran out", "taken back")
 	if strings.Contains(got, "invite:back:3") {
 		t.Fatal("nothing open to take back, but a select for it")
 	}
