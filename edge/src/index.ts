@@ -2,18 +2,19 @@
 // A launch's page, its sign in with Discord, the invites its members give,
 // and the emailed links that prove an address. The bot token never comes
 // here; the Discord app's OAuth secret does, to read who signed in, and
-// their token is revoked as soon as it's read.
+// their token is revoked as soon as it's read. A launch's line, its
+// invites and their ledger are cygnet's: the Worker asks her over the hub
+// (hub.ts) and keeps only what stops one person signing up twice.
 
-import { page, type Row, type View } from "./page.ts";
+import { page, type Invite, type Row, type View } from "./page.ts";
 import {
-  stages,
   area,
   budget,
   created,
   day,
   digest,
   held,
-  inviteLife,
+  inviteCode,
   keepEmail,
   keepList,
   keepNetwork,
@@ -25,12 +26,14 @@ import {
   proofLife,
   proofs,
   same,
+  stages,
   token,
   type Launch,
+  type Stage,
   isPNG,
 } from "./signup.ts";
 import { Store, type DB, type Hashes } from "./store.ts";
-import { call, hubOf, type CodeInfo, type Redeemed } from "./hub.ts";
+import { call, hubOf, type CodeInfo, type ListRow, type Place, type Redeemed, type Reply } from "./hub.ts";
 
 interface Env {
   DB: D1Database;
@@ -48,10 +51,9 @@ interface Env {
   // them, as the privacy notice names them. Set at deploy, not in the code.
   CONTROLLER?: string;
   CONTACT?: string;
-  // cygnet's hub, for the links members make with /invite: its address
-  // through the tunnel, the Worker's token as the bird edge, and Access's
-  // service token. All secrets; without the first two those links are
-  // nothing here.
+  // cygnet's hub: its address through the tunnel, the Worker's token as
+  // the bird edge, and Access's service token. All secrets; without the
+  // first two there are no lists and no links here.
   CYGNET_HUB_URL?: string;
   CYGNET_HUB_TOKEN?: string;
   CF_ACCESS_CLIENT_ID?: string;
@@ -66,7 +68,17 @@ const stay = 30 * day;
 const text = { "content-type": "text/plain; charset=utf-8" };
 const from = { email: "cygnet@cygnet.lol", name: "cygnet" };
 
-const store = (env: Env) => new Store(env.DB as unknown as DB, env.HMAC_KEY);
+const store = (env: Env) => new Store(env.DB as unknown as DB);
+
+// ask is cygnet answering method, or offline when the Worker has no hub.
+function ask<T>(env: Env, method: string, body: unknown): Promise<Reply<T>> {
+  const hub = hubOf(env);
+  if (!hub) return Promise.resolve({ ok: false, code: "offline", reason: "no hub" });
+  return call<T>(hub, method, body);
+}
+
+// refused is whether r is cygnet saying no, for one of why.
+const refused = (r: Reply<unknown>, ...why: string[]) => !r.ok && r.code === "denied" && why.includes(r.reason);
 
 // What a person reads when something stops them. Plain and human: what
 // happened, then what to do, one line each.
@@ -84,7 +96,6 @@ const say = {
   tooNew: (days: number) => `discord accounts need to be at least ${days} days old to get on the list`,
   emailTaken: "that email is already on the list\nsign in with the discord account that has it",
   inviteGone: "this invite was used or taken back or ran out\nask whoever sent it for a new one",
-  ownInvite: "thats your own invite\nsend it to the person its for",
   tooMany: "youve asked for too many links this hour\ntry again in an hour",
   noBudget: "weve sent all the emails we can for now\ntry again in a few days",
   sendFailed: "we couldnt send the email\ntry again in a minute",
@@ -152,11 +163,17 @@ export default {
   },
 } satisfies ExportedHandler<Env>;
 
+// invitesOf is cygnet's invites as the page lists them.
+const invitesOf = (p: Place): Invite[] => p.invites.map((i) => ({ hash: i.code, made: i.made, expires: i.expires, spent_at: i.spent_at ?? null, revoked: i.revoked ?? null }));
+
 async function landing(req: Request, env: Env, l: Launch): Promise<Response> {
   const user = await who(req, env, l);
   const now = Date.now();
-  const v = user ? await store(env).view(l, user, now) : null;
-  if (v) return html(env, l, { kind: "in", rank: v.rank, held: v.held, released: v.released, left: v.left, invites: v.invites, now });
+  if (user) {
+    const r = await ask<Place>(env, "cygnet.place", { launch: l.name, user });
+    if (r.ok) return html(env, l, { kind: "in", rank: r.body.sponsored ? null : r.body.rank, held: r.body.held ?? null, released: r.body.released, left: r.body.left, invites: invitesOf(r.body), now });
+    if (!refused(r, "not_on_list")) return html(env, l, { kind: "error", why: say.broke }, 502);
+  }
   // Signing in again still works when the list isn't taking anyone new.
   const stage = l.stage ?? "gathering";
   return html(env, l, { kind: stage === "gathering" ? "open" : stage === "open" ? "opened" : "closed" });
@@ -201,29 +218,25 @@ async function issueStart(req: Request, env: Env, l: Launch, url: URL): Promise<
   return human(req, env, l, () => oauth(env, url, "issue", l));
 }
 
-// invited is an invite's page, and taking it: a launch's, kept here, or
-// else a server's, which cygnet keeps.
+// invited is an invite's page, and taking it: a launch's, which puts
+// someone in line, or a server's, which lets them in. cygnet says which.
 async function invited(req: Request, env: Env, url: URL, code: string): Promise<Response> {
+  if (!hubOf(env)) return new Response("nothing here", { status: 404, headers: secure(text) });
   const hash = await digest(code);
-  const row = await env.DB.prepare("SELECT launch FROM invite WHERE hash = ?1").bind(hash).first<{ launch: string }>();
-  if (!row) return serverInvited(req, env, url, code, hash);
-  const l = await store(env).launch(row.launch);
+  const r = await ask<CodeInfo>(env, "cygnet.code", { code: hash });
+  if (!r.ok || !r.body.launch) return serverInvited(req, env, url, code, hash, r);
+  const l = await store(env).launch(r.body.launch);
   if (!l) return new Response("nothing here", { status: 404, headers: secure(text) });
-  const now = Date.now();
-  const open = await store(env).open(l, hash, now);
-  if (!open) return html(env, l, { kind: "error", why: say.inviteGone }, 410);
+  if (!r.body.open) return html(env, l, { kind: "error", why: say.inviteGone }, 410);
   if (l.stage === "closed") return html(env, l, { kind: "error", why: say.closed }, 403);
   if (req.method === "POST") return human(req, env, l, () => oauth(env, url, "redeem", l, hash));
-  return html(env, l, { kind: "invited", code, expires: open.expires, now });
+  return html(env, l, { kind: "invited", code, expires: r.body.expires ?? 0, now: Date.now() });
 }
 
 // serverInvited is a server's link (/invite): its page, as cygnet says the
 // link stands, and the sign in that takes it. Two ways in: cygnet adds them
 // with their own sign in, or makes an invite only they can take.
-async function serverInvited(req: Request, env: Env, url: URL, code: string, hash: string): Promise<Response> {
-  const hub = hubOf(env);
-  if (!hub) return new Response("nothing here", { status: 404, headers: secure(text) });
-  const r = await call<CodeInfo>(hub, "cygnet.code", { code: hash });
+async function serverInvited(req: Request, env: Env, url: URL, code: string, hash: string, r: Reply<CodeInfo>): Promise<Response> {
   const s = serverPage(r.ok ? r.body : { open: false }, code);
   if (!r.ok) return html(env, s, { kind: "error", why: say.broke }, 502);
   if (!r.body.open) return html(env, s, { kind: "error", why: say.inviteGone }, 410);
@@ -337,16 +350,21 @@ async function callback(req: Request, env: Env, ctx: ExecutionContext, url: URL)
 
   if (purpose === "issue") {
     if ((await who(req, env, l)) !== user.id) return html(env, l, { kind: "error", why: say.otherAccount }, 403);
-    const m = await s.member(l, user.id);
-    const v = await s.view(l, user.id, now);
-    if (!m || !v || v.held || !v.left) return html(env, l, { kind: "error", why: say.noInvite }, 403);
-    if (m.email && !same(m.email, email)) return html(env, l, { kind: "error", why: say.emailChanged }, 403);
+    const p = await ask<Place>(env, "cygnet.place", { launch: l.name, user: user.id });
+    if (!p.ok && !refused(p, "not_on_list")) return html(env, l, { kind: "error", why: say.broke }, 502);
+    if (!p.ok || p.body.held || !p.body.left) return html(env, l, { kind: "error", why: say.noInvite }, 403);
+    const kept = await s.signup(l, user.id);
+    if (kept?.email && !same(kept.email, email)) return html(env, l, { kind: "error", why: say.emailChanged }, 403);
     return start(env, l, url, { purpose: "issue", user: user.id, address: user.email, email, now });
   }
 
-  if (await s.member(l, user.id)) {
-    if (purpose === "join") return signedIn(env, l, user.id);
-    return html(env, l, { kind: "error", why: say.alreadyIn }, 409);
+  if (await s.signup(l, user.id)) {
+    if (purpose !== "join") return html(env, l, { kind: "error", why: say.alreadyIn }, 409);
+    // Signed up here: cygnet has them too, unless a join's answer was lost
+    // on the way back, and then this puts them on.
+    const r = await ask(env, "cygnet.join", { launch: l.name, user: user.id });
+    if (!r.ok && !refused(r, "on_list", "closed")) return html(env, l, { kind: "error", why: say.broke }, 502);
+    return signedIn(env, l, user.id);
   }
   if (now - created(user.id) < l.minAgeDays * day) return html(env, l, { kind: "error", why: say.tooNew(l.minAgeDays) }, 403);
   if (await s.emailTaken(l, email)) return html(env, l, { kind: "error", why: say.emailTaken }, 409);
@@ -363,13 +381,18 @@ async function callback(req: Request, env: Env, ctx: ExecutionContext, url: URL)
 
   if (purpose === "join") {
     if ((l.stage ?? "gathering") !== "gathering") return html(env, l, { kind: "error", why: say.closed }, 403);
-    if (await s.join(l, user.id, h, why, now)) return signedIn(env, l, user.id);
-    return html(env, l, { kind: "error", why: say.emailTaken }, 409);
+    // cygnet first, then the hashes: a retry after a failed keep finds
+    // them on her list, and keeps them then.
+    const r = await ask<{ place: number }>(env, "cygnet.join", { launch: l.name, user: user.id, held: why ?? "" });
+    if (refused(r, "closed")) return html(env, l, { kind: "error", why: say.closed }, 403);
+    if (!r.ok && !refused(r, "on_list")) return html(env, l, { kind: "error", why: say.broke }, 502);
+    await s.keep(l, user.id, h, now);
+    return signedIn(env, l, user.id);
   }
 
-  const open = await s.open(l, invite, now);
-  if (!open) return html(env, l, { kind: "error", why: say.inviteGone }, 410);
-  if (open.issuer === user.id) return html(env, l, { kind: "error", why: say.ownInvite }, 403);
+  const info = await ask<CodeInfo>(env, "cygnet.code", { code: invite });
+  if (!info.ok) return html(env, l, { kind: "error", why: say.broke }, 502);
+  if (!info.body.open || info.body.launch !== l.name) return html(env, l, { kind: "error", why: say.inviteGone }, 410);
   return start(env, l, url, { purpose: "redeem", user: user.id, address: user.email, email, now, invite, hashes: h, held: why });
 }
 
@@ -445,23 +468,34 @@ async function wait(req: Request, env: Env, l: Launch, url: URL): Promise<Respon
   const c = await s.consume(id, now);
   if (!c) return back(l);
   const done = cookie("cy_proof", "", 0);
+  const fail = async (why: string, status: number) => withCookie(await html(env, l, { kind: "error", why }, status), done);
   if (c.purpose === "issue") {
-    const code = await s.issue(l, c.user, now);
-    if (!code) return withCookie(await html(env, l, { kind: "error", why: say.noInvite }, 403), done);
-    return withCookie(await html(env, l, { kind: "minted", link: `https://${url.host}/i/${code}`, expires: now + inviteLife, now }), done);
+    // The code is made here and shown once; cygnet keeps only its hash.
+    const code = inviteCode();
+    const r = await ask<{ expires: number }>(env, "cygnet.issue", { launch: l.name, user: c.user, code: await digest(code) });
+    if (refused(r, "none_left", "not_on_list")) return fail(say.noInvite, 403);
+    if (!r.ok) return fail(say.broke, 502);
+    return withCookie(await html(env, l, { kind: "minted", link: `https://${url.host}/i/${code}`, expires: r.body.expires, now }), done);
   }
-  const r = await s.redeem(l, c.invite ?? "", c.user, { email: c.email, ip: c.ip, net: c.net, geo: c.geo }, c.held, now);
-  if (r === "taken") return withCookie(await html(env, l, { kind: "error", why: say.gotInMeanwhile }, 409), done);
-  if (r === "gone") return withCookie(await html(env, l, { kind: "error", why: say.inviteGoneLate }, 410), done);
+  const r = await ask<{ launch: string }>(env, "cygnet.vouch", { user: c.user, code: c.invite ?? "", held: c.held ?? "" });
+  if (refused(r, "on_list")) return fail(say.gotInMeanwhile, 409);
+  if (refused(r, "gone", "own")) return fail(say.inviteGoneLate, 410);
+  if (refused(r, "closed")) return fail(say.closed, 403);
+  if (!r.ok) return fail(say.broke, 502);
+  await s.keep(l, c.user, { email: c.email, ip: c.ip, net: c.net, geo: c.geo }, now);
   return withCookie(await signedIn(env, l, c.user), done);
 }
 
 // mine is everything kept about the person signed in, as a file to keep:
-// their right to see it and take it with them.
+// cygnet's record of them, and which hashes are kept here.
 async function mine(req: Request, env: Env, l: Launch): Promise<Response> {
   const user = await who(req, env, l);
-  const data = user ? await store(env).mine(l, user) : null;
-  if (!data) return back(l);
+  if (!user) return back(l);
+  const r = await ask<Record<string, unknown>>(env, "cygnet.mine", { launch: l.name, user });
+  if (refused(r, "not_on_list")) return back(l);
+  if (!r.ok) return html(env, l, { kind: "error", why: say.broke }, 502);
+  const kept = await store(env).signup(l, user);
+  const data = { ...r.body, stored_as_keyed_hashes: { email: !!kept?.email, connection: !!kept?.ip, network: !!kept?.net, area: !!kept?.geo } };
   return new Response(JSON.stringify(data, null, 2), {
     headers: secure({ "content-type": "application/json", "content-disposition": `attachment; filename="${l.name}-my-data.json"`, "cache-control": "no-store" }),
   });
@@ -474,17 +508,22 @@ async function owner(req: Request, env: Env, l: Launch): Promise<string | null> 
 }
 
 // listPage is the list for the server's owner, after a Discord sign in
-// that shows who they are.
+// that shows who they are. cygnet checks again that they may see it.
 async function listPage(req: Request, env: Env, l: Launch, url: URL): Promise<Response> {
-  if (!(await owner(req, env, l))) return oauth(env, url, "list", l);
-  const rows = (await store(env).tree(l)) as unknown as Row[];
+  const user = await owner(req, env, l);
+  if (!user) return oauth(env, url, "list", l);
+  const r = await ask<{ rows: ListRow[] }>(env, "cygnet.list", { launch: l.name, user });
+  if (refused(r, "not_yours")) return html(env, l, { kind: "error", why: say.notYours }, 403);
+  if (!r.ok) return html(env, l, { kind: "error", why: say.broke }, 502);
+  const rows: Row[] = r.body.rows.map((x) => ({ user: x.user, sponsor: x.sponsor ?? null, place: x.place, released: x.released, held: x.held ?? null }));
   return html(env, l, { kind: "list", rows });
 }
 
 async function liftPressed(req: Request, env: Env, l: Launch): Promise<Response> {
-  if (!(await owner(req, env, l))) return new Response(null, { status: 303, headers: secure({ location: `/${l.name}/list` }) });
-  const user = String((await req.formData()).get("user") ?? "");
-  if (/^\d{17,20}$/.test(user)) await store(env).lift(l, user, Date.now());
+  const user = await owner(req, env, l);
+  if (!user) return new Response(null, { status: 303, headers: secure({ location: `/${l.name}/list` }) });
+  const member = String((await req.formData()).get("user") ?? "");
+  if (/^\d{17,20}$/.test(member)) await ask(env, "cygnet.lift", { launch: l.name, user, member });
   return new Response(null, { status: 303, headers: secure({ location: `/${l.name}/list` }) });
 }
 
@@ -504,19 +543,25 @@ async function privacy(env: Env): Promise<Response> {
 async function revoke(req: Request, env: Env, l: Launch): Promise<Response> {
   const user = await who(req, env, l);
   const form = await req.formData();
-  if (user) await store(env).revoke(l, user, String(form.get("invite") ?? ""), Date.now());
+  if (user) await ask(env, "cygnet.revoke", { launch: l.name, user, code: String(form.get("invite") ?? "") });
   return back(l);
 }
 
+// leave takes them off cygnet's list first, then forgets their sign up
+// here: if cygnet can't be reached, nothing is half done.
 async function leave(req: Request, env: Env, l: Launch): Promise<Response> {
   const user = await who(req, env, l);
-  if (user) await store(env).leave(l, user, Date.now());
+  if (user) {
+    const r = await ask(env, "cygnet.leave", { launch: l.name, user });
+    if (!r.ok) return html(env, l, { kind: "error", why: say.broke }, 502);
+    await store(env).drop(l, user);
+  }
   return new Response(null, { status: 303, headers: secure({ location: `/${l.name}`, "set-cookie": cookie(`cy_${l.name}`, "", 0) }) });
 }
 
-// admin is what an admin does, with ADMIN_TOKEN as a bearer: release
-// invites to the front of a line, lift a hold, read the tree, and check
-// the ledger. Without the token set, none of it exists.
+// admin is what cygnet sends the Worker, with ADMIN_TOKEN as a bearer: a
+// launch's page, and the flock's pictures. Without the token set, none of
+// it exists. Everything else about a launch, cygnet answers herself.
 async function admin(req: Request, env: Env, launch?: string, action?: string): Promise<Response> {
   const given = (req.headers.get("authorization") ?? "").replace(/^Bearer /, "");
   if (!env.ADMIN_TOKEN || !given || !same(await digest(given), await digest(env.ADMIN_TOKEN))) {
@@ -524,12 +569,6 @@ async function admin(req: Request, env: Env, launch?: string, action?: string): 
   }
   const s = store(env);
   const json = (v: unknown) => new Response(JSON.stringify(v, null, 2), { headers: secure({ "content-type": "application/json", "cache-control": "no-store" }) });
-  if (launch === "verify" && req.method === "GET") return json(await s.verify());
-  // Which launch a server has, for cygnet in that server.
-  if (launch === "guild" && action && req.method === "GET") {
-    const g = await s.byGuild(action);
-    return g ? json({ launch: g.name }) : new Response("no launch here", { status: 404, headers: secure(text) });
-  }
   // cygnet sends a linked bird's picture: a small PNG, base64.
   if (launch === "bird" && action && req.method === "PUT") {
     const b = await req.json<{ png?: string }>();
@@ -539,34 +578,21 @@ async function admin(req: Request, env: Env, launch?: string, action?: string): 
     await s.bird(action, b.png, (await digest(b.png)).slice(0, 8), Date.now());
     return json({ bird: action });
   }
-  // cygnet registers a launch, or refreshes it, with its server's id, name
-  // and picture.
+  // cygnet registers a launch, or refreshes it: its server's id, name and
+  // picture, who may see its list, its stage and when it first opened.
   if (launch && !action && req.method === "PUT") {
-    const b = await req.json<{ guild?: string; title?: string; icon?: string; admins?: string[] }>();
+    const b = await req.json<{ guild?: string; title?: string; icon?: string; admins?: string[]; stage?: string; opens?: number }>();
     const ok =
       /^[a-z0-9-]{2,32}$/.test(launch) &&
       /^\d{17,20}$/.test(b.guild ?? "") &&
       typeof b.title === "string" && b.title.length > 0 && b.title.length <= 100 &&
       typeof b.icon === "string" && (b.icon === "" || b.icon.startsWith("https://cdn.discordapp.com/icons/")) &&
-      (b.admins === undefined || (Array.isArray(b.admins) && b.admins.length <= 5 && b.admins.every((a) => /^\d{17,20}$/.test(a))));
+      (b.admins === undefined || (Array.isArray(b.admins) && b.admins.length <= 5 && b.admins.every((a) => /^\d{17,20}$/.test(a)))) &&
+      (b.stage === undefined || stages.includes(b.stage as Stage)) &&
+      (b.opens === undefined || Number.isInteger(b.opens));
     if (!ok) return new Response("bad launch", { status: 400, headers: secure(text) });
-    const kept = await s.register(launch, b.guild!, b.title!, b.icon!, Date.now(), b.admins ?? []);
+    const kept = await s.register(launch, b.guild!, b.title!, b.icon!, Date.now(), b.admins ?? [], (b.stage as Stage) ?? "gathering", b.opens ?? null);
     return kept ? json({ launch, page: `/${launch}` }) : new Response("that name is another server's", { status: 409, headers: secure(text) });
-  }
-  const l = launch ? await s.launch(launch) : undefined;
-  if (!l) return new Response("no such launch", { status: 404, headers: secure(text) });
-  if (action === "tree" && req.method === "GET") return json(await s.tree(l));
-  if (!action && req.method === "GET") return json(await s.stats(l, Date.now()));
-  if (req.method === "POST") {
-    const body = await req.json<{ count?: number; invites?: number; user?: string; stage?: string }>();
-    if (action === "release" && Number.isInteger(body.count) && Number.isInteger(body.invites) && body.count! > 0 && body.invites! > 0 && body.invites! <= 10) {
-      return json({ released: await s.release(l, body.count!, body.invites!, Date.now()) });
-    }
-    if (action === "stage" && stages.includes(body.stage as never)) {
-      await s.stage(l.name, body.stage as never, Date.now());
-      return json(await s.stats((await s.launch(l.name))!, Date.now()));
-    }
-    if (action === "lift" && body.user && /^\d{17,20}$/.test(body.user)) return json({ lifted: await s.lift(l, body.user, Date.now()) });
   }
   return new Response("not allowed", { status: 405, headers: secure(text) });
 }

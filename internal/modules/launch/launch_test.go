@@ -262,7 +262,7 @@ func TestCampaign(t *testing.T) {
 	if text := pressed(t, m, id); !strings.Contains(text, "opened 2026-10-13") || !strings.Contains(text, "ledger    ✓ 25 entries") {
 		t.Fatalf("after: %s", text)
 	}
-	if w.got("silcord", "stage") != store.StageOpen {
+	if w.got("silcord", "stage") != store.StageOpen || w.got("silcord", "opens") != float64(t0.UnixMilli()) {
 		t.Fatalf("the page wasn't told: %v", w.sent)
 	}
 	for _, bad := range []string{id + ":release:x", id + ":release:1000"} {

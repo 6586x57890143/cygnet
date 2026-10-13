@@ -401,14 +401,19 @@ func (e *Edge) admins(g discord.Guild) []snowflake.ID {
 }
 
 // push sends what a launch's page shows: its server as cygnet sees it, its
-// stage, and who may see its list. The Worker keeps it as sent, and asks
+// stage and when it first opened (which starts the clock on the Worker's
+// hashes), and who may see its list. The Worker keeps it as sent, and asks
 // cygnet for everything else.
 func (e *Edge) push(ctx context.Context, l store.Launch, g discord.Guild) error {
 	admins := []string{}
 	for _, id := range e.admins(g) {
 		admins = append(admins, id.String())
 	}
-	return e.do(ctx, http.MethodPut, "/admin/"+l.Name, map[string]any{"guild": g.ID.String(), "title": g.Name, "icon": icon(g.ID, g.Icon), "admins": admins, "stage": l.Stage}, nil)
+	body := map[string]any{"guild": g.ID.String(), "title": g.Name, "icon": icon(g.ID, g.Icon), "admins": admins, "stage": l.Stage}
+	if !l.Opens.IsZero() {
+		body["opens"] = l.Opens.UnixMilli()
+	}
+	return e.do(ctx, http.MethodPut, "/admin/"+l.Name, body, nil)
 }
 
 // do calls one of the Worker's admin endpoints, sending body as JSON and

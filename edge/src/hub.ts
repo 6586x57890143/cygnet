@@ -1,7 +1,8 @@
-// cygnet's hub, as cygnet.lol reaches it to redeem a server's links: the
-// bird protocol's POST /v1/call (SPEC.md, Protocol), as the bird edge,
-// through the Cloudflare Tunnel and past Access (docs/edge.md). cygnet
-// keeps the codes; the Worker only asks.
+// cygnet's hub, as cygnet.lol reaches it for a server's links and a
+// launch's list: the bird protocol's POST /v1/call (SPEC.md, Protocol), as
+// the bird edge, through the Cloudflare Tunnel and past Access
+// (docs/edge.md). cygnet keeps the codes, the line and its ledger; the
+// Worker only asks.
 
 export interface Hub {
   url: string;
@@ -13,8 +14,10 @@ export interface Hub {
 
 // CodeInfo is cygnet.code's answer: whether a link still works, and the
 // server it lets someone into, who it's from, and when it stops working.
+// A launch's invite names its launch instead of a server.
 export interface CodeInfo {
   open: boolean;
+  launch?: string;
   guild?: string;
   name?: string;
   icon?: string;
@@ -28,6 +31,33 @@ export interface Redeemed {
   guild: string;
   added?: boolean;
   invite?: string;
+}
+
+// Place is cygnet.place's answer: where someone stands in a launch. rank is
+// among those waiting on their own; someone brought in by an invite comes
+// in with whoever gave it. Times are Unix milliseconds.
+export interface Place {
+  place: number;
+  rank: number;
+  sponsored: boolean;
+  held?: string;
+  released: number;
+  left: number;
+  sealed: boolean;
+  admitted?: number;
+  invites: { code: string; made: number; expires: number; spent_at?: number; revoked?: number }[];
+}
+
+// ListRow is one person in cygnet.list's answer, for whoever runs the
+// launch. sponsor is "gone" for someone who left.
+export interface ListRow {
+  user: string;
+  sponsor?: string;
+  place: number;
+  released: number;
+  held?: string;
+  at: number;
+  admitted?: number;
 }
 
 export type Reply<T> = { ok: true; body: T } | { ok: false; code: string; reason: string };

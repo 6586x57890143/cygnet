@@ -84,172 +84,72 @@ function d1(db: DatabaseSync): DB {
   };
 }
 
-function fresh() {
+function fresh(upTo = "") {
   const sql = new DatabaseSync(":memory:");
-  // Every migration, in order, as D1 applies them.
+  // Every migration, in order, as D1 applies them, or those before upTo.
   const dir = new URL("../migrations/", import.meta.url);
-  for (const f of readdirSync(dir).filter((n) => n.endsWith(".sql")).sort()) sql.exec(readFileSync(new URL(f, dir), "utf8"));
-  return { sql, s: new Store(d1(sql), "test-key") };
+  for (const f of readdirSync(dir).filter((n) => n.endsWith(".sql") && (!upTo || n < upTo)).sort()) sql.exec(readFileSync(new URL(f, dir), "utf8"));
+  return { sql, s: new Store(d1(sql)) };
 }
 
 const h = (n: string, geo: string | null = "g") => ({ email: `e${n}`, ip: `i${n}`, net: `n${n}`, geo });
 const t0 = 1_800_000_000_000;
 
-test("a line, released from the front", async () => {
+test("a sign up: one per account and email, and who looks like someone already on", async () => {
   const { s } = fresh();
-  assert.ok(await s.join(l, "1", h("1"), null, t0));
-  assert.ok(await s.join(l, "2", h("2"), "held", t0 + 1));
-  assert.ok(await s.join(l, "3", h("3"), null, t0 + 2));
-  assert.ok(await s.join(l, "4", h("4"), null, t0 + 3));
-  // The same account or email gets no second place.
-  assert.ok(!(await s.join(l, "1", h("9"), null, t0 + 4)));
-  assert.ok(!(await s.join(l, "5", h("1"), null, t0 + 5)));
+  await s.keep(l, "1", h("1"), t0);
+  await s.keep(l, "3", h("3"), t0);
+  // Kept again changes nothing: cygnet already said they're on.
+  await s.keep(l, "1", h("9"), t0 + 1);
+  assert.equal((await s.signup(l, "1"))?.email, "e1");
+  assert.equal(await s.signup(l, "2"), null);
+  assert.ok(await s.emailTaken(l, "e1"));
+  assert.ok(!(await s.emailTaken(l, "e2")));
+  assert.ok(!(await s.emailTaken({ ...l, name: "wren" }, "e1")), "each launch on its own");
   assert.deepEqual(await s.seen(l, { ip: "i1", net: "x", geo: "x" }), { ip: true, area: false });
   assert.deepEqual(await s.seen(l, { ip: "x", net: "n3", geo: "g" }), { ip: false, area: true });
   assert.deepEqual(await s.seen(l, { ip: "x", net: "n3", geo: null }), { ip: false, area: false });
-
-  // Two released from the front skips the held one.
-  assert.equal(await s.release(l, 2, 3, t0 + 10), 2);
-  assert.equal((await s.view(l, "1", t0))?.left, 3);
-  assert.equal((await s.view(l, "2", t0))?.released, 0);
-  assert.equal((await s.view(l, "3", t0))?.left, 3);
-  assert.equal((await s.view(l, "4", t0))?.released, 0);
-  // A lifted hold is next in a later release.
-  assert.ok(await s.lift(l, "2", t0 + 11));
-  assert.equal(await s.release(l, 1, 2, t0 + 12), 1);
-  assert.equal((await s.view(l, "2", t0))?.released, 2);
-  assert.equal((await s.view(l, "3", t0))?.rank, 3);
-  assert.deepEqual(await s.verify(), { entries: 8, broken: null, mismatches: [] });
+  assert.equal(await s.total(l), 2);
+  await s.drop(l, "1");
+  assert.equal(await s.signup(l, "1"), null);
+  assert.equal(await s.total(l), 1);
 });
 
-test("invites: issued, taken back, spent once, and a tree", async () => {
-  const { s } = fresh();
-  await s.join(l, "1", h("1"), null, t0);
-  await s.join(l, "2", h("2"), null, t0);
-  await s.release(l, 1, 2, t0);
-  // Nobody issues without a release.
-  assert.equal(await s.issue(l, "2", t0), null);
-
-  const a = await s.issue(l, "1", t0);
-  const b = await s.issue(l, "1", t0 + 1);
-  assert.ok(a && b);
-  assert.equal(await s.issue(l, "1", t0 + 2), null, "two released, two made");
-  const ha = await digest(a);
-  const hb = await digest(b);
-
-  // Taking one back gives it back; someone else can't.
-  assert.ok(!(await s.revoke(l, "2", hb, t0 + 3)));
-  assert.ok(await s.revoke(l, "1", hb, t0 + 3));
-  assert.equal((await s.view(l, "1", t0 + 3))?.left, 1);
-  assert.equal(await s.open(l, hb, t0 + 4), null);
-
-  // Spent once: the second taker gets nothing and isn't let in.
-  assert.equal(await s.redeem(l, ha, "7", h("7"), null, t0 + 5), "in");
-  assert.equal(await s.redeem(l, ha, "8", h("8"), null, t0 + 6), "gone");
-  assert.equal(await s.member(l, "8"), null);
-  const m7 = await s.member(l, "7");
-  assert.equal(m7?.sponsor, "1");
-  assert.equal((await s.view(l, "7", t0))?.rank, null, "an invitee isn't in line, they come in with their sponsor");
-
-  // An invite run out is back in its issuer's hands.
-  const c = await s.issue(l, "1", t0 + 7);
-  assert.equal((await s.view(l, "1", t0 + 8))?.left, 0);
-  assert.equal((await s.view(l, "1", t0 + 7 + inviteLife + 1))?.left, 1);
-  assert.equal(await s.redeem(l, await digest(c!), "9", h("9"), null, t0 + 7 + inviteLife + 1), "gone");
-
-  // Taking an invite with an email already on the list fails whole: the
-  // invite stays unspent for the right person.
-  const d = await s.issue(l, "1", t0 + inviteLife + 10);
-  const hd = await digest(d!);
-  assert.equal(await s.redeem(l, hd, "10", h("2"), null, t0 + inviteLife + 11), "taken");
-  assert.ok(await s.open(l, hd, t0 + inviteLife + 12));
-  // An issuer can't take their own.
-  assert.equal(await s.redeem(l, hd, "1", h("11"), null, t0 + inviteLife + 12), "gone");
-
-  // Leaving takes back what's unspent, keeps the tree, and leaves nothing
-  // that names them: their ID is the ledger's keyed hash wherever it stood.
-  await s.leave(l, "1", t0 + inviteLife + 13);
-  assert.equal(await s.member(l, "1"), null);
-  assert.equal(await s.open(l, hd, t0 + inviteLife + 14), null);
-  const pseudo = "h:" + (await s.who("1"));
-  assert.equal((await s.member(l, "7"))?.sponsor, pseudo);
-  assert.deepEqual((await s.verify()).broken, null);
-  assert.deepEqual((await s.verify()).mismatches, []);
-  const tree = await s.tree(l);
-  assert.deepEqual(
-    tree.map((r) => [r.user, r.sponsor]),
-    [
-      ["2", null],
-      ["7", pseudo],
-    ],
-  );
+test("the move to cygnet keeps every sign up's hashes and drops the rest", async () => {
+  const { sql } = fresh("0004");
+  sql.exec("INSERT INTO member (launch, user, place, email, ip, net, geo, released, at) VALUES ('silcord', '1', 1, 'e1', 'i1', 'n1', 'g', 3, 5)");
+  sql.exec("INSERT INTO campaign (name, stage, at) VALUES ('silcord', 'closed', 5)");
+  const dir = new URL("../migrations/", import.meta.url);
+  for (const f of readdirSync(dir).filter((n) => n >= "0004").sort()) sql.exec(readFileSync(new URL(f, dir), "utf8"));
+  assert.deepEqual({ ...sql.prepare("SELECT * FROM signup").get() }, { launch: "silcord", user: "1", email: "e1", ip: "i1", net: "n1", geo: "g", at: 5 });
+  for (const table of ["member", "invite", "ledger", "gone", "campaign"]) {
+    assert.throws(() => sql.prepare(`SELECT 1 FROM ${table}`).get(), /no such table/, table);
+  }
 });
 
-test("gdpr: everything about you to download, nothing left after you go, all of it gone in time", async () => {
+test("gdpr: nothing left after you go, and every hash gone in time", async () => {
   const { sql, s } = fresh();
-  await s.join(l, "1", h("1"), null, t0);
-  await s.release(l, 1, 2, t0);
-  const code = await s.issue(l, "1", t0 + 1);
-  await s.redeem(l, await digest(code!), "2", h("2"), null, t0 + 2);
-
-  const mine = await s.mine(l, "1");
-  assert.equal(mine?.discord_id, "1");
-  assert.equal(mine?.invites_released, 2);
-  assert.equal(mine?.invites_made.length, 1);
-  assert.deepEqual(mine?.stored_as_keyed_hashes, { email: true, connection: true, network: true, area: true });
-  assert.deepEqual(
-    mine?.ledger.map((e) => [e.what, e.by_you]),
-    [
-      ["join", true],
-      ["release", false],
-      ["issue", true],
-      ["redeem", false],
-    ],
-  );
-  assert.equal(await s.mine(l, "9"), null);
-
-  // After leaving, the raw ID is in no table.
-  await s.leave(l, "1", t0 + 3);
-  for (const table of ["member", "invite", "challenge"]) {
+  await s.keep(l, "1", h("1"), t0);
+  await s.challenge({ id: "c", link: "k", launch: "silcord", user: "1", purpose: "issue", made: t0, expires: t0 + 1_000_000_000, email: "E" }, 5);
+  await s.drop(l, "1");
+  for (const table of ["signup", "challenge"]) {
     const hit = sql.prepare(`SELECT * FROM ${table}`).all().some((r) => Object.values(r as object).includes("1"));
     assert.ok(!hit, `${table} still names them`);
   }
 
-  // A launch's list, invites and ledger go once its time is up, and only
-  // then; another launch's ledger still verifies.
+  // The network and area go after keepNetwork, the email keepEmail after
+  // the launch opens, and the rest keepList after it; another launch's stay.
   const other = { ...l, name: "wren" };
-  await s.join(other, "5", h("5"), null, t0);
-  await s.forget(t0 + 10, 1e15, [{ ...l, opens: t0 }], 1e15, 100);
-  assert.ok(sql.prepare("SELECT 1 FROM ledger WHERE launch = 'silcord'").get(), "not yet");
-  assert.throws(() => sql.exec("DELETE FROM ledger WHERE launch = 'silcord'"), /append only/);
-  await s.forget(t0 + 200, 1e15, [{ ...l, opens: t0 }], 1e15, 100);
-  for (const table of ["member", "invite", "ledger"]) {
-    assert.equal(sql.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE launch = 'silcord'`).get()?.n, 0, table);
-  }
-  assert.equal((await s.member(other, "5"))?.user, "5");
-  assert.deepEqual(await s.verify(), { entries: 1, broken: null, mismatches: [] });
-});
-
-test("the ledger can't be rewritten, and a rewrite shows", async () => {
-  const { sql, s } = fresh();
-  await s.join(l, "1", h("1"), null, t0);
-  await s.release(l, 1, 3, t0);
-  await s.issue(l, "1", t0);
-  assert.throws(() => sql.exec("UPDATE ledger SET ref = '9' WHERE kind = 'release'"), /append only/);
-  assert.throws(() => sql.exec("DELETE FROM ledger"), /append only/);
-
-  // Someone with the database but not the key: they can drop the trigger,
-  // but every mac after their edit stops matching.
-  sql.exec("DROP TRIGGER ledger_no_update");
-  sql.exec("UPDATE ledger SET ref = '9' WHERE kind = 'release'");
-  assert.equal((await s.verify()).broken, 2);
-
-  // And a grant made around the ledger doesn't add up.
-  const b = fresh();
-  await b.s.join(l, "1", h("1"), null, t0);
-  b.sql.exec("UPDATE member SET released = 10");
-  b.sql.exec("INSERT INTO invite (hash, launch, issuer, made, expires) VALUES ('x', 'silcord', '1', 0, 0)");
-  assert.equal((await b.s.verify()).mismatches.length, 2);
+  await s.keep(l, "2", h("2"), t0);
+  await s.keep(other, "5", h("5"), t0);
+  const open = { ...l, opens: t0 };
+  await s.forget(t0 + 10, 5, [open, other], 50, 100);
+  assert.deepEqual({ ...(await s.signup(l, "2")) }, { email: "e2", ip: null, net: null, geo: null });
+  await s.forget(t0 + 60, 5, [open, other], 50, 100);
+  assert.equal((await s.signup(l, "2"))?.email, null);
+  await s.forget(t0 + 200, 5, [open, other], 50, 100);
+  assert.equal(await s.signup(l, "2"), null);
+  assert.ok(await s.signup(other, "5"));
 });
 
 test("a link: sent, rate limited, clicked, used once", async () => {
@@ -395,28 +295,14 @@ test("cygnet registers a launch from its server, and can't take another's name",
   assert.deepEqual((await s.launches()).map((l) => l.name).sort(), ["silcord", "wren"]);
 });
 
-test("a campaign moves through its stages, and counts itself", async () => {
+test("a campaign's stage and opening are what cygnet last sent", async () => {
   const { s } = fresh();
-  assert.equal((await s.launch("silcord"))?.stage, "gathering");
-  assert.equal((await s.byGuild("1558585698712293378"))?.name, "silcord");
-  assert.equal(await s.byGuild("1"), undefined);
-  await s.join(l, "1", h("1"), null, t0);
-  await s.join(l, "2", h("2"), "held", t0);
-  await s.release(l, 1, 3, t0);
-  const code = await s.issue(l, "1", t0);
-  await s.redeem(l, await digest(code!), "3", h("3"), null, t0 + 1);
-  const st = await s.stats((await s.launch("silcord"))!, t0 + 2);
-  assert.deepEqual(
-    { total: st.total, in_line: st.in_line, through: st.through_invites, held: st.held, released: st.released_to, made: st.invites_made, used: st.invites_used },
-    { total: 3, in_line: 2, through: 1, held: 1, released: 1, made: 1, used: 1 },
-  );
-  await s.stage("silcord", "closed", t0 + 3);
+  assert.equal((await s.launch("silcord"))?.stage, undefined, "the code's launch before cygnet sends it: gathering");
+  await s.register("silcord", "1558585698712293378", "silcord", "", t0, [], "closed");
   assert.equal((await s.launch("silcord"))?.stage, "closed");
   assert.equal((await s.launch("silcord"))?.opens, undefined, "closing starts no clock");
-  await s.stage("silcord", "open", t0 + 4);
-  await s.stage("silcord", "gathering", t0 + 5);
-  await s.stage("silcord", "open", t0 + 6);
-  assert.equal((await s.launch("silcord"))?.opens, t0 + 4, "the first opening is kept");
+  await s.register("silcord", "1558585698712293378", "silcord", "", t0, [], "open", t0 + 4);
+  assert.equal((await s.launch("silcord"))?.opens, t0 + 4);
   const p1 = page({ ...l, stage: "closed" }, 1, { kind: "closed" }, "k");
   const p2 = page({ ...l, stage: "open" }, 1, { kind: "opened" }, "k");
   assert.match(p1, /the list is closed/);
@@ -428,19 +314,18 @@ test("the list: only its owner, as a tree, with holds to lift", async () => {
   const { s } = fresh();
   assert.ok(await s.register("silcord", "1558585698712293378", "silcord", "", t0, ["175928847299117063"]));
   assert.deepEqual((await s.launch("silcord"))?.admins, ["175928847299117063"]);
-  await s.join(l, "11111111111111111", h("1"), null, t0);
-  await s.join(l, "22222222222222222", h("2"), "someone on your connection is already on the list", t0);
-  await s.release(l, 1, 2, t0);
-  const code = await s.issue(l, "11111111111111111", t0);
-  await s.redeem(l, await digest(code!), "33333333333333333", h("3"), null, t0 + 1);
-  const rows = (await s.tree(l)) as unknown as Row[];
+  // As cygnet.list answers it.
+  const rows: Row[] = [
+    { user: "11111111111111111", sponsor: null, place: 1, released: 2, held: null },
+    { user: "22222222222222222", sponsor: null, place: 2, released: 0, held: "someone on your connection is already on the list" },
+    { user: "33333333333333333", sponsor: "11111111111111111", place: 3, released: 0, held: null },
+  ];
   const html = page({ ...l, admins: [] }, 3, { kind: "list", rows }, "k");
   assert.match(html, /3 on the list/);
   assert.match(html, /#1<\/span><a href="https:\/\/discord\.com\/users\/11111111111111111"/);
   assert.match(html, /--d:1"><span class="mark">└<\/span><a href="https:\/\/discord\.com\/users\/33333333333333333"/, "the invitee under its sponsor");
   assert.match(html, /on hold<\/span><form method="post" action="\/silcord\/lift"><input type="hidden" name="user" value="22222222222222222">/);
-  await s.leave(l, "11111111111111111", t0 + 2);
-  const after = page(l, 2, { kind: "list", rows: (await s.tree(l)) as unknown as Row[] }, "k");
+  const after = page(l, 2, { kind: "list", rows: [rows[1], { ...rows[2], sponsor: "gone" }] }, "k");
   assert.match(after, /invited by someone who left/);
   assert.doesNotMatch(visible(after), /[,;:!?'"A-Z]/);
 });
