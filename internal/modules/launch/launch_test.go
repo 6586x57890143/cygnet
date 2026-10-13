@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -19,24 +20,22 @@ import (
 
 	"github.com/6586x57890143/cygnet/internal/core"
 	"github.com/6586x57890143/cygnet/internal/core/coretest"
+	"github.com/6586x57890143/cygnet/internal/store"
 )
 
 // guild is coretest's guild.
 const guild = snowflake.ID(3)
 
-// worker is cygnet.lol's admin API as a test sees it: launches by name
-// and server, each one's stage, and what it was sent.
+// worker is cygnet.lol's admin API as a test sees it: what each launch
+// was last sent.
 type worker struct {
-	mu       sync.Mutex
-	guilds   map[string]string // guild to launch
-	titles   map[string]string
-	stage    string
-	released int
-	fail     int // answer every request with this status, if set
+	mu   sync.Mutex
+	sent map[string]map[string]any
+	fail int // answer every request with this status, if set
 }
 
 func (w *worker) serve(t *testing.T) *httptest.Server {
-	w.guilds, w.titles, w.stage = map[string]string{}, map[string]string{}, "gathering"
+	w.sent = map[string]map[string]any{}
 	s := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		w.mu.Lock()
 		defer w.mu.Unlock()
@@ -50,37 +49,74 @@ func (w *worker) serve(t *testing.T) *httptest.Server {
 		}
 		var b map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&b)
-		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/admin/"), "/")
-		answer := func(v any) { _ = json.NewEncoder(rw).Encode(v) }
-		switch {
-		case r.Method == http.MethodPut && len(parts) == 1:
-			w.guilds[b["guild"].(string)], w.titles[parts[0]] = parts[0], b["title"].(string)
-			answer(map[string]string{"launch": parts[0]})
-		case parts[0] == "guild":
-			name, ok := w.guilds[parts[1]]
-			if !ok {
-				rw.WriteHeader(http.StatusNotFound)
-				return
-			}
-			answer(map[string]string{"launch": name})
-		case r.Method == http.MethodGet && len(parts) == 1:
-			answer(map[string]any{"launch": parts[0], "stage": w.stage, "opened": "2026-10-11T00:00:00Z", "total": 42, "held": 2, "in_line": 40, "waiting": 30, "released_to": w.released})
-		case parts[1] == "stage":
-			w.stage = b["stage"].(string)
-			answer(map[string]string{})
-		case parts[1] == "release":
-			w.released += int(b["count"].(float64))
-			answer(map[string]int{"released": int(b["count"].(float64))})
-		}
+		w.sent[strings.TrimPrefix(r.URL.Path, "/admin/")] = b
+		_, _ = rw.Write([]byte("{}"))
 	}))
 	t.Cleanup(s.Close)
 	return s
 }
 
+func (w *worker) got(name, key string) any {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.sent[name][key]
+}
+
 // admin is member 5.
 func admin(i discord.Interaction) bool { return i.User().ID == 5 }
 
-func module(e *Edge) *Module { return New(e, admin, nil) }
+// owner is the server's owner, who may see its list on the web.
+const owner = snowflake.ID(5)
+
+var server = discord.Guild{ID: guild, Name: "silcord", OwnerID: owner}
+
+func known(id snowflake.ID) (discord.Guild, bool) { return server, id == guild }
+
+// module is a module with no database: the flock, and the refusals.
+func module(e *Edge) *Module { return New(e, nil, known, admin, nil) }
+
+var t0 = time.Date(2026, 10, 13, 12, 0, 0, 0, time.UTC)
+
+// launches is the launch store on CYGNET_TEST_DATABASE_URL, with every
+// launch these tests name cleared.
+func launches(t *testing.T) *store.Launches {
+	t.Helper()
+	dsn := os.Getenv("CYGNET_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("CYGNET_TEST_DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	pool, err := store.Open(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	if err := store.Migrate(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		"insert into gone (launch, at) select name, now() from launch where guild_id in (3, 4) on conflict do nothing",
+		"delete from ledger where launch in (select name from launch where guild_id in (3, 4))",
+		"delete from gone where launch in (select name from launch where guild_id in (3, 4))",
+		"delete from line where launch in (select name from launch where guild_id in (3, 4))",
+		"delete from code where guild_id in (3, 4)",
+		"delete from launch where guild_id in (3, 4)",
+	} {
+		if _, err := pool.Exec(ctx, q); err != nil {
+			t.Fatal(q, err)
+		}
+	}
+	return store.NewLaunches(pool, []byte("a ledger key for these tests"))
+}
+
+// running is a module with a database and a Worker, its clock at t0.
+func running(t *testing.T) (*Module, *worker) {
+	w := &worker{}
+	s := w.serve(t)
+	m := New(&Edge{URL: s.URL + "/", Token: "secret", Breakglass: 9}, launches(t), known, admin, nil)
+	m.now = func() time.Time { return t0 }
+	return m, w
+}
 
 func asTell(err error) (string, bool) {
 	t, ok := errors.AsType[core.Tell](err)
@@ -110,6 +146,16 @@ func press(t *testing.T, m *Module, customID, user string) ([]discord.Interactio
 	return got, m.click(context.Background(), e)
 }
 
+// pressed is press's redrawn panel, as text.
+func pressed(t *testing.T, m *Module, customID string) string {
+	t.Helper()
+	got, err := press(t, m, customID, "5")
+	if err != nil {
+		t.Fatalf("%s: %v", customID, err)
+	}
+	return coretest.Text("", *got[0].(discord.MessageUpdate).Components)
+}
+
 // submit is the form sent with name, in a server cygnet sees as g.
 func submit(t *testing.T, m *Module, name string, g *discord.Guild) (string, error) {
 	e, _ := coretest.Modal(t, nameID, map[string]string{"name": name}, nil)
@@ -129,11 +175,9 @@ func submit(t *testing.T, m *Module, name string, g *discord.Guild) (string, err
 }
 
 func TestName(t *testing.T) {
-	w := &worker{}
-	s := w.serve(t)
-	m := module(&Edge{URL: s.URL + "/", Token: "secret"})
+	m, w := running(t)
 	hash := "abc"
-	g := discord.Guild{ID: guild, Name: "silcord", Icon: &hash}
+	g := discord.Guild{ID: guild, Name: "silcord", Icon: &hash, OwnerID: owner}
 
 	// No page yet: the panel offers to name one, and its button opens the
 	// form.
@@ -145,48 +189,60 @@ func TestName(t *testing.T) {
 	if err != nil || got[0].(discord.ModalCreate).CustomID != nameID {
 		t.Fatalf("%v: %v", err, got)
 	}
-
-	text, err = submit(t, m, " Silcord ", &g)
-	if err != nil || !strings.Contains(text, "**silcord** has its page") || !strings.Contains(text, s.URL+"/silcord") {
-		t.Fatalf("%v: %s", err, text)
+	if text := pressed(t, m, id+":stage:open"); !strings.Contains(text, "no page yet") {
+		t.Fatalf("a stage before a page: %s", text)
 	}
 
-	// A change to the server's name reaches the page, found through the
-	// Worker, so it holds across a restart; a server that isn't a launch
-	// sends nothing.
+	text, err = submit(t, m, " Silcord ", &g)
+	if err != nil || !strings.Contains(text, "**silcord** has its page") || !strings.Contains(text, "/silcord") || !strings.Contains(text, "ledger    ✓ 0 entries") {
+		t.Fatalf("%v: %s", err, text)
+	}
+	if w.got("silcord", "stage") != store.StageGathering || w.got("silcord", "admins").([]any)[1] != "9" {
+		t.Fatalf("sent %v", w.sent["silcord"])
+	}
+
+	// A second name for the server, or the name in another server, is
+	// refused.
+	if _, err := submit(t, m, "other", &g); err == nil || !strings.Contains(err.Error(), "already") {
+		t.Fatalf("a second name: %v", err)
+	}
+	elsewhere := discord.Guild{ID: 4, Name: "x"}
+	if _, err := submit(t, m, "silcord", &elsewhere); err == nil {
+		t.Fatal("another server took the name")
+	}
+
+	// A change to the server's name reaches the page; a server that isn't a
+	// launch sends nothing.
 	renamed := g
 	renamed.Name = "silcord hq"
 	m.OnEvent(&events.GuildUpdate{Guild: renamed, OldGuild: g})
 	m.OnEvent(&events.GuildUpdate{Guild: g, OldGuild: g})
 	m.refresh(discord.Guild{ID: 99, Name: "x"})
 	for range 100 {
-		w.mu.Lock()
-		done := w.titles["silcord"] == "silcord hq"
-		w.mu.Unlock()
-		if done {
+		if w.got("silcord", "title") == "silcord hq" {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatalf("refreshed %v", w.titles)
+	t.Fatalf("refreshed %v", w.sent)
 }
 
 func TestCampaign(t *testing.T) {
-	w := &worker{}
-	s := w.serve(t)
-	m := module(&Edge{URL: s.URL, Token: "secret"})
-
-	// A stage pressed on a server with no launch only redraws the panel.
-	if got, err := press(t, m, id+":stage:open", "5"); err != nil || !strings.Contains(coretest.Text("", *got[0].(discord.MessageUpdate).Components), "no page yet") {
-		t.Fatalf("no launch: %v", err)
+	m, w := running(t)
+	ctx := context.Background()
+	if err := m.store.Register(ctx, "silcord", guild, t0); err != nil {
+		t.Fatal(err)
 	}
-
-	w.guilds[guild.String()] = "silcord"
+	for u := range snowflake.ID(12) {
+		if _, err := m.store.Join(ctx, "silcord", 100+u, "", nil, t0); err != nil {
+			t.Fatal(err)
+		}
+	}
 	text, err := open(t, m)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"**launch** · silcord", "stage     gathering", "on list   42 · 2 held", "in line   40 · 30 waiting", "opened 2026-10-11"} {
+	for _, want := range []string{"**launch** · silcord", "stage     gathering", "on list   12 · 0 held", "in line   12 · 12 waiting", "ledger    ✓ 12 entries"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("no %q in\n%s", want, text)
 		}
@@ -194,30 +250,38 @@ func TestCampaign(t *testing.T) {
 
 	// The buttons: a stage, a release, a fresh look, each redrawing it.
 	for _, c := range []struct{ id, want string }{
-		{id + ":stage:closed", "the campaign is closed now"},
+		{id + ":stage:open", "the campaign is open now"},
 		{id + ":release:10", "released 3 invites each to 10 people"},
-		{id, "stage     closed"},
+		{id + ":release:50", "released 3 invites each to 2 people"},
+		{id, "stage     open"},
 	} {
-		got, err := press(t, m, c.id, "5")
-		if err != nil {
-			t.Fatalf("%s: %v", c.id, err)
-		}
-		if text := coretest.Text("", *got[0].(discord.MessageUpdate).Components); !strings.Contains(text, c.want) {
+		if text := pressed(t, m, c.id); !strings.Contains(text, c.want) {
 			t.Fatalf("%s: %s", c.id, text)
 		}
 	}
-	if w.stage != "closed" || w.released != 10 {
-		t.Fatalf("stage %s released %d", w.stage, w.released)
+	if text := pressed(t, m, id); !strings.Contains(text, "opened 2026-10-13") || !strings.Contains(text, "ledger    ✓ 25 entries") {
+		t.Fatalf("after: %s", text)
+	}
+	if w.got("silcord", "stage") != store.StageOpen {
+		t.Fatalf("the page wasn't told: %v", w.sent)
+	}
+	for _, bad := range []string{id + ":release:x", id + ":release:1000"} {
+		if _, err := press(t, m, bad, "5"); err == nil {
+			t.Fatalf("%s pressed", bad)
+		}
 	}
 	if _, err := press(t, m, id+":stage:open", "6"); err == nil {
 		t.Fatal("a member who isn't an admin pressed it")
 	}
+
+	// The Worker down: the change is kept, and the panel says the page
+	// hasn't heard.
 	w.fail = http.StatusBadGateway
-	if _, err := press(t, m, id+":release:50", "5"); err == nil || !strings.Contains(err.Error(), "didn't answer") {
-		t.Fatalf("down: %v", err)
+	if text := pressed(t, m, id+":stage:closed"); !strings.Contains(text, "the campaign is closed now") || !strings.Contains(text, "didn't answer") {
+		t.Fatalf("down: %s", text)
 	}
-	if _, err := open(t, m); err == nil || !strings.Contains(err.Error(), "didn't answer") {
-		t.Fatalf("down: %v", err)
+	if text := pressed(t, m, id); !strings.Contains(text, "didn't answer") {
+		t.Fatalf("check again while down: %s", text)
 	}
 }
 
@@ -233,10 +297,13 @@ func TestRefusals(t *testing.T) {
 	if _, err := submit(t, off, "silcord", &g); !errors.Is(err, errOffline) {
 		t.Fatalf("submit with no edge: %v", err)
 	}
+	if _, err := open(t, module(&Edge{URL: "http://x"})); !errors.Is(err, errNoStore) {
+		t.Fatalf("open with no database: %v", err)
+	}
+	off.refresh(g)
+	off.expire()
 
-	w := &worker{}
-	s := w.serve(t)
-	m := module(&Edge{URL: s.URL, Token: "secret"})
+	m, w := running(t)
 	for _, c := range []struct {
 		name  string
 		guild *discord.Guild
@@ -255,29 +322,23 @@ func TestRefusals(t *testing.T) {
 	if tell, _ := asTell(m.named(context.Background(), e)); !strings.Contains(tell, "admins") {
 		t.Errorf("a member who isn't an admin: %v", tell)
 	}
-
-	for _, c := range []struct {
-		m    *Module
-		fail int
-		want string
-	}{
-		{m, http.StatusConflict, "another server's"},
-		{module(&Edge{URL: s.URL, Token: "wrong"}), 0, "ADMIN_TOKEN"},
-		{module(&Edge{URL: "http://127.0.0.1:1", Token: "secret"}), 0, "didn't answer"},
-	} {
-		w.fail = c.fail
-		if _, err := submit(t, c.m, "silcord", &g); err == nil || !strings.Contains(err.Error(), c.want) {
-			t.Errorf("%s: %v", c.want, err)
-		}
+	w.fail = http.StatusConflict
+	if _, err := submit(t, m, "silcord", &g); err == nil || !strings.Contains(err.Error(), "another server's") {
+		t.Errorf("the Worker refusing the name: %v", err)
 	}
-	if err := (&Edge{URL: "://bad"}).push(context.Background(), "x", g); err == nil {
+	w.fail = 0
+	if err := (&Edge{URL: "://bad"}).push(context.Background(), store.Launch{Name: "x"}, g); err == nil {
 		t.Error("a bad URL should fail")
+	}
+	if !strings.Contains(refusalEdge(edgeStatus(http.StatusNotFound)), "ADMIN_TOKEN") {
+		t.Error("a wrong token")
 	}
 	if icon(guild, nil) != "" || people(1) != "1 person" {
 		t.Error("icon or people")
 	}
-	module(&Edge{URL: "http://127.0.0.1:1", Token: "secret"}).refresh(g) // logs, doesn't panic
-	off.refresh(g)
+	if ledger(store.Verified{Broken: 4}) != "✗ broken at entry 4" || ledger(store.Verified{Mismatches: []string{"x"}}) != "✗ 1 counts it doesn't account for" {
+		t.Error("ledger")
+	}
 }
 
 func TestModule(t *testing.T) {

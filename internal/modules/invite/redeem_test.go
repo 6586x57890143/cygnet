@@ -111,6 +111,24 @@ func TestCode(t *testing.T) {
 	}
 }
 
+// A launch's invite puts someone in line: its page is the launch's, and it
+// never lets anyone straight into the server.
+func TestLaunchCode(t *testing.T) {
+	m, s, _, code := minted(t)
+	s.codes[0].Launch = "silcord"
+	got, err := call(t, m.Code, Edge, CodeAsk{code})
+	if info := got.(CodeInfo); err != nil || !info.Open || info.Launch != "silcord" || info.Guild != "" || info.Expires != now.Add(47*time.Hour).UnixMilli() {
+		t.Fatalf("a launch's invite: %+v %v", got, err)
+	}
+	if _, err := call(t, m.Redeem, Edge, RedeemAsk{Code: code, User: newcomer.String()}); !denied(err, Gone) {
+		t.Fatalf("redeeming a launch's invite: %v", err)
+	}
+	s.codes[0].Revoked = now
+	if got, _ := call(t, m.Code, Edge, CodeAsk{code}); got.(CodeInfo).Open {
+		t.Fatal("a launch's invite taken back, open")
+	}
+}
+
 func TestRedeemAdds(t *testing.T) {
 	m, s, f, code := minted(t)
 	got, err := call(t, m.Redeem, Edge, RedeemAsk{code, newcomer.String(), "tok"})

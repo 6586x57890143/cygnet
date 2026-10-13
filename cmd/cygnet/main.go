@@ -108,6 +108,8 @@ func run(log *slog.Logger) error {
 	var saveKept func(context.Context, snowflake.ID, provision.Kept) error
 	// Codes and joins live only in Postgres: without it there is no /invite.
 	var codes *store.Codes
+	// A launch's line and its ledger, too, keyed by CYGNET_LEDGER_KEY.
+	var launches *store.Launches
 	if dsn := os.Getenv("CYGNET_DATABASE_URL"); dsn != "" {
 		pool, err := store.Open(ctx, dsn)
 		if err != nil {
@@ -119,6 +121,11 @@ func run(log *slog.Logger) error {
 		}
 		db = pool
 		codes = store.NewCodes(pool)
+		if key := os.Getenv("CYGNET_LEDGER_KEY"); len(key) >= 32 {
+			launches = store.NewLaunches(pool, []byte(key))
+		} else {
+			log.Warn("no CYGNET_LEDGER_KEY of 32 characters or more, so no launches: their ledger is keyed by it")
+		}
 		off, err := store.ModulesOff(ctx, pool)
 		if err != nil {
 			return fmt.Errorf("reading module switches: %w", err)
@@ -168,6 +175,8 @@ func run(log *slog.Logger) error {
 	var prov atomic.Pointer[provision.Module]
 	// inv answers cygnet.lol's redemptions the same way.
 	var inv atomic.Pointer[invite.Module]
+	// lau answers its questions about launches.
+	var lau atomic.Pointer[launch.Module]
 	// watched is cygnet's HTTP client for Discord, under the fleet's one
 	// refusal watcher (link/perms): Discord refusing her for want of a
 	// permission, from any module, goes to provision as the bird cygnet,
@@ -210,6 +219,15 @@ func run(log *slog.Logger) error {
 				return nil, link.Err(link.Busy, "cygnet is starting")
 			})
 		}
+		// cygnet.join, cygnet.place and the rest, for cygnet.lol's launches.
+		for verb := range (*launch.Module)(nil).Verbs() {
+			h.Serve(verb, func(ctx context.Context, caller string, body json.RawMessage) (any, error) {
+				if m := lau.Load(); m != nil {
+					return m.Verbs()[verb](ctx, caller, body)
+				}
+				return nil, link.Err(link.Busy, "cygnet is starting")
+			})
+		}
 		fleet = h
 		st.WithFleet(h.Fleet)
 		srv := &http.Server{Addr: env("CYGNET_HUB_ADDR", ":7700"), Handler: h, ReadHeaderTimeout: 5 * time.Second}
@@ -223,11 +241,17 @@ func run(log *slog.Logger) error {
 		defer func() { h.Close(); _ = srv.Shutdown(context.Background()) }()
 	}
 	prov.Store(provision.New(fleet, func() discord.Permissions { return core.Install(running).Permissions }, func(i discord.Interaction) bool { return router.Admin(i) }, g).Keep(kept, saveKept, log).Live(func() bool { return probe.Identified.Has(gateway.IntentGuildMembers) }))
+	lau.Store(launch.New(edge(), launches, func(id snowflake.ID) (discord.Guild, bool) {
+		if client == nil {
+			return discord.Guild{}, false
+		}
+		return client.Caches.Guild(id)
+	}, func(i discord.Interaction) bool { return router.Admin(i) }, log).Flock(fleet))
 	all := []core.Module{
 		st,
 		perf.New(obs.Default),
 		prov.Load(),
-		launch.New(edge(), func(i discord.Interaction) bool { return router.Admin(i) }, log).Flock(fleet),
+		lau.Load(),
 	}
 	if codes != nil {
 		// The member add carries a member's own token, so it goes through
