@@ -268,6 +268,14 @@ func run(log *slog.Logger) error {
 		quiet := rest.NewClient(token, rest.WithLogger(slog.New(slog.DiscardHandler)), rest.WithHTTPClient(watched))
 		inv.Store(invite.New(codes, members{func() *bot.Client { return client }, quiet}, links(), func(i discord.Interaction) bool { return router.Admin(i) }, g, log))
 		all = append(all, inv.Load())
+		// A launch's waves come in by invite's way in: added with the
+		// person's own sign in, or an invite only they can take.
+		// CYGNET_CLIENT_SECRET (the app's OAuth secret, the Worker's
+		// DISCORD_CLIENT_SECRET) refreshes the sign ins people sealed.
+		lau.Load().Let(func(ctx context.Context, guild, user snowflake.ID, token string) (bool, string, error) {
+			r, err := inv.Load().Let(ctx, guild, user, token)
+			return r.Added, r.Invite, err
+		}, os.Getenv("CYGNET_CLIENT_SECRET"))
 	} else {
 		log.Warn("no database, so no /invite: codes live in Postgres")
 	}

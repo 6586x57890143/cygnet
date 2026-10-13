@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -71,6 +72,15 @@ type Module struct {
 	flock *flock
 	// opener opens sealed sign ins; nil without CYGNET_SEAL_KEY.
 	opener *Opener
+	// door lets a wave's people in (invite's Let); secret is the app's
+	// OAuth secret and app its ID, to refresh a sealed sign in with.
+	door   Door
+	secret string
+	app    snowflake.ID
+	// joins counts who joined each server, for the valve; flowing starts
+	// it once.
+	joins   joins
+	flowing sync.Once
 }
 
 func New(edge *Edge, s *store.Launches, guild func(snowflake.ID) (discord.Guild, bool), admin func(discord.Interaction) bool, log *slog.Logger) *Module {
@@ -82,8 +92,11 @@ func New(edge *Edge, s *store.Launches, guild func(snowflake.ID) (discord.Guild,
 
 func (*Module) Name() string { return "launch" }
 
-// Want is guilds: a page follows its server's name and picture.
-func (*Module) Want() intents.Want { return intents.Want{Required: gateway.IntentGuilds} }
+// Want is guilds, so a page follows its server's name and picture, and
+// server members, so the valve sees joins a minute.
+func (*Module) Want() intents.Want {
+	return intents.Want{Required: gateway.IntentGuilds | gateway.IntentGuildMembers}
+}
 
 // Perms is none: everything a launch does happens at cygnet.lol.
 func (*Module) Perms() discord.Permissions { return 0 }
@@ -122,8 +135,12 @@ func (m *Module) Modals() []core.Modal {
 func (m *Module) OnEvent(ev bot.Event) {
 	switch e := ev.(type) {
 	case *events.Ready:
+		m.app = e.Client().ApplicationID
 		m.fly(e.Client().Rest, e.Client().ApplicationID)
 		m.expiring.Do(func() { go m.expire() })
+		m.flowing.Do(func() { go m.flow() })
+	case *events.GuildMemberJoin:
+		m.joins.add(e.GuildID, m.now())
 	case *events.GuildUpdate:
 		if e.Guild.Name != e.OldGuild.Name || fmt.Sprint(e.Guild.Icon) != fmt.Sprint(e.OldGuild.Icon) {
 			go m.refresh(e.Guild)
@@ -203,6 +220,22 @@ func (m *Module) click(ctx context.Context, e *events.ComponentInteractionCreate
 	}
 	note := ""
 	switch {
+	case len(parts) == 2 && parts[1] == "ceiling":
+		v := e.StringSelectMenuInteractionData().Values
+		var c int
+		if len(v) != 1 || !slices.Contains(ceilings, atoi(v[0])) {
+			return core.Tell("pick one of the ceilings the panel offers")
+		}
+		c = atoi(v[0])
+		if err := m.store.Valve(ctx, l.Name, c, l.Paused, e.User().ID, m.now()); err != nil {
+			return err
+		}
+		note = fmt.Sprintf("✓ waves keep under %d joins a minute", c)
+	case len(parts) == 3 && parts[1] == "valve" && (parts[2] == "pause" || parts[2] == "run"):
+		if err := m.store.Valve(ctx, l.Name, l.Ceiling, parts[2] == "pause", e.User().ID, m.now()); err != nil {
+			return err
+		}
+		note = map[string]string{"pause": "✓ the valve is paused; nobody new is let in until it runs", "run": "✓ the valve runs"}[parts[2]]
 	case len(parts) == 3 && parts[1] == "stage" && slices.Contains([]string{store.StageGathering, store.StageClosed, store.StageOpen}, parts[2]):
 		if err := m.store.SetStage(ctx, l.Name, parts[2], e.User().ID, m.now()); err != nil {
 			return err
@@ -350,7 +383,12 @@ func (m *Module) panel(ctx context.Context, guild snowflake.ID, note string) (di
 	b.WriteString("-# " + m.edge.page(l.Name) + "\n")
 	fmt.Fprintf(&b, "```\nstage     %s\non list   %d · %d held\nin line   %d · %d waiting\nreleased  %s\ninvites   %d made · %d used · %d open\nledger    %s\n```",
 		l.Stage, s.Total, s.Held, s.InLine, s.Waiting, people(s.ReleasedTo), s.InvitesMade, s.InvitesUsed, s.InvitesOpen, ledger(v))
-	b.WriteString("\n-# gathering lets people get on the list; closed stops new sign ups; open means the server is open, invites still bring friends in, and the clock on deleting the list starts")
+	w, err := m.store.Last(ctx, l.Name)
+	if err != nil {
+		return discord.ContainerComponent{}, err
+	}
+	b.WriteString("\n" + valveLine(l, w, s.Admitted))
+	b.WriteString("\n-# gathering lets people get on the list; closed stops new sign ups; open lets the line in by waves, invites still bring friends in, and the clock on deleting the list starts")
 	if !l.Opens.IsZero() {
 		b.WriteString("\n-# opened " + l.Opens.UTC().Format(time.DateOnly))
 	}
@@ -371,10 +409,54 @@ func (m *Module) panel(ctx context.Context, guild snowflake.ID, note string) (di
 	return brand.Card(brand.ColorInfo, "launch", l.Name, b.String(), sep,
 		discord.NewActionRow(stage(store.StageGathering), stage(store.StageClosed), stage(store.StageOpen)),
 		discord.NewActionRow(release(10), release(50), discord.NewSecondaryButton("check again", id)),
+		discord.NewActionRow(ceilingMenu(l.Ceiling)),
+		discord.NewActionRow(valveButton(l.Paused)),
 		// The list itself is on the web, behind a Discord sign in, for the
 		// server's owner and the breakglass admin only: never in a channel.
 		discord.NewActionRow(discord.NewLinkButton("who's on the list", m.edge.page(l.Name)+"/list")),
 	), nil
+}
+
+// ceilings is what an admin can keep waves under, in joins a minute.
+var ceilings = []int{5, 10, 20, 50, 100}
+
+func atoi(s string) int {
+	n, _ := strconv.Atoi(s)
+	return n
+}
+
+// valveLine is the valve on the panel: what it's set to, the last wave and
+// how it's going, and why it was the size it was.
+func valveLine(l store.Launch, w store.Wave, admitted int) string {
+	state := "runs once the launch is open"
+	switch {
+	case l.Paused:
+		state = "paused"
+	case l.Stage == store.StageOpen:
+		state = "runs"
+	}
+	line := fmt.Sprintf("▸ the valve %s, under %d joins a minute", state, l.Ceiling)
+	if w.ID == 0 {
+		return line + "\n-# no wave yet"
+	}
+	return fmt.Sprintf("%s\n-# wave %d let in %s, %d of them here; %s let in so far\n-# %s", line, w.ID, people(w.Admitted), w.Arrived, people(admitted), w.Why)
+}
+
+func ceilingMenu(c int) discord.InteractiveComponent {
+	var opts []discord.StringSelectMenuOption
+	for _, n := range ceilings {
+		o := discord.StringSelectMenuOption{Label: fmt.Sprintf("under %d joins a minute", n), Value: strconv.Itoa(n)}
+		o.Default = n == c
+		opts = append(opts, o)
+	}
+	return discord.NewStringSelectMenu(id+":ceiling", "how fast waves come in", opts...)
+}
+
+func valveButton(paused bool) discord.InteractiveComponent {
+	if paused {
+		return discord.NewPrimaryButton("run the valve", id+":valve:run")
+	}
+	return discord.NewSecondaryButton("pause the valve", id+":valve:pause")
 }
 
 // ledger is what a walk of the ledger found, in a few words.

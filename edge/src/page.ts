@@ -24,7 +24,7 @@ export type View =
   | { kind: "open"; seal?: boolean }
   | { kind: "closed" }
   | { kind: "opened" }
-  | { kind: "in"; rank: number | null; held: string | null; released: number; left: number; invites: Invite[]; now: number; sealed?: boolean; seal?: boolean }
+  | { kind: "in"; rank: number | null; held: string | null; released: number; left: number; invites: Invite[]; now: number; sealed?: boolean; seal?: boolean; admitted?: boolean }
   | { kind: "invited"; code: string; expires: number; now: number }
   | { kind: "server"; code: string; from: string; expires: number; now: number }
   | { kind: "sent"; to: string; expires: number; now: number; what: string }
@@ -103,6 +103,12 @@ const widget = (sitekey: string) =>
 // when is how someone on the list gets in at their turn: cygnet adds them
 // with the sign in they sealed to her, or their way in waits on this page.
 function when(l: Launch, v: Extract<View, { kind: "in" }>, sitekey: string): string {
+  if (v.admitted && v.sealed) return `<p class="note ok">its your turn<br>cygnet is adding you now so look for the server in discord</p>`;
+  if (v.admitted) {
+    return `<p class="note ok">its your turn<br>your way in is ready</p>
+      <form method="post" action="/${esc(l.name)}/in">${widget(sitekey)}<button type="submit" name="how" value="add">take me in</button><button class="quiet" type="submit" name="how" value="invite">send me an invite instead</button></form>
+      <p class="fine">you sign in with discord and cygnet adds you to the server<br>or she makes an invite only you can use for 5 minutes</p>`;
+  }
   if (v.sealed) {
     return `<div class="row"><span class="k">when it opens</span><span>cygnet adds you<br><span class="dim">with the sign in you locked for her</span></span></div>
       <form method="post" action="/${esc(l.name)}/unseal"><button class="quiet" type="submit">never mind and drop it</button></form>`;
@@ -146,16 +152,19 @@ export function page(l: Launch, total: number, view: View, sitekey: string, icon
       <p class="fine">you sign in with discord<br>we only see your account id and your email${view.seal ? "<br>if you want to be added when it opens your sign in is locked so only cygnet can open it<br>she uses it once at your turn and drops it" : ""}</p>`;
       break;
     case "in":
-      turnstile = (view.left > 0 && !view.held) || (!!view.seal && !view.sealed);
+      turnstile = (view.left > 0 && !view.held) || (!!view.seal && !view.sealed) || (!!view.admitted && !view.sealed);
       body = `
       <div class="place">
         <span class="k">${view.rank === null ? "youre in through a friend" : "your spot"}</span>
         <span class="rank" data-count="${view.rank ?? ""}">${view.rank === null ? "in" : `#${view.rank}`}</span>
       </div>
+      ${view.admitted ? when(l, view, sitekey) : ""}
       ${view.held ? "" : invites(l, view, sitekey)}
-      ${when(l, view, sitekey)}
+      ${view.admitted ? "" : when(l, view, sitekey)}
       ${
-        view.held
+        view.admitted
+          ? ""
+          : view.held
           ? `<p class="note warn">your invites are on hold while we take a quick look<br>${esc(view.held)}<br>your spot in line stays the same</p>`
           : view.rank === null
             ? `<p class="note ok">you get in with the friend who invited you</p>`

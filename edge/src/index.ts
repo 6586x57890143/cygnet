@@ -64,7 +64,7 @@ interface Env {
   CYGNET_SEAL_PUBLIC?: string;
 }
 
-type Purpose = "join" | "issue" | "redeem" | "list" | "server";
+type Purpose = "join" | "issue" | "redeem" | "list" | "server" | "admit";
 
 const api = "https://discord.com/api/v10";
 // stay is how long the page remembers who you are.
@@ -112,6 +112,7 @@ const say = {
   banned: "you cant join this server",
   full: "youre in as many servers as discord allows\nleave one and try again",
   unready: "this server isnt ready for new people yet\nwe told its admins so try again a bit later",
+  notYet: "your turn hasnt come yet\nyour page says when it does",
 };
 
 // denied is what a server's link refused for, in a person's words: the
@@ -148,6 +149,7 @@ export default {
           return await human(req, env, l, (form) => oauth(env, url, "join", l, form.get("how") === "seal" && env.CYGNET_SEAL_PUBLIC ? "seal" : "-"));
         }
         if (second === "seal") return await sealStart(req, env, l, url);
+        if (second === "in") return await inStart(req, env, l, url);
         if (second === "unseal") return await unseal(req, env, l);
         if (second === "issue") return await issueStart(req, env, l, url);
         if (second === "revoke") return await revoke(req, env, l);
@@ -177,7 +179,7 @@ async function landing(req: Request, env: Env, l: Launch): Promise<Response> {
   const now = Date.now();
   if (user) {
     const r = await ask<Place>(env, "cygnet.place", { launch: l.name, user });
-    if (r.ok) return html(env, l, { kind: "in", rank: r.body.sponsored ? null : r.body.rank, held: r.body.held ?? null, released: r.body.released, left: r.body.left, invites: invitesOf(r.body), now, sealed: r.body.sealed, seal: !!env.CYGNET_SEAL_PUBLIC && !r.body.admitted && l.stage !== "open" });
+    if (r.ok) return html(env, l, { kind: "in", rank: r.body.sponsored ? null : r.body.rank, held: r.body.held ?? null, released: r.body.released, left: r.body.left, invites: invitesOf(r.body), now, sealed: r.body.sealed, seal: !!env.CYGNET_SEAL_PUBLIC && !r.body.admitted && l.stage !== "open", admitted: !!r.body.admitted });
     if (!refused(r, "not_on_list")) return html(env, l, { kind: "error", why: say.broke }, 502);
   }
   // Signing in again still works when the list isn't taking anyone new.
@@ -212,7 +214,7 @@ async function oauth(env: Env, url: URL, purpose: Purpose, l: Launch, invite = "
     response_type: "code",
     redirect_uri: `https://${url.host}/auth/discord`,
     // The list needs only who you are; everything else needs your email.
-    scope: purpose === "list" ? "identify" : invite === "seal" ? "identify email guilds.join" : "identify email",
+    scope: purpose === "list" ? "identify" : purpose === "admit" ? (invite === "add" ? "identify guilds.join" : "identify") : invite === "seal" ? "identify email guilds.join" : "identify email",
     state: nonce,
     prompt: "none",
   }).toString();
@@ -230,6 +232,14 @@ async function issueStart(req: Request, env: Env, l: Launch, url: URL): Promise<
 async function sealStart(req: Request, env: Env, l: Launch, url: URL): Promise<Response> {
   if (!(await who(req, env, l)) || !env.CYGNET_SEAL_PUBLIC) return back(l);
   return human(req, env, l, () => oauth(env, url, "join", l, "seal"));
+}
+
+// inStart is someone a wave let in coming for their way in: a sign in
+// that lets cygnet add them ("add"), or only says who they are, for an
+// invite of their own.
+async function inStart(req: Request, env: Env, l: Launch, url: URL): Promise<Response> {
+  if (!(await who(req, env, l))) return back(l);
+  return human(req, env, l, (form) => oauth(env, url, "admit", l, form.get("how") === "invite" ? "invite" : "add"));
 }
 
 // unseal is never mind: cygnet forgets the sealed sign in, and they get
@@ -364,12 +374,25 @@ async function callback(req: Request, env: Env, ctx: ExecutionContext, url: URL)
         body: new URLSearchParams({ token: access_token, token_type_hint: "access_token" }),
       }),
     );
-  if (!sealing) revoke();
+  // A way in's token goes to cygnet first, and is given back after.
+  if (!sealing && purpose !== "admit") revoke();
   if (!me.ok) {
-    if (sealing) revoke();
+    if (sealing || purpose === "admit") revoke();
     return html(env, l, { kind: "error", why: say.discordWho }, 502);
   }
   const user = await me.json<{ id: string; email?: string | null; verified?: boolean }>();
+  if (purpose === "admit") {
+    try {
+      if ((await who(req, env, l)) !== user.id) return html(env, l, { kind: "error", why: say.otherAccount }, 403);
+      const r = await ask<Redeemed>(env, "cygnet.admit", { launch: l.name, user: user.id, token: invite === "add" ? access_token : undefined });
+      if (refused(r, "not_yet", "not_on_list")) return html(env, l, { kind: "error", why: say.notYet }, 403);
+      if (!r.ok) return html(env, l, { kind: "error", why: r.code === "denied" && Object.hasOwn(denied, r.reason) ? denied[r.reason] : say.broke }, r.code === "denied" ? 403 : 502);
+      const to = r.body.invite ? `https://discord.gg/${encodeURIComponent(r.body.invite)}` : `https://discord.com/channels/${encodeURIComponent(r.body.guild)}`;
+      return new Response(null, { status: 303, headers: secure({ location: to, "set-cookie": cookie("cy_state", "", 0) }) });
+    } finally {
+      revoke();
+    }
+  }
   // The list: only for whoever may see it, for an hour.
   if (purpose === "list") {
     if (!(l.admins ?? []).includes(user.id)) return html(env, l, { kind: "error", why: say.notYours }, 403);

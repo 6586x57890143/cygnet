@@ -201,6 +201,8 @@ test("every page, in the voice", () => {
     sealOffered: page(l, 1, { kind: "open", seal: true }, "key"),
     sealable: page(l, 1, { kind: "in", rank: 3, held: null, released: 0, left: 0, now, invites: [], seal: true }, "key"),
     sealed: page(l, 1, { kind: "in", rank: 3, held: null, released: 0, left: 0, now, invites: [], seal: true, sealed: true }, "key"),
+    turn: page(l, 1, { kind: "in", rank: 3, held: null, released: 0, left: 0, now, invites: [], admitted: true }, "key"),
+    adding: page(l, 1, { kind: "in", rank: 3, held: null, released: 0, left: 0, now, invites: [], admitted: true, sealed: true }, "key"),
     held: page(l, 1, { kind: "in", rank: 2, held: "someone on your connection is already on the list", released: 3, left: 3, now, invites: [] }, "key"),
     invited: page(l, 1, { kind: "invited", code: "c", expires: now + 3_600_000, now }, "key"),
     sent: page(l, 1, { kind: "sent", to: "st***@gm***.com", expires: now + 600_000, now, what: "take your invite" }, "k"),
@@ -225,6 +227,12 @@ test("every page, in the voice", () => {
   assert.match(views.sealable, /cf-turnstile/);
   assert.match(views.sealed, /cygnet adds you[\s\S]*action="\/silcord\/unseal"/);
   assert.doesNotMatch(views.sealed, /action="\/silcord\/seal"/);
+  assert.match(views.turn, /your way in is ready[\s\S]*action="\/silcord\/in"[\s\S]*value="add">take me in[\s\S]*value="invite">send me an invite instead/);
+  assert.match(views.turn, /cf-turnstile/);
+  assert.ok(views.turn.indexOf("your way in is ready") < views.turn.indexOf("invites"), "the way in first");
+  assert.doesNotMatch(views.turn, /invites go out from the front/);
+  assert.match(views.adding, /cygnet is adding you now/);
+  assert.doesNotMatch(views.adding, /action="\/silcord\/in"/);
   assert.match(views.mine, /#7/);
   assert.match(views.mine, /aria-label="2 of 3 left"/);
   assert.equal(views.mine.match(/<i class="on">/g)?.length, 2);
