@@ -70,9 +70,12 @@ type CodeAsk struct {
 // it does, the server it lets someone into, who it's from, and when it
 // stops working (Unix milliseconds). A link spent by someone who hasn't
 // arrived yet stays open for a day, so they can come back to it: only
-// they can get any further with it.
+// they can get any further with it. A launch's invite says only its
+// launch and when it stops working: it puts someone in line, and the
+// launch's page says the rest.
 type CodeInfo struct {
 	Open    bool   `json:"open"`
+	Launch  string `json:"launch,omitempty"`
 	Guild   string `json:"guild,omitempty"`
 	Name    string `json:"name,omitempty"`
 	Icon    string `json:"icon,omitempty"`
@@ -104,8 +107,14 @@ func (m *Module) Code(ctx context.Context, caller string, body json.RawMessage) 
 	if err != nil {
 		return nil, err
 	}
-	c, g, owner, err := m.lookup(ctx, hash)
 	now := m.now()
+	if c, err := m.store.Find(ctx, hash); err == nil && c.Launch != "" {
+		if !c.Open(now) {
+			return CodeInfo{}, nil
+		}
+		return CodeInfo{Open: true, Launch: c.Launch, Expires: c.Expires.UnixMilli()}, nil
+	}
+	c, g, owner, err := m.lookup(ctx, hash)
 	waiting := c.SpentBy != 0 && c.Arrived.IsZero() && now.Sub(c.SpentAt) < 24*time.Hour
 	if errors.Is(err, errGone) || err == nil && !c.Open(now) && !waiting {
 		return CodeInfo{}, nil
@@ -202,12 +211,12 @@ func (m *Module) redeem(ctx context.Context, caller string, body json.RawMessage
 var errGone = errors.New("invite: the code can't be used")
 
 // lookup is the code hash names, with its server and its owner as a member
-// of it: errGone if there's no such code, cygnet isn't in its server or
-// has /invite off there, or its owner left, which takes their links with
-// them.
+// of it: errGone if there's no such code, it's a launch's (which puts
+// someone in line, not in the server), cygnet isn't in its server or has
+// /invite off there, or its owner left, which takes their links with them.
 func (m *Module) lookup(ctx context.Context, hash []byte) (store.Code, discord.Guild, *discord.Member, error) {
 	c, err := m.store.Find(ctx, hash)
-	if errors.Is(err, store.ErrGone) {
+	if errors.Is(err, store.ErrGone) || err == nil && c.Launch != "" {
 		return c, discord.Guild{}, nil, errGone
 	}
 	if err != nil {

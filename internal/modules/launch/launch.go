@@ -1,7 +1,9 @@
 // Package launch is /launch: a server's page at cygnet.lol where people get
 // in line, and the campaign that lets them in. The command opens one panel,
 // and everything is done on it: naming the page, the campaign's stage and
-// releasing invites to the front of the line.
+// releasing invites to the front of the line. cygnet keeps the line, its
+// invites and their ledger (store.Launches); the Worker at cygnet.lol asks
+// her for them over the hub (verbs.go) and keeps only what a sign up needs.
 package launch
 
 import (
@@ -14,7 +16,9 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/disgoorg/disgo/bot"
@@ -26,12 +30,13 @@ import (
 	"github.com/6586x57890143/cygnet/internal/brand"
 	"github.com/6586x57890143/cygnet/internal/core"
 	"github.com/6586x57890143/cygnet/internal/intents"
+	"github.com/6586x57890143/cygnet/internal/store"
 )
 
-// Edge is the Worker at cygnet.lol as cygnet runs launches on it: its
-// address and the bearer its admin endpoints take. cygnet reads a server's
-// name and picture with its own token and sends them, so the Worker never
-// needs one (SPEC.md, Principles 6).
+// Edge is the Worker at cygnet.lol as cygnet sends it what its pages show:
+// its address and the bearer its admin endpoints take. cygnet reads a
+// server's name and picture with its own token and sends them, so the
+// Worker never needs one (SPEC.md, Principles 6).
 type Edge struct {
 	URL, Token string
 	Client     *http.Client
@@ -52,15 +57,25 @@ var slug = regexp.MustCompile(`^[a-z0-9-]{2,32}$`)
 
 type Module struct {
 	// edge is nil when cygnet isn't connected to cygnet.lol.
-	edge  *Edge
+	edge *Edge
+	// store is nil without a database, or without a ledger key.
+	store *store.Launches
+	// guild is a server as cygnet's cache has it.
+	guild func(snowflake.ID) (discord.Guild, bool)
 	admin func(discord.Interaction) bool
 	log   *slog.Logger
+	now   func() time.Time
+	// expiring starts the daily sweep once.
+	expiring sync.Once
 	// flock is the birds sent to cygnet.lol's footer; nil without the hub.
 	flock *flock
 }
 
-func New(edge *Edge, admin func(discord.Interaction) bool, log *slog.Logger) *Module {
-	return &Module{edge: edge, admin: admin, log: log}
+func New(edge *Edge, s *store.Launches, guild func(snowflake.ID) (discord.Guild, bool), admin func(discord.Interaction) bool, log *slog.Logger) *Module {
+	if log == nil {
+		log = slog.New(slog.DiscardHandler)
+	}
+	return &Module{edge: edge, store: s, guild: guild, admin: admin, log: log, now: time.Now}
 }
 
 func (*Module) Name() string { return "launch" }
@@ -75,7 +90,7 @@ func (*Module) Help() core.Help {
 	return core.Help{
 		Color: brand.ColorPrimary,
 		Line:  "a page at cygnet.lol where people get in line",
-		About: "/launch opens this server's launch. the first time, you name its page and it lives at cygnet.lol/<name> with the server's name and picture, which follow the server when they change. after that the panel is the campaign: how many are on the list and in line, and the invites given and taken. gathering lets people get on the list, closed stops new sign ups and open means the server is open. release gives the next people in line their invites. who's on the list is on the web, behind a discord sign in, for the server's owner only",
+		About: "/launch opens this server's launch. the first time, you name its page and it lives at cygnet.lol/<name> with the server's name and picture, which follow the server when they change. after that the panel is the campaign: how many are on the list and in line, and the invites given and taken. gathering lets people get on the list, closed stops new sign ups and open means the server is open. release gives the next people in line their invites. every change lands in a ledger cygnet checks each time the panel opens. who's on the list is on the web, behind a discord sign in, for the server's owner only",
 	}
 }
 
@@ -100,11 +115,13 @@ func (m *Module) Modals() []core.Modal {
 }
 
 // OnEvent sends a launch's server again when its name or picture changes,
-// and starts sending the flock once cygnet is connected.
+// and starts sending the flock and expiring old lists once cygnet is
+// connected.
 func (m *Module) OnEvent(ev bot.Event) {
 	switch e := ev.(type) {
 	case *events.Ready:
 		m.fly(e.Client().Rest, e.Client().ApplicationID)
+		m.expiring.Do(func() { go m.expire() })
 	case *events.GuildUpdate:
 		if e.Guild.Name != e.OldGuild.Name || fmt.Sprint(e.Guild.Icon) != fmt.Sprint(e.OldGuild.Icon) {
 			go m.refresh(e.Guild)
@@ -112,7 +129,40 @@ func (m *Module) OnEvent(ev bot.Event) {
 	}
 }
 
-var errOffline = core.Tell("cygnet isn't connected to cygnet.lol yet; set CYGNET_EDGE_URL and CYGNET_EDGE_TOKEN")
+var (
+	errOffline = core.Tell("cygnet isn't connected to cygnet.lol yet; set CYGNET_EDGE_URL and CYGNET_EDGE_TOKEN")
+	errNoStore = core.Tell("a launch keeps its list in cygnet's database; set CYGNET_DATABASE_URL and CYGNET_LEDGER_KEY")
+)
+
+// ready is why launches can't run here, or nil.
+func (m *Module) ready() error {
+	switch {
+	case m.edge == nil:
+		return errOffline
+	case m.store == nil:
+		return errNoStore
+	}
+	return nil
+}
+
+// keepList is how long a launch's list is kept after it first opens.
+const keepList = 365 * 24 * time.Hour
+
+// expire deletes each launch's list once keepList has passed since it
+// opened, checking daily.
+func (m *Module) expire() {
+	if m.store == nil {
+		return
+	}
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		if err := m.store.Expire(ctx, m.now(), keepList); err != nil {
+			m.log.Warn("expiring launch lists", "err", err)
+		}
+		cancel()
+		time.Sleep(24 * time.Hour)
+	}
+}
 
 func (m *Module) open(ctx context.Context, e *events.ApplicationCommandInteractionCreate) error {
 	card, err := m.panel(ctx, *e.GuildID(), "")
@@ -133,36 +183,44 @@ func (m *Module) click(ctx context.Context, e *events.ComponentInteractionCreate
 	if e.GuildID() == nil || !m.admin(e) {
 		return core.Tell("only this server's admins can run its launch")
 	}
-	if m.edge == nil {
-		return errOffline
+	if err := m.ready(); err != nil {
+		return err
 	}
 	parts := strings.Split(e.Data.CustomID(), ":")
 	if len(parts) == 2 && parts[1] == "name" {
 		return e.Modal(form())
 	}
-	name, err := m.edge.launchOf(ctx, *e.GuildID())
-	if err != nil {
-		return m.edgeTell(err)
+	l, err := m.store.Of(ctx, *e.GuildID())
+	switch {
+	case errors.Is(err, store.ErrNoLaunch):
+		// A button from before the launch was named: the panel is drawn
+		// again as it stands.
+		parts = nil
+	case err != nil:
+		return err
 	}
 	note := ""
-	if len(parts) == 3 && name != "" {
-		switch parts[1] {
-		case "stage":
-			err = m.edge.do(ctx, http.MethodPost, "/admin/"+name+"/stage", map[string]any{"stage": parts[2]}, nil)
-			note = "✓ the campaign is " + parts[2] + " now"
-		case "release":
-			var n int
-			if _, err = fmt.Sscan(parts[2], &n); err == nil {
-				var out struct {
-					Released int `json:"released"`
-				}
-				err = m.edge.do(ctx, http.MethodPost, "/admin/"+name+"/release", map[string]any{"count": n, "invites": invitesEach}, &out)
-				note = fmt.Sprintf("✓ released %d invites each to %s", invitesEach, people(out.Released))
-			}
+	switch {
+	case len(parts) == 3 && parts[1] == "stage" && slices.Contains([]string{store.StageGathering, store.StageClosed, store.StageOpen}, parts[2]):
+		if err := m.store.SetStage(ctx, l.Name, parts[2], e.User().ID, m.now()); err != nil {
+			return err
 		}
+		l.Stage = parts[2]
+		note = "✓ the campaign is " + parts[2] + " now" + m.sync(ctx, l, *e.GuildID())
+	case len(parts) == 3 && parts[1] == "release":
+		var n int
+		if _, err := fmt.Sscan(parts[2], &n); err != nil || n < 1 || n > 100 {
+			return core.Tell("that isn't a release the panel offers")
+		}
+		got, err := m.store.Release(ctx, l.Name, n, invitesEach, e.User().ID, m.now())
 		if err != nil {
-			return m.edgeTell(err)
+			return err
 		}
+		note = fmt.Sprintf("✓ released %d invites each to %s", invitesEach, people(got))
+	case len(parts) == 1:
+		// check again also sends the page what it shows, in case a send was
+		// missed.
+		note = strings.TrimPrefix(m.sync(ctx, l, *e.GuildID()), "\n")
 	}
 	card, err := m.panel(ctx, *e.GuildID(), note)
 	if err != nil {
@@ -191,8 +249,8 @@ func (m *Module) named(ctx context.Context, e *events.ModalSubmitInteractionCrea
 	if e.GuildID() == nil || !m.admin(e) {
 		return core.Tell("only this server's admins can run its launch")
 	}
-	if m.edge == nil {
-		return errOffline
+	if err := m.ready(); err != nil {
+		return err
 	}
 	name := strings.ToLower(strings.TrimSpace(e.Data.Text("name")))
 	if !slug.MatchString(name) {
@@ -202,7 +260,17 @@ func (m *Module) named(ctx context.Context, e *events.ModalSubmitInteractionCrea
 	if !ok {
 		return core.Tell("cygnet can't see this server yet; try again in a moment")
 	}
-	if err := m.edge.push(ctx, name, g); err != nil {
+	switch err := m.store.Register(ctx, name, g.ID, m.now()); {
+	case errors.Is(err, store.ErrTaken):
+		return core.Tell("that name is another server's launch, or this server has one already")
+	case err != nil:
+		return err
+	}
+	l, err := m.store.Get(ctx, name)
+	if err != nil {
+		return err
+	}
+	if err := m.edge.push(ctx, l, g); err != nil {
 		return fmt.Errorf("%w: %w", core.Tell(refusalEdge(err)), err)
 	}
 	card, err := m.panel(ctx, g.ID, "✓ **"+g.Name+"** has its page; its name and picture follow the server when they change")
@@ -212,37 +280,35 @@ func (m *Module) named(ctx context.Context, e *events.ModalSubmitInteractionCrea
 	return e.UpdateMessage(discord.NewMessageUpdateV2(card).WithAllowedMentions(core.NoPings()))
 }
 
-// refresh sends a launch's server again after it changed, if it's one: the
-// Worker says which launch a server has, so this holds across restarts.
+// refresh sends a launch's server again after it changed, if it's one.
 func (m *Module) refresh(g discord.Guild) {
-	if m.edge == nil {
+	if m.ready() != nil {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	name, err := m.edge.launchOf(ctx, g.ID)
-	if err == nil && name != "" {
-		err = m.edge.push(ctx, name, g)
+	l, err := m.store.Of(ctx, g.ID)
+	if err == nil {
+		err = m.edge.push(ctx, l, g)
 	}
-	if err != nil && m.log != nil {
+	if err != nil && !errors.Is(err, store.ErrNoLaunch) {
 		m.log.Warn("refreshing a launch", "guild", g.ID, "err", err)
 	}
 }
 
-// stats is a launch's campaign as the Worker counts it.
-type stats struct {
-	Launch         string `json:"launch"`
-	Stage          string `json:"stage"`
-	Opened         string `json:"opened"`
-	Total          int    `json:"total"`
-	InLine         int    `json:"in_line"`
-	ThroughInvites int    `json:"through_invites"`
-	Held           int    `json:"held"`
-	ReleasedTo     int    `json:"released_to"`
-	Waiting        int    `json:"waiting"`
-	InvitesMade    int    `json:"invites_made"`
-	InvitesUsed    int    `json:"invites_used"`
-	InvitesOpen    int    `json:"invites_open"`
+// sync sends cygnet.lol what l's page shows, and says so on a line of its
+// own if it couldn't: the change itself is kept, and check again sends it
+// again.
+func (m *Module) sync(ctx context.Context, l store.Launch, guild snowflake.ID) string {
+	g, ok := m.guild(guild)
+	if !ok {
+		return ""
+	}
+	if err := m.edge.push(ctx, l, g); err != nil {
+		m.log.Warn("sending a launch to cygnet.lol", "launch", l.Name, "err", err)
+		return "\n-# ⚠ " + refusalEdge(err) + "; its page shows what it had until check again sends it"
+	}
+	return ""
 }
 
 // invitesEach is how many invites a release gives each person.
@@ -252,37 +318,43 @@ const invitesEach = 3
 // then the campaign in numbers, the stage buttons with the current one
 // off, and the releases.
 func (m *Module) panel(ctx context.Context, guild snowflake.ID, note string) (discord.ContainerComponent, error) {
-	if m.edge == nil {
-		return discord.ContainerComponent{}, errOffline
+	if err := m.ready(); err != nil {
+		return discord.ContainerComponent{}, err
 	}
-	name, err := m.edge.launchOf(ctx, guild)
-	if err != nil {
-		return discord.ContainerComponent{}, m.edgeTell(err)
-	}
+	l, err := m.store.Of(ctx, guild)
 	sep := discord.NewSeparator(discord.SeparatorSpacingSizeSmall)
-	if name == "" {
+	switch {
+	case errors.Is(err, store.ErrNoLaunch):
 		return brand.Card(brand.ColorInfo, "launch", "",
 			"▸ this server has no page yet\n-# name it and people can get in line at cygnet.lol/<name>; nobody is let in until you release invites",
 			sep, discord.NewActionRow(discord.NewPrimaryButton("name its page", id+":name"))), nil
+	case err != nil:
+		return discord.ContainerComponent{}, err
 	}
-	var s stats
-	if err := m.edge.do(ctx, http.MethodGet, "/admin/"+name, nil, &s); err != nil {
-		return discord.ContainerComponent{}, m.edgeTell(err)
+	s, err := m.store.Count(ctx, l.Name, m.now())
+	if err != nil {
+		return discord.ContainerComponent{}, err
+	}
+	// ponytail: the whole ledger walked on every draw; keep a checked head
+	// if a launch's ledger grows past what a panel can wait for.
+	v, err := m.store.Verify(ctx, l.Name)
+	if err != nil {
+		return discord.ContainerComponent{}, err
 	}
 	var b strings.Builder
 	if note != "" {
 		b.WriteString(note + "\n")
 	}
-	b.WriteString("-# " + m.edge.page(name) + "\n")
-	fmt.Fprintf(&b, "```\nstage     %s\non list   %d · %d held\nin line   %d · %d waiting\nreleased  %s\ninvites   %d made · %d used · %d open\n```",
-		s.Stage, s.Total, s.Held, s.InLine, s.Waiting, people(s.ReleasedTo), s.InvitesMade, s.InvitesUsed, s.InvitesOpen)
+	b.WriteString("-# " + m.edge.page(l.Name) + "\n")
+	fmt.Fprintf(&b, "```\nstage     %s\non list   %d · %d held\nin line   %d · %d waiting\nreleased  %s\ninvites   %d made · %d used · %d open\nledger    %s\n```",
+		l.Stage, s.Total, s.Held, s.InLine, s.Waiting, people(s.ReleasedTo), s.InvitesMade, s.InvitesUsed, s.InvitesOpen, ledger(v))
 	b.WriteString("\n-# gathering lets people get on the list; closed stops new sign ups; open means the server is open, invites still bring friends in, and the clock on deleting the list starts")
-	if s.Opened != "" {
-		b.WriteString("\n-# opened " + s.Opened[:10])
+	if !l.Opens.IsZero() {
+		b.WriteString("\n-# opened " + l.Opens.UTC().Format(time.DateOnly))
 	}
 	stage := func(st string) discord.InteractiveComponent {
 		btn := discord.NewSecondaryButton(st, id+":stage:"+st)
-		if st == s.Stage {
+		if st == l.Stage {
 			btn = btn.AsDisabled()
 		}
 		return btn
@@ -294,44 +366,49 @@ func (m *Module) panel(ctx context.Context, guild snowflake.ID, note string) (di
 		}
 		return btn
 	}
-	return brand.Card(brand.ColorInfo, "launch", name, b.String(), sep,
-		discord.NewActionRow(stage("gathering"), stage("closed"), stage("open")),
+	return brand.Card(brand.ColorInfo, "launch", l.Name, b.String(), sep,
+		discord.NewActionRow(stage(store.StageGathering), stage(store.StageClosed), stage(store.StageOpen)),
 		discord.NewActionRow(release(10), release(50), discord.NewSecondaryButton("check again", id)),
 		// The list itself is on the web, behind a Discord sign in, for the
 		// server's owner and the breakglass admin only: never in a channel.
-		discord.NewActionRow(discord.NewLinkButton("who's on the list", m.edge.page(name)+"/list")),
+		discord.NewActionRow(discord.NewLinkButton("who's on the list", m.edge.page(l.Name)+"/list")),
 	), nil
 }
 
-// edgeTell is why the Worker didn't answer as hoped, in an admin's words.
-func (m *Module) edgeTell(err error) error {
-	return fmt.Errorf("%w: %w", core.Tell(refusalEdge(err)), err)
+// ledger is what a walk of the ledger found, in a few words.
+func ledger(v store.Verified) string {
+	switch {
+	case v.Broken != 0:
+		return fmt.Sprintf("✗ broken at entry %d", v.Broken)
+	case len(v.Mismatches) > 0:
+		return fmt.Sprintf("✗ %d counts it doesn't account for", len(v.Mismatches))
+	}
+	return fmt.Sprintf("✓ %d entries", v.Entries)
 }
 
 func (e *Edge) page(name string) string { return strings.TrimRight(e.URL, "/") + "/" + name }
 
-// push sends a launch's server as cygnet sees it, with who may see its
-// list: the server's owner, and the breakglass admin.
-func (e *Edge) push(ctx context.Context, name string, g discord.Guild) error {
-	admins := []string{}
+// admins is who may see a launch's list on the web: the server's owner,
+// and the breakglass admin.
+func (e *Edge) admins(g discord.Guild) []snowflake.ID {
+	var out []snowflake.ID
 	for _, id := range []snowflake.ID{g.OwnerID, e.Breakglass} {
 		if id != 0 {
-			admins = append(admins, id.String())
+			out = append(out, id)
 		}
 	}
-	return e.do(ctx, http.MethodPut, "/admin/"+name, map[string]any{"guild": g.ID.String(), "title": g.Name, "icon": icon(g.ID, g.Icon), "admins": admins}, nil)
+	return out
 }
 
-// launchOf is the launch a server has on the Worker, or "".
-func (e *Edge) launchOf(ctx context.Context, guild snowflake.ID) (string, error) {
-	var out struct {
-		Launch string `json:"launch"`
+// push sends what a launch's page shows: its server as cygnet sees it, its
+// stage, and who may see its list. The Worker keeps it as sent, and asks
+// cygnet for everything else.
+func (e *Edge) push(ctx context.Context, l store.Launch, g discord.Guild) error {
+	admins := []string{}
+	for _, id := range e.admins(g) {
+		admins = append(admins, id.String())
 	}
-	err := e.do(ctx, http.MethodGet, "/admin/guild/"+guild.String(), nil, &out)
-	if errors.Is(err, edgeStatus(http.StatusNotFound)) {
-		return "", nil
-	}
-	return out.Launch, err
+	return e.do(ctx, http.MethodPut, "/admin/"+l.Name, map[string]any{"guild": g.ID.String(), "title": g.Name, "icon": icon(g.ID, g.Icon), "admins": admins, "stage": l.Stage}, nil)
 }
 
 // do calls one of the Worker's admin endpoints, sending body as JSON and
@@ -384,7 +461,7 @@ func (s edgeStatus) Error() string { return fmt.Sprintf("cygnet.lol answered %d"
 func refusalEdge(err error) string {
 	switch {
 	case errors.Is(err, edgeStatus(http.StatusConflict)):
-		return "that name is already another server's launch; pick another"
+		return "cygnet.lol knows that name as another server's launch"
 	case errors.Is(err, edgeStatus(http.StatusNotFound)):
 		return "cygnet.lol didn't take cygnet's token; check CYGNET_EDGE_TOKEN matches the Worker's ADMIN_TOKEN"
 	}
