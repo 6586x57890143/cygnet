@@ -25,7 +25,7 @@ func codes(t testing.TB, guild snowflake.ID) *Codes {
 	if err := Migrate(ctx, pool); err != nil {
 		t.Fatal(err)
 	}
-	for _, q := range []string{"delete from joined where guild_id = $1", "delete from code where guild_id = $1", "delete from invites where guild_id = $1"} {
+	for _, q := range []string{"delete from line where launch in (select name from launch where guild_id = $1)", "delete from joined where guild_id = $1", "delete from code where guild_id = $1", "delete from invites where guild_id = $1"} {
 		if _, err := pool.Exec(ctx, q, int64(guild)); err != nil {
 			t.Fatal(err)
 		}
