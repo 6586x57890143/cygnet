@@ -167,10 +167,20 @@ button.quiet:hover { color: var(--text); transform: none; }
 @keyframes pulse { 50% { opacity: .25; transform: scale(.7); } }
 
 /* Privacy: there, readable, not asking for attention. */
-.privacy { grid-area: privacy; align-self: start; margin-top: 30px; max-width: 52ch; color: var(--muted); opacity: .55; font: 11.5px/1.6 var(--mono); transition: opacity .3s ease; }
-.privacy:hover, .privacy:focus-within { opacity: .85; }
+/* The byline sits over the water, whose shade goes round with the day, so
+   no one ink reads at every hour: it carries its own small surface, the
+   card's glass, and the card's colours on it. Quiet at rest, full when
+   someone reaches for it. */
+.privacy { grid-area: privacy; align-self: start; margin-top: 30px; max-width: 52ch; color: var(--muted); font: 11.5px/1.6 var(--mono); }
+.privacy .by {
+  padding: 3px 12px; border-radius: 999px;
+  background: var(--glass); border: 1px solid var(--edge);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  opacity: .8; transition: opacity .3s ease;
+}
+.privacy .by:hover, .privacy .by:focus-within { opacity: 1; }
 .privacy p { margin: 0 0 10px; }
-.privacy .by { display: flex; align-items: center; gap: 6px; margin-top: 14px; }
+.privacy .by { display: inline-flex; align-items: center; gap: 6px; margin-top: 14px; }
 .privacy .by img { border-radius: 3px; image-rendering: pixelated; }
 
 @media (prefers-reduced-motion: reduce) {
@@ -187,11 +197,14 @@ header { flex-direction: column; gap: 10px; }
 .row { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 14px; }
 .row > :last-child { text-align: center; }
 .row .dim { display: block; text-wrap: balance; }
+/* A value of two lines goes under its label, whole, rather than beside it
+   where the lines would collide with it. */
+.row:has(> span > .dim) { flex-direction: column; align-items: center; gap: 2px; }
 .invites li { justify-content: center; gap: 18px; }
 .leave { text-align: center; }
 .link code { text-align: center; }
 .privacy { margin-left: auto; margin-right: auto; }
-.privacy .by { justify-content: center; }
+.privacy .by { justify-content: center; flex-wrap: wrap; white-space: nowrap; }
 
 /* The theme toggle, top left. Hidden until app.js shows it. */
 .theme {
