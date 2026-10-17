@@ -91,6 +91,12 @@ Both wear the bird's face and the rule, and are accented in the colour of their 
 5. **The footer** is provenance, what this follows from.
 6. **Buttons** under the embed.
 
+A record can become a panel when somebody presses one of its buttons, but a panel can
+never become a record again: Discord lets an edit add the Components V2 flag only when
+it empties the embeds, and never lets a message drop the flag. So the edit that opens a
+panel from a record clears its embeds and attachments, and a record that must stay a
+record is answered with a new message, not an edit.
+
 ## A panel
 
 1. **The head, beside the bird's face**: a bold title and one `-#` line under it. Only
@@ -128,6 +134,9 @@ tests.
 
 ## Log
 
+- **2026-10-18** A record can become a panel on an edit, never the reverse. Found
+  moving drift reports to embeds: their buttons open a panel, and the edit that did it
+  was refused until it emptied the embeds.
 - **2026-10-17** A record is an embed, a panel a Components V2 container. Log cards as
   containers read as a regression next to the embeds they replaced: no sections, no
   padding, nothing consolidated. Embed fields are the summary list the guides in
