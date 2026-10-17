@@ -83,6 +83,17 @@ The rules every bird shares, which `brand/voice_test.go` holds the status lines 
   read on phones keeps to 32 (`/help`'s command grid does). Anything that is not a short fact goes on a line below the block,
   detail as `-#` subtext. A code block, because monospace lines up the same in every
   client, where how embed fields wrap is up to the client.
+- **A log card** is what a bird posts to the server's log channel about something it
+  did, and every bird draws it with `ledger.Render`, so a channel holding several birds'
+  cards reads as one log. It is a card as above, its head `<emoji> **bird** · module`:
+  then the summary in the shared voice, who and where as mentions on one line, the
+  facts and changes as a grid (a change reads `from → to`), then `-#` lines for who
+  did it (or `automatic`), why, and what it follows from, then its buttons (undo,
+  open a sheet). A grid value never runs past the grid: items wrap after a comma, and
+  an item longer than a line wraps by words. A run of the same action by the same
+  actor is one card that edits itself as it grows (`ledger.Batcher`), headed with the
+  count and one line per entry, in the loudest mood among them. Moods add `danger`
+  for what cannot be undone. Every entry passes `ledger.Validate` in the bird's tests.
 - Numbers: `42 ms` with a space, one decimal under 10 ms. Durations use the two largest
   units: `45s`, `12m`, `3h 12m`, `2d 4h`. A value not measured yet says so, never `0`.
 - Command and option descriptions: lowercase, no full stop, what it does in a few words.

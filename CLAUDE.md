@@ -16,6 +16,12 @@ sees follows [`UX.md`](./UX.md).
   the frame types, a module of its own (`github.com/6586x57890143/cygnet/link`) so a bird
   imports it without cygnet's dependencies; cygnet uses it through a `replace`. A change
   to the protocol changes both, and is tagged `link/vX.Y.Z` for the birds.
+- `ledger/`: the log every bird keeps, a module of its own on disgo alone
+  (`github.com/6586x57890143/cygnet/ledger`, tagged `ledger/vX.Y.Z`). Typed entries,
+  the shared voice check, the sha256 chain, the log card and the batcher that folds a
+  run of one action into one live card. Shared code, not a service: each bird stores its
+  own entries (`ledger.Store`, held to `ledgertest.Run`) and posts its own cards, so
+  logging never waits on the hub. Not imported by anything in `link`.
 - `internal/modules/*`: `status` (the reference), `perf`, `help`, `provision`, `launch`
   (the campaign, the Worker's verbs, sealed sign ins, the valve), `invite` (codes: the
   panel, redemption for cygnet.lol, attribution, the tree). `launch` lets a wave in
@@ -41,6 +47,8 @@ go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0 run ./... 
 scripts/coverage.sh                    # race tests + 85% floor per internal/ package
 scripts/prose.sh                       # no em dashes, ellipses or curly quotes
 go -C link vet ./... && go -C link test -race ./...   # the client module
+go -C ledger vet ./... && go -C ledger test -race ./...   # the log module
+go -C ledger test ./... -update -run TestRenderedCards     # rewrite the golden cards after a deliberate change
 go test ./internal/hub -run x -bench Call             # a call's round trip through the hub
 go run ./tools/hubbench                               # live: cygnet.ping through the running hub, as bird `bench`
 govulncheck ./...
