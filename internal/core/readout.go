@@ -25,8 +25,8 @@ type Report struct {
 	Notes []string
 }
 
-// Readout lays rows out as facts (DESIGN.md): a line each, its label in
-// bold. Plain text wraps the way any line does on whatever is reading it,
+// Readout lays rows out as a panel's facts (DESIGN.md): a line each, its
+// label in bold; a record's are fields (brand.Fields). Plain text wraps the way any line does on whatever is reading it,
 // where a code block grid cuts off on a phone and shows mentions as IDs.
 func Readout(rows [][2]string) string {
 	var b strings.Builder

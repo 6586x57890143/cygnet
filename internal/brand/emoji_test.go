@@ -81,7 +81,8 @@ func TestSyncUploadsOnlyWhatIsMissing(t *testing.T) {
 	}
 
 	e, files := Embed(ColorOK, "t", "d")
-	if len(files) != 0 || !strings.HasPrefix(e.Thumbnail.URL, "https://cdn.discordapp.com/emojis/") || !strings.HasSuffix(e.Thumbnail.URL, ".png") {
+	// Only the rule, too wide for an emoji, is still attached.
+	if len(files) != 1 || files[0].Name != "cygnet_rule.png" || !strings.HasPrefix(e.Thumbnail.URL, "https://cdn.discordapp.com/emojis/") || !strings.HasSuffix(e.Thumbnail.URL, ".png") {
 		t.Fatalf("synced embed: thumbnail %q, %d files", e.Thumbnail.URL, len(files))
 	}
 	for _, get := range []func() (*discord.File, string){Avatar, func() (*discord.File, string) { return ModuleIcon("status", ColorWarn) }} {

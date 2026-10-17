@@ -115,6 +115,55 @@ func banner() *image.NRGBA {
 	return img
 }
 
+// Rule geometry in logical pixels: 260x8, written at 4x (1040x32), as wide
+// as an embed gets so every card it closes is that wide.
+const ruleW, ruleH = 260, 8
+
+// cygnetAfloat is the rule's centre: the bird small, on the waterline.
+var cygnetAfloat = []string{
+	".....bbk",
+	".....bb.",
+	"....bb..",
+	"....bb..",
+	"b...bbb.",
+	"bbbbbbbb",
+	".ssssss.",
+}
+
+// rule is the divider that closes every record (DESIGN.md): a waterline
+// running out from the bird, solid near it, then dashes, then dots that
+// thin out toward the ends. Transparent, in mid tones that read on a dark
+// and a light theme.
+func rule() *image.NRGBA {
+	img := image.NewNRGBA(image.Rect(0, 0, ruleW, ruleH))
+	w := len(cygnetAfloat[0])
+	x0 := (ruleW - w) / 2
+	drawScaled(img, cygnetAfloat, x0, ruleH-len(cygnetAfloat)-1, map[byte]color.NRGBA{'b': slate[3], 's': slate[2], 'k': slate[1]}, 1)
+	water := ruleH - 2
+	for d := 3; ; d++ {
+		var on bool
+		c := slate[3]
+		switch {
+		case d < 40:
+			on = true
+		case d < 84:
+			on, c = d%8 < 6, slate[2]
+		default:
+			gap := 3 + (d-84)/10
+			on, c = d%gap == 0, slate[2]
+		}
+		l, r := x0-1-d+3, x0+w+d-3
+		if l < 4 {
+			break
+		}
+		if on {
+			img.SetNRGBA(l, water, c)
+			img.SetNRGBA(r, water, c)
+		}
+	}
+	return img
+}
+
 // tier is which water band y is in, 0 nearest the horizon.
 func tier(y int) int {
 	switch {

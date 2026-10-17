@@ -1,7 +1,7 @@
 // Package brand is cygnet's palette, mood icons and emoji. The mood is
 // derived from the embed's colour rather than passed beside it, so the two
 // cannot disagree. Once Sync has run an icon is an application emoji on
-// Discord's CDN and nothing is uploaded with a reply; before that, it is an
+// Discord's CDN and is not uploaded with a reply; before that, it is an
 // attachment derived from the finished embed, so an attachment:// URL never
 // points at nothing.
 package brand
@@ -9,6 +9,8 @@ package brand
 import (
 	"bytes"
 	"embed"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/disgoorg/disgo/discord"
 )
@@ -38,23 +40,43 @@ var moods = map[int]string{
 	ColorIdle:    "idle",
 }
 
-// Embed returns an embed in color wearing that colour's mood, and the
-// files to send with it: none once the emoji are synced, when the
-// thumbnail is the mood's emoji, otherwise the icon its attachment:// URL
-// names. An unknown colour gets "info": never claim success for something
-// unrecognised.
+// Embed returns a record (DESIGN.md's A record) in color: an embed wearing
+// that colour's mood as its thumbnail and the rule as its image, and the
+// files to send with it. The rule is always attached, being too wide for an
+// emoji; the face is too until the emoji are synced. An unknown colour gets
+// "info": never claim success for something unrecognised.
 func Embed(color int, title, description string) (discord.Embed, []*discord.File) {
-	file, url := Icon(color)
-	var files []*discord.File
-	if file != nil {
-		files = []*discord.File{file}
+	face, faceURL := Icon(color)
+	rule, ruleURL := asset("cygnet_rule")
+	files := []*discord.File{rule}
+	if face != nil {
+		files = append(files, face)
 	}
 	return discord.Embed{
 		Title:       title,
 		Description: description,
 		Color:       color,
-		Thumbnail:   &discord.EmbedResource{URL: url},
+		Thumbnail:   &discord.EmbedResource{URL: faceURL},
+		Image:       &discord.EmbedResource{URL: ruleURL},
 	}, files
+}
+
+// inlineWidth is the longest value set in a column: past it, three abreast
+// wrap into a ragged block, so a longer one takes the row.
+const inlineWidth = 24
+
+// Fields is rows as a record's summary list: a key over its value, three
+// abreast where every line of the values is short, in the order given.
+func Fields(rows [][2]string) []discord.EmbedField {
+	out := make([]discord.EmbedField, 0, len(rows))
+	for _, r := range rows {
+		inline := true
+		for line := range strings.SplitSeq(r[1], "\n") {
+			inline = inline && utf8.RuneCountInString(line) <= inlineWidth
+		}
+		out = append(out, discord.EmbedField{Name: r[0], Value: r[1], Inline: &inline})
+	}
+	return out
 }
 
 // Icon is color's mood icon for a component that shows it: its emoji's URL

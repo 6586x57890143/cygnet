@@ -87,8 +87,8 @@ func (m *Module) ping(_ context.Context, e *events.ApplicationCommandInteraction
 	})
 }
 
-// status is a readout of facts (DESIGN.md). Anything that is not a short
-// fact goes in a line below them.
+// status is a record (DESIGN.md): its facts as fields, and what explains
+// them (an error, a hint) in the footer.
 func (m *Module) status(ctx context.Context, e *events.ApplicationCommandInteractionCreate) error {
 	p := m.probe()
 	color := brand.ColorOK
@@ -106,7 +106,7 @@ func (m *Module) status(ctx context.Context, e *events.ApplicationCommandInterac
 		if err != nil {
 			color = brand.ColorError
 			rows = append(rows, [2]string{"database", "unreachable"})
-			notes = append(notes, "-# database: "+truncate(err.Error(), 200))
+			notes = append(notes, "database: "+truncate(err.Error(), 200))
 		} else {
 			rows = append(rows, [2]string{"database", ms(time.Since(start))})
 		}
@@ -124,7 +124,11 @@ func (m *Module) status(ctx context.Context, e *events.ApplicationCommandInterac
 	}
 	rows = append(rows, [2]string{"runtime", runtime.Version()}, [2]string{"build", core.Revision()})
 
-	embed, files := brand.Embed(color, "status", core.Readout(rows)+strings.Join(notes, "\n"))
+	embed, files := brand.Embed(color, "status", "")
+	embed.Fields = brand.Fields(rows)
+	if len(notes) > 0 {
+		embed.Footer = &discord.EmbedFooter{Text: strings.Join(notes, " · ")}
+	}
 	return e.CreateMessage(discord.MessageCreate{
 		Embeds:          []discord.Embed{embed},
 		Files:           files,

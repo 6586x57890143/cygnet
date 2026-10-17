@@ -21,8 +21,8 @@ func module(rec *obs.Recorder) *Module {
 	return m
 }
 
-// The readout lists the slowest stage first, fits UX.md's 40 columns and
-// scales each bar to the slowest.
+// The readout lists the slowest stage first, keeps every key on one line in
+// a column, and scales each bar to the slowest.
 func TestReadout(t *testing.T) {
 	rec := obs.New()
 	rec.Add("whisper", obs.Run, 3*time.Millisecond)
@@ -31,27 +31,27 @@ func TestReadout(t *testing.T) {
 	for range 1500 {
 		rec.Add("bird", obs.In, 40*time.Millisecond)
 	}
-	got := module(rec).readout()
-	lines := strings.Split(got, "\n")
-	for _, l := range lines[:len(lines)-1] {
-		if n := utf8.RuneCountInString(l); n > 40 {
-			t.Errorf("%q is %d columns", l, n)
+	rows := module(rec).readout()
+	var got strings.Builder
+	for _, r := range rows {
+		if n := utf8.RuneCountInString(r[0]); n > labelW {
+			t.Errorf("key %q is %d long", r[0], n)
 		}
+		got.WriteString(r[0] + ": " + r[1] + "\n")
 	}
-	first := lines[2]
-	if !strings.HasPrefix(first, "put reacti wait ████") {
-		t.Errorf("first row %q, want the rate limit wait with a full bar", first)
+	if !strings.HasPrefix(rows[0][0], "put ") || !strings.HasSuffix(rows[0][0], " wait") || !strings.HasPrefix(rows[0][1], "▰▰▰▰▰ ") {
+		t.Errorf("first row %q, want the rate limit wait with a full bar", rows[0])
 	}
-	for _, s := range []string{"whisper run", "1.5k", "go sched", "40 µs", "go gc pause", "build " + core.Revision()} {
-		if !strings.Contains(got, s) {
-			t.Errorf("readout is missing %q:\n%s", s, got)
+	for _, s := range []string{"whisper run: ▰▱▱▱▱", "· 1.5k", "go sched: 40 µs", "go gc pause: 300 µs"} {
+		if !strings.Contains(got.String(), s) {
+			t.Errorf("readout is missing %q:\n%s", s, got.String())
 		}
 	}
 }
 
 func TestEmptyReadout(t *testing.T) {
-	if got := module(obs.New()).readout(); !strings.Contains(got, "nothing measured yet") {
-		t.Fatalf("empty readout:\n%s", got)
+	if got := module(obs.New()).readout(); got[0] != [2]string{"stages", "nothing measured yet"} {
+		t.Fatalf("empty readout: %q", got)
 	}
 }
 
@@ -111,13 +111,12 @@ func TestFormatting(t *testing.T) {
 		d, max time.Duration
 		want   string
 	}{
-		{0, 0, ""},
-		{100, 100, "████"},
-		{50, 100, "██"},
-		{1, 1000, "▏"},
-		{30, 100, "█▏"},
+		{0, 0, "▱▱▱▱▱"},
+		{100, 100, "▰▰▰▰▰"},
+		{60, 100, "▰▰▰▱▱"},
+		{1, 1000, "▰▱▱▱▱"},
 	} {
-		if got := bar(c.d, c.max, 4); got != c.want {
+		if got := bar(c.d, c.max); got != c.want {
 			t.Errorf("bar(%v, %v) = %q, want %q", c.d, c.max, got, c.want)
 		}
 	}

@@ -6,7 +6,8 @@ and a layout claim is checked by measuring or by a test, never by eye.
 
 [`DESIGN.md`](./DESIGN.md) is the design every bird shares and wins where the two
 disagree; this file adds what is cygnet's own. Surfaces still drawn the older way
-(`/perf`'s code block grid) move to it in their next PR.
+(the provision module's grant and drift reports, records drawn as containers) move to
+it in their next PR.
 
 ## Voice
 
@@ -47,8 +48,12 @@ The rules every bird shares, which `brand/voice_test.go` holds the status lines 
   the rest.
 - A refusal is tested through `core.Router` with `coretest.Event`, checking the reply the
   member gets, not only the error the handler returns.
-- An embed comes from `brand.Embed`, with its mood file attached. The title is one
-  lowercase word.
+- **A record** (DESIGN.md's A record: `/status`, `/perf`, a report of something that
+  happened) comes from `brand.Embed`: cygnet's face for its mood as the thumbnail, the
+  rule (`cygnet_rule`, the bird afloat on a waterline, drawn by `tools/sprites`) as the
+  image, its facts from `brand.Fields`, and what explains them in the footer. The rule
+  is always attached, too wide to be an emoji; the face is too until the emoji sync.
+  The title is one lowercase word.
 - **A module has one command, and it opens a panel.** Everything else the module does is
   a button, a select or a form on that panel or on a card it leads to, and each of those
   has `◂ back` to the panel. A new feature is a button on a panel, not a new subcommand:
@@ -65,23 +70,22 @@ The rules every bird shares, which `brand/voice_test.go` holds the status lines 
   wrap: a wrapped line leaves its text hanging under the glyph on a phone. The `/help`
   index's tree marks each module's name line; a page lists each command as a fact (its
   invocation in bold, then its options), a subcommand under its full invocation.
-- Every other reply is a card (`brand.Card`), laid out as DESIGN.md's A message:
-  accented in the mood of what it says (ok when done, warn while working, error when it
-  failed, info for a readout), its head beside cygnet's face for that mood, the rule
-  closing the body. The title is the module's emoji, its name in bold and what the reply
-  is: `<emoji> **provision** · apply`. The body is text: a `✓`/`!` line, facts, `-#`
-  detail, an ASCII bar (`▰▱`) or tree (`├ └`). The face and the rule are the same images
-  a log card wears (`ledger.Brand`). Cards still drawn without them move to
-  it in their next PR. A live readout is edited as a card too
-  (`discord.NewMessageUpdateV2`) and its accent follows its state. Errors stay
-  `core.Tell`, plain text.
+- **A panel's state** (`brand.Card`: a panel, or what one of its buttons turns it into)
+  is DESIGN.md's A panel, accented in the mood of what it says (ok when done, warn
+  while working, error when it failed, info otherwise). Its first line is the module's
+  emoji, its name in bold and what this is: `<emoji> **provision** · apply`. The body is
+  text: a `✓`/`!` line, facts, `-#` detail, an ASCII bar (`▰▱`) or tree (`├ └`).
+  Buttons go inside the container. A panel edited in place stays a container
+  (`discord.NewMessageUpdateV2`): Discord lets a message take the Components V2 flag
+  on an edit but never drop it, so a record can turn into a panel and a panel cannot
+  turn back. Errors stay `core.Tell`, plain text.
 - A message cygnet posts as someone else (a bridge or a webhook) is their text. What
   cygnet adds to it, such as who it replies to, is a `-#` subtext line below it, never an
   embed: a webhook can't make a real Discord reply, and a box outweighs the message it
   annotates. When cygnet needs more than a line, it borrows `/help`'s colour identity and
   layout rather than inventing a new one.
-- Facts are one line each with a bold label (`**policy** hate speech`), and a code
-  block holds only what somebody copies: DESIGN.md's Facts.
+- Facts are fields in a record and bold-label lines in a panel (`core.Readout`), and a
+  code block holds only what somebody copies: DESIGN.md's Facts.
 - **A log card** is drawn by `ledger.Render` and laid out as DESIGN.md's Log cards.
 - Numbers: `42 ms` with a space, one decimal under 10 ms. Durations use the two largest
   units: `45s`, `12m`, `3h 12m`, `2d 4h`. A value not measured yet says so, never `0`.
