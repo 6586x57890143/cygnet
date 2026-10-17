@@ -11,8 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/disgoorg/disgo/discord"
-
 	"github.com/6586x57890143/cygnet/ledger"
 	"github.com/6586x57890143/cygnet/ledger/ledgertest"
 )
@@ -20,7 +18,6 @@ import (
 var update = flag.Bool("update", false, "rewrite the golden cards")
 
 var brand = ledger.Brand{
-	Emoji: func(m string) string { return "<:mod_" + m + ":1>" },
 	Color: func(m ledger.Mood) int {
 		return map[ledger.Mood]int{ledger.MoodOK: 1, ledger.MoodWarn: 2, ledger.MoodDanger: 3}[m]
 	},
@@ -43,7 +40,7 @@ func jail(user string) ledger.Entry {
 }
 
 // golden compares card's JSON with testdata/name.json.
-func golden(t *testing.T, name string, card discord.ContainerComponent) {
+func golden(t *testing.T, name string, card ledger.Card) {
 	t.Helper()
 	got, err := json.MarshalIndent(card, "", "  ")
 	if err != nil {
@@ -77,7 +74,7 @@ func TestRenderedCards(t *testing.T) {
 }
 
 func TestRenderEmpty(t *testing.T) {
-	if c := ledger.Render(brand); len(c.Components) != 0 {
+	if c := ledger.Render(brand); c.Embed.Title != "" {
 		t.Fatalf("no entries, no card: %+v", c)
 	}
 }
@@ -177,21 +174,21 @@ func TestReason(t *testing.T) {
 type fakeChannel struct {
 	posts   int
 	edits   map[string]int
-	cards   map[string]discord.ContainerComponent
+	cards   map[string]ledger.Card
 	editErr error
 }
 
 func (f *fakeChannel) batcher(now *time.Time) *ledger.Batcher {
-	f.edits, f.cards = map[string]int{}, map[string]discord.ContainerComponent{}
+	f.edits, f.cards = map[string]int{}, map[string]ledger.Card{}
 	return &ledger.Batcher{
 		Brand: brand,
-		Post: func(_ context.Context, _ string, c discord.ContainerComponent) (string, error) {
+		Post: func(_ context.Context, _ string, c ledger.Card) (string, error) {
 			f.posts++
 			id := string(rune('a' + f.posts - 1))
 			f.cards[id] = c
 			return id, nil
 		},
-		Edit: func(_ context.Context, _, msg string, c discord.ContainerComponent) error {
+		Edit: func(_ context.Context, _, msg string, c ledger.Card) error {
 			if f.editErr != nil {
 				return f.editErr
 			}
@@ -203,21 +200,11 @@ func (f *fakeChannel) batcher(now *time.Time) *ledger.Batcher {
 	}
 }
 
-// text is every text display on the card, the head beside the thumbnail
-// included, as one string.
-func text(c discord.ContainerComponent) string {
-	var out []string
-	for _, p := range c.Components {
-		switch p := p.(type) {
-		case discord.TextDisplayComponent:
-			out = append(out, p.Content)
-		case discord.SectionComponent:
-			for _, s := range p.Components {
-				if t, ok := s.(discord.TextDisplayComponent); ok {
-					out = append(out, t.Content)
-				}
-			}
-		}
+// text is every word on the card's embed as one string.
+func text(c ledger.Card) string {
+	out := []string{c.Embed.Title, c.Embed.Description}
+	for _, f := range c.Embed.Fields {
+		out = append(out, f.Name, f.Value)
 	}
 	return strings.Join(out, "\n")
 }
@@ -237,7 +224,7 @@ func TestBatcherFoldsARunIntoOneCard(t *testing.T) {
 	if ch.posts != 1 || ch.edits["a"] != 2 {
 		t.Fatalf("three jails in 3s: %d posts, %d edits; want one card edited twice", ch.posts, ch.edits["a"])
 	}
-	if got := text(ch.cards["a"]); !strings.Contains(got, "release · 3**") || !strings.Contains(got, "<@3>") {
+	if got := text(ch.cards["a"]); !strings.Contains(got, "release · 3") || !strings.Contains(got, "<@3>") {
 		t.Fatalf("the card did not grow: %s", got)
 	}
 
@@ -291,7 +278,7 @@ func TestBatcherPostsAfreshWhenTheEditFails(t *testing.T) {
 }
 
 func TestBatcherReportsAFailedPost(t *testing.T) {
-	b := ledger.Batcher{Post: func(context.Context, string, discord.ContainerComponent) (string, error) {
+	b := ledger.Batcher{Post: func(context.Context, string, ledger.Card) (string, error) {
 		return "", errors.New("missing access")
 	}}
 	if err := b.Add(context.Background(), jail("1")); err == nil {
