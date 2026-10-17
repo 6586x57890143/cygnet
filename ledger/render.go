@@ -3,124 +3,128 @@ package ledger
 import (
 	"fmt"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/disgoorg/disgo/discord"
 )
 
 // Brand is the face a bird's cards wear. The layout is the same for every
-// bird; who it comes from and in what colours is not.
+// bird; whose face and colours it wears is not. There is no name: Discord
+// already names the bird above every message it sends.
 type Brand struct {
-	// Name is the bird's, in the card's head.
-	Name string
 	// Emoji is the inline app emoji for a module's icon, or "" before the
-	// emoji sync, when the head is text alone.
+	// emoji sync, when the title is text alone.
 	Emoji func(module string) string
 	// Color is the card's accent for a mood, from the bird's own palette.
 	Color func(Mood) int
 	// Thumbnail is the URL of the bird's drawing for a mood, shown beside
-	// the head, or "" for none. The bird uploads what it names.
+	// the title, or "" for none. The bird uploads what it names.
 	Thumbnail func(Mood) string
-	// Rule is the URL of a wide divider image drawn under the head, or ""
-	// for none. It is there for its width as much as its look: a container
-	// is sized to its content, so without one a two line card and a full
-	// grid render as boxes of every width down one channel.
+	// Rule is the URL of a wide divider image closing the card, or "" for
+	// none. It is there for its width as much as its look: a container is
+	// sized to its content, so without one a two line card and a long one
+	// render as boxes of every width down one channel.
 	Rule string
 }
 
 // maxText is Discord's limit on a message's text, less room for the rest.
 const maxText = 3900
 
-// Render draws entries as one card in the UX.md card form: one Components
-// V2 container accented by mood, its head the module's emoji, the bird's
-// name in bold and the module, beside the bird's drawing for the mood, with
-// the rule under it. One entry is the full card: its summary in the head,
-// then who and where as mentions, a grid of facts and changes, then who did
-// it, why and what it followed from as subtext, then its buttons. Several
-// entries (a batch, see Batcher) are one line each under a shared head,
-// accented by the loudest of them, with their common actor and reason once
-// below.
+// Render draws entries as one card, the log card in DESIGN.md:
+//
+//	<emoji> **summary**                 [face]
+//	-# by @actor · module
+//	> the reason, in the actor's words
+//	@who · #where
+//	**label** labelled refs
+//	**label** a fact
+//	**field** from → to
+//	[rule]
+//	-# follows <cause>
+//	[buttons]
+//
+// Several entries (a batch, see Batcher) are one line each under the
+// shared title with their count, accented by the loudest of them, their
+// shared reason quoted once.
 func Render(b Brand, entries ...Entry) discord.ContainerComponent {
 	if len(entries) == 0 {
 		return discord.NewContainer()
 	}
 	first := entries[0]
-	head := "**" + b.Name + "** · " + first.Module()
+	mood := first.Mood
+	for _, e := range entries[1:] {
+		mood = louder(mood, e.Mood)
+	}
+	title := first.Summary
+	if len(entries) > 1 {
+		title += fmt.Sprintf(" · %d", len(entries))
+	}
+	title = "**" + title + "**"
 	if b.Emoji != nil {
 		if e := b.Emoji(first.Module()); e != "" {
-			head = e + " " + head
+			title = e + " " + title
 		}
 	}
-	mood := first.Mood
-	var body string
-	var extra []discord.ContainerSubComponent
+	head := title + "\n-# " + by(first.Actor) + " · " + first.Module()
+
+	var body, foot string
 	if len(entries) == 1 {
-		head += "\n" + first.Summary
 		body = single(first)
-		if row := buttons(first.Buttons); row != nil {
-			extra = append(extra, *row)
+		if first.Cause != "" {
+			foot = "-# follows " + first.Cause
 		}
 	} else {
-		head += fmt.Sprintf(" · %d", len(entries))
-		body = batch(entries)
-		for _, e := range entries[1:] {
-			mood = louder(mood, e.Mood)
-		}
+		body, foot = batch(entries)
+	}
+
+	thumb := ""
+	if b.Thumbnail != nil {
+		thumb = b.Thumbnail(mood)
+	}
+	parts := []discord.ContainerSubComponent{discord.NewTextDisplay(head)}
+	if thumb != "" {
+		parts[0] = discord.NewSection(discord.NewTextDisplay(head)).WithAccessory(discord.NewThumbnail(thumb))
+	}
+	if body != "" {
+		parts = append(parts, discord.NewTextDisplay(clip(body, maxText-len(head)-len(foot))))
+	}
+	if b.Rule != "" {
+		parts = append(parts, discord.NewMediaGallery(discord.MediaGalleryItem{Media: discord.UnfurledMediaItem{URL: b.Rule}}))
+	}
+	if foot != "" {
+		parts = append(parts, discord.NewTextDisplay(foot))
+	}
+	if row := buttons(first.Buttons); row != nil && len(entries) == 1 {
+		parts = append(parts, *row)
 	}
 	color := 0
 	if b.Color != nil {
 		color = b.Color(mood)
 	}
-	return discord.NewContainer(append(face(b, mood, head, body), extra...)...).WithAccentColor(color)
-}
-
-// face is the head beside the mood's drawing, the rule, then the body at
-// full width, since beside a thumbnail a phone gives text a narrow column.
-// A brand with neither is one text display, as before there were faces.
-func face(b Brand, mood Mood, head, body string) []discord.ContainerSubComponent {
-	thumb := ""
-	if b.Thumbnail != nil {
-		thumb = b.Thumbnail(mood)
-	}
-	if thumb == "" && b.Rule == "" {
-		return []discord.ContainerSubComponent{discord.NewTextDisplay(clipText(head + "\n" + body))}
-	}
-	top := discord.ContainerSubComponent(discord.NewTextDisplay(head))
-	if thumb != "" {
-		top = discord.NewSection(discord.NewTextDisplay(head)).WithAccessory(discord.NewThumbnail(thumb))
-	}
-	parts := []discord.ContainerSubComponent{top}
-	if b.Rule != "" {
-		parts = append(parts, discord.NewMediaGallery(discord.MediaGalleryItem{Media: discord.UnfurledMediaItem{URL: b.Rule}}))
-	}
-	if body != "" {
-		parts = append(parts, discord.NewTextDisplay(clip(body, maxText-len(head))))
-	}
-	return parts
+	return discord.NewContainer(parts...).WithAccentColor(color)
 }
 
 func single(e Entry) string {
 	var lines []string
+	if e.Reason != "" {
+		lines = append(lines, quote(e.Reason))
+	}
 	if s := subjects(e.Guild, e.Subjects); s != "" {
 		lines = append(lines, s)
 	}
-	if g := grid(e.Facts, e.Changes); g != "" {
-		lines = append(lines, "```\n"+g+"```")
-	}
-	return strings.Join(append(lines, footer(e.Actor, e.Reason, e.Cause)...), "\n")
+	return strings.Join(append(lines, facts(e.Facts, e.Changes)...), "\n")
 }
 
-// batch is one line per entry, then whatever they share. The Batcher only
-// batches entries with the same action and actor; a reason or cause they do
-// not all share stays on each entry's row in the store.
-func batch(entries []Entry) string {
-	lines := make([]string, 0, len(entries)+2)
+// batch is the shared reason, then one line per entry: its who and where,
+// and its summary only where it says something the title does not. The
+// Batcher only batches entries with the same action and actor; a reason or
+// cause they do not all share stays on each entry's row in the store.
+func batch(entries []Entry) (body, foot string) {
 	reason, cause := entries[0].Reason, entries[0].Cause
+	var lines []string
 	for _, e := range entries {
-		line := e.Summary
-		// One line per entry: only its who and where, not its labelled refs.
-		if s := subjects(e.Guild, unlabelled(e.Subjects)); s != "" {
-			line = s + " · " + line
+		line := subjects(e.Guild, unlabelled(e.Subjects))
+		if e.Summary != entries[0].Summary || line == "" {
+			line = strings.TrimPrefix(line+" · "+e.Summary, " · ")
 		}
 		lines = append(lines, line)
 		if e.Reason != reason {
@@ -130,26 +134,30 @@ func batch(entries []Entry) string {
 			cause = ""
 		}
 	}
-	return strings.Join(append(lines, footer(entries[0].Actor, reason, cause)...), "\n")
-}
-
-func footer(a Actor, reason, cause string) []string {
-	by := "-# automatic"
-	if a.Kind == ActorMember {
-		by = "-# by " + mention("", User(a.ID))
-	}
-	out := []string{by}
 	if reason != "" {
-		out = append(out, "-# reason: "+oneLine(reason))
+		lines = append([]string{quote(reason)}, lines...)
 	}
 	if cause != "" {
-		out = append(out, "-# follows "+cause)
+		foot = "-# follows " + cause
 	}
-	return out
+	return strings.Join(lines, "\n"), foot
 }
 
+func by(a Actor) string {
+	if a.Kind == ActorMember {
+		return "by " + mention("", User(a.ID))
+	}
+	return "automatic"
+}
+
+// quote is somebody's own words as a block quote, the way the embeds this
+// replaced set a reason apart: on one line, since a quote's every line
+// needs its own marker.
+func quote(s string) string { return "> " + oneLine(s) }
+
 // subjects is the refs as lines: the unlabelled ones together, then one
-// line per label in the order labels first appear.
+// line per label in the order labels first appear, labelled the way a fact
+// is.
 func subjects(guild string, refs []Ref) string {
 	var plain []string
 	var labels []string
@@ -172,9 +180,23 @@ func subjects(guild string, refs []Ref) string {
 		lines = append(lines, strings.Join(plain, " · "))
 	}
 	for _, l := range labels {
-		lines = append(lines, l+": "+strings.Join(byLabel[l], ", "))
+		lines = append(lines, "**"+l+"** "+strings.Join(byLabel[l], ", "))
 	}
 	return strings.Join(lines, "\n")
+}
+
+// facts is one line a fact, its label in bold: plain text, so a value wraps
+// the way any line does on whatever is reading it and a mention or a link
+// in it works. Not a code block, which is for what somebody copies.
+func facts(fs []Fact, cs []Change) []string {
+	lines := make([]string, 0, len(fs)+len(cs))
+	for _, f := range fs {
+		lines = append(lines, "**"+f.Label+"** "+f.Value)
+	}
+	for _, c := range cs {
+		lines = append(lines, "**"+c.Field+"** "+c.From+" → "+c.To)
+	}
+	return lines
 }
 
 // mention is how a Ref reads in Discord, or "" for one it cannot draw. A
@@ -198,84 +220,6 @@ func mention(guild string, r Ref) string {
 	return ""
 }
 
-// grid is the facts and changes as UX.md's code block grid: the label
-// column the longest label plus two spaces, each value wrapped to fit the
-// rest of gridWidth, continuation lines indented under the value.
-func grid(facts []Fact, changes []Change) string {
-	type row struct{ label, value string }
-	rows := make([]row, 0, len(facts)+len(changes))
-	for _, f := range facts {
-		rows = append(rows, row{f.Label, f.Value})
-	}
-	for _, c := range changes {
-		rows = append(rows, row{c.Field, c.From + " → " + c.To})
-	}
-	if len(rows) == 0 {
-		return ""
-	}
-	width := 0
-	for _, r := range rows {
-		width = max(width, utf8.RuneCountInString(r.label))
-	}
-	width += 2
-	var b strings.Builder
-	for _, r := range rows {
-		for i, line := range wrap(r.value, gridWidth-width) {
-			label := ""
-			if i == 0 {
-				label = r.label
-			}
-			b.WriteString(label + strings.Repeat(" ", width-utf8.RuneCountInString(label)) + line + "\n")
-		}
-	}
-	return b.String()
-}
-
-// wrap breaks s into lines of at most n runes: whole comma separated items
-// packed onto a line while they fit, breaking after the comma, the way a
-// list reads. An item longer than a line is itself packed by words, and a
-// word longer than a line is cut, so nothing ever runs past the grid.
-func wrap(s string, width int) []string {
-	// One column is kept for the comma a break leaves at the end of a line.
-	n := width - 1
-	var lines []string
-	line := ""
-	put := func(piece, sep string) {
-		switch {
-		case line == "":
-			line = piece
-		case utf8.RuneCountInString(line+sep+piece) <= n:
-			line += sep + piece
-		default:
-			if sep == ", " {
-				line += ","
-			}
-			lines = append(lines, line)
-			line = piece
-		}
-	}
-	for i, item := range strings.Split(s, ", ") {
-		sep := ", "
-		if i == 0 {
-			sep = ""
-		}
-		if utf8.RuneCountInString(item) <= n {
-			put(item, sep)
-			continue
-		}
-		for _, word := range strings.Fields(item) {
-			for utf8.RuneCountInString(word) > n {
-				r := []rune(word)
-				put(string(r[:n]), sep)
-				word, sep = string(r[n:]), " "
-			}
-			put(word, sep)
-			sep = " "
-		}
-	}
-	return append(lines, line)
-}
-
 func buttons(bs []Button) *discord.ActionRowComponent {
 	if len(bs) == 0 {
 		return nil
@@ -296,10 +240,6 @@ func buttons(bs []Button) *discord.ActionRowComponent {
 }
 
 func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
-
-// clipText keeps a card under Discord's limit. Only a batch at its cap with
-// long lines gets near it.
-func clipText(s string) string { return clip(s, maxText) }
 
 func unlabelled(refs []Ref) []Ref {
 	var out []Ref

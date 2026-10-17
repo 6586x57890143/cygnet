@@ -7,11 +7,9 @@ import (
 	"unicode/utf8"
 )
 
-// The limits a card is built to. A grid is read on phones, where a code
-// block shows about 34 columns, so a line keeps to gridWidth and a label to
-// maxLabel, leaving the value at least 20.
+// The limits a card is built to. A label leads its line in bold, and a long
+// one pushes every value it heads off a phone's first line.
 const (
-	gridWidth  = 32
 	maxLabel   = 10
 	maxSummary = 200
 	maxReason  = 500
@@ -57,15 +55,15 @@ func Validate(e Entry) error {
 		bad("reason over %d", maxReason)
 	}
 	if len(e.Facts)+len(e.Changes) > maxFacts {
-		bad("%d grid lines, over %d", len(e.Facts)+len(e.Changes), maxFacts)
+		bad("%d fact lines, over %d", len(e.Facts)+len(e.Changes), maxFacts)
 	}
 	for _, f := range e.Facts {
-		if err := gridCell(f.Label, f.Value); err != nil {
+		if err := factLine(f.Label, f.Value); err != nil {
 			bad("fact %q: %v", f.Label, err)
 		}
 	}
 	for _, c := range e.Changes {
-		if err := gridCell(c.Field, c.From+c.To); err != nil {
+		if err := factLine(c.Field, c.From+c.To); err != nil {
 			bad("change %q: %v", c.Field, err)
 		}
 	}
@@ -125,16 +123,14 @@ func stripCode(s string) string {
 	return b.String()
 }
 
-func gridCell(label, value string) error {
+func factLine(label, value string) error {
 	switch {
 	case label == "" || utf8.RuneCountInString(label) > maxLabel:
 		return fmt.Errorf("label empty or over %d", maxLabel)
 	case voice(label) != nil:
 		return fmt.Errorf("label: %v", voice(label))
-	case strings.ContainsAny(label+value, "\n`"):
-		return errors.New("a newline or backtick would break the code block")
-	case strings.Contains(value, "<@") || strings.Contains(value, "<#"):
-		return errors.New("a mention in a code block shows as a raw ID; put it in Subjects")
+	case strings.Contains(label+value, "\n"):
+		return errors.New("a newline would split the fact from its label")
 	}
 	return nil
 }

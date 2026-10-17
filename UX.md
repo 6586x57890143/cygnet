@@ -4,6 +4,10 @@ Every surface cygnet has follows this: replies, embeds, webhook posts, command n
 descriptions, the setup CLI, and the art. A change to a surface is checked against it,
 and a layout claim is checked by measuring or by a test, never by eye.
 
+[`DESIGN.md`](./DESIGN.md) is the design every bird shares and wins where the two
+disagree; this file adds what is cygnet's own. Surfaces still drawn the older way
+(the code block grids in `status.readout` and `/help`) move to it in their next PR.
+
 ## Voice
 
 cygnet is a quiet, clever bird who knows more than she says and is casual about it, a
@@ -77,25 +81,9 @@ The rules every bird shares, which `brand/voice_test.go` holds the status lines 
   embed: a webhook can't make a real Discord reply, and a box outweighs the message it
   annotates. When cygnet needs more than a line, it borrows `/help`'s colour identity and
   layout rather than inventing a new one.
-- Facts go in a code block grid (`status.readout`): the label column is the longest
-  label plus two spaces, a value wraps after a comma inside 28 columns, and a whole line
-  stays within 40. A 360 px phone fits only about 34 columns of code block, so a grid
-  read on phones keeps to 32 (`/help`'s command grid does). Anything that is not a short fact goes on a line below the block,
-  detail as `-#` subtext. A code block, because monospace lines up the same in every
-  client, where how embed fields wrap is up to the client.
-- **A log card** is what a bird posts to the server's log channel about something it
-  did, and every bird draws it with `ledger.Render`, so a channel holding several birds'
-  cards reads as one log. It is a card as above, its head `<emoji> **bird** · module`
-  and the summary in the shared voice, beside the bird's drawing for the mood
-  (`Brand.Thumbnail`), with the bird's rule under it (`Brand.Rule`), which pins every
-  card to one width the way an embed's image did. Then who and where as mentions, the
-  facts and changes as a grid (a change reads `from → to`), then `-#` lines for who
-  did it (or `automatic`), why, and what it follows from, then its buttons (undo,
-  open a sheet). A grid value never runs past the grid: items wrap after a comma, and
-  an item longer than a line wraps by words. A run of the same action by the same
-  actor is one card that edits itself as it grows (`ledger.Batcher`), headed with the
-  count and one line per entry, in the loudest mood among them. Moods add `danger`
-  for what cannot be undone. Every entry passes `ledger.Validate` in the bird's tests.
+- Facts are one line each with a bold label (`**policy** hate speech`), and a code
+  block holds only what somebody copies: DESIGN.md's Facts.
+- **A log card** is drawn by `ledger.Render` and laid out as DESIGN.md's Log cards.
 - Numbers: `42 ms` with a space, one decimal under 10 ms. Durations use the two largest
   units: `45s`, `12m`, `3h 12m`, `2d 4h`. A value not measured yet says so, never `0`.
 - Command and option descriptions: lowercase, no full stop, what it does in a few words.

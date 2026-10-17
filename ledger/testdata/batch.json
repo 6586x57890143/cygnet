@@ -7,7 +7,7 @@
       "components": [
         {
           "type": 10,
-          "content": "\u003c:mod_roles:1\u003e **tester** · roles · 2"
+          "content": "\u003c:mod_roles:1\u003e **jailed for 2h; their 4 roles are kept for release · 2**\n-# by \u003c@175928847299117063\u003e · roles"
         }
       ],
       "accessory": {
@@ -17,6 +17,10 @@
           "flags": 0
         }
       }
+    },
+    {
+      "type": 10,
+      "content": "\u003c@1001\u003e · [message](https://discord.com/channels/100/200/300)\n\u003c@1003\u003e · [message](https://discord.com/channels/100/200/300)"
     },
     {
       "type": 12,
@@ -31,7 +35,7 @@
     },
     {
       "type": 10,
-      "content": "\u003c@1001\u003e · [message](https://discord.com/channels/100/200/300) · jailed for 2h; their 4 roles are kept for release\n\u003c@1003\u003e · [message](https://discord.com/channels/100/200/300) · jailed for 2h; their 4 roles are kept for release\n-# by \u003c@175928847299117063\u003e\n-# follows tester:40"
+      "content": "-# follows tester:40"
     }
   ]
 }
