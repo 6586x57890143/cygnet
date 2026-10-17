@@ -151,11 +151,13 @@ func fields(e Entry) []discord.EmbedField {
 	for _, c := range e.Changes {
 		out = append(out, field(c.Field, c.From+" → "+c.To))
 	}
-	// The messages last, as one field read in order: a message removed and
-	// its repost are one thing that happened, so "deleted → reposted", each
-	// word its link.
+	// The messages last, on their own row, as one field read in order: a
+	// message removed and its repost are one thing that happened, so
+	// "deleted → reposted", each word its link.
 	if len(messages) > 0 {
-		out = append(out, field("message", strings.Join(messages, " → ")))
+		f := field("message", strings.Join(messages, " → "))
+		*f.Inline = false // a group of its own, so it starts its own row
+		out = append(out, f)
 	}
 	return out[:min(len(out), maxFields)]
 }

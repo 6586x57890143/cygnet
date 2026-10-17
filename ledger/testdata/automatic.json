@@ -25,7 +25,7 @@
       {
         "name": "message",
         "value": "[message](https://discord.com/channels/100/200/300)",
-        "inline": true
+        "inline": false
       }
     ]
   },
