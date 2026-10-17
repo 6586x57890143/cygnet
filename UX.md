@@ -85,8 +85,10 @@ The rules every bird shares, which `brand/voice_test.go` holds the status lines 
   client, where how embed fields wrap is up to the client.
 - **A log card** is what a bird posts to the server's log channel about something it
   did, and every bird draws it with `ledger.Render`, so a channel holding several birds'
-  cards reads as one log. It is a card as above, its head `<emoji> **bird** · module`:
-  then the summary in the shared voice, who and where as mentions on one line, the
+  cards reads as one log. It is a card as above, its head `<emoji> **bird** · module`
+  and the summary in the shared voice, beside the bird's drawing for the mood
+  (`Brand.Thumbnail`), with the bird's rule under it (`Brand.Rule`), which pins every
+  card to one width the way an embed's image did. Then who and where as mentions, the
   facts and changes as a grid (a change reads `from → to`), then `-#` lines for who
   did it (or `automatic`), why, and what it follows from, then its buttons (undo,
   open a sheet). A grid value never runs past the grid: items wrap after a comma, and

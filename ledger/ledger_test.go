@@ -25,6 +25,8 @@ var brand = ledger.Brand{
 	Color: func(m ledger.Mood) int {
 		return map[ledger.Mood]int{ledger.MoodOK: 1, ledger.MoodWarn: 2, ledger.MoodDanger: 3}[m]
 	},
+	Thumbnail: func(m ledger.Mood) string { return "attachment://tester_" + string(m) + ".png" },
+	Rule:      "attachment://tester_rule.png",
 }
 
 func jail(user string) ledger.Entry {
@@ -203,8 +205,23 @@ func (f *fakeChannel) batcher(now *time.Time) *ledger.Batcher {
 	}
 }
 
+// text is every text display on the card, the head beside the thumbnail
+// included, as one string.
 func text(c discord.ContainerComponent) string {
-	return c.Components[0].(discord.TextDisplayComponent).Content
+	var out []string
+	for _, p := range c.Components {
+		switch p := p.(type) {
+		case discord.TextDisplayComponent:
+			out = append(out, p.Content)
+		case discord.SectionComponent:
+			for _, s := range p.Components {
+				if t, ok := s.(discord.TextDisplayComponent); ok {
+					out = append(out, t.Content)
+				}
+			}
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 func TestBatcherFoldsARunIntoOneCard(t *testing.T) {
