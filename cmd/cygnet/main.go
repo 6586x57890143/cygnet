@@ -199,8 +199,18 @@ func run(log *slog.Logger) error {
 			return err
 		}
 		h := hub.New(bots, log)
+		// A bird whose release key is pinned links only with its signed
+		// build; once any is pinned, only those get permissions granted.
+		keys, err := hub.ParseKeys(os.Getenv("CYGNET_BIRD_KEYS"))
+		if err != nil {
+			return err
+		}
+		h.Pin(keys)
 		_, verb, _ := link.Target(perms.MissingMethod)
 		h.Serve(verb, func(ctx context.Context, caller string, body json.RawMessage) (any, error) {
+			if len(keys) > 0 && !h.TrustOf(caller).AtLeast(link.Signed) {
+				return nil, link.Err(link.Denied, "grants go to attested birds")
+			}
 			if p := prov.Load(); p != nil {
 				return p.Missing(ctx, caller, body)
 			}

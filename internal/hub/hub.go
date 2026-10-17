@@ -3,14 +3,20 @@
 // replies by ID, and hands events to the bots that asked for them.
 //
 // cygnet authenticates, the callee authorizes: every frame's From is stamped
-// here from the token, never taken from the bot. Nothing is queued or
+// here from the token, never taken from the bot, and so is its Trust: how
+// far cygnet checked that bird's build (link.Attestation). A bird whose
+// release key is pinned (CYGNET_BIRD_KEYS) links only with an attestation
+// that key signed, so a fork or an altered build holding its token is
+// turned away at hello. Nothing is queued or
 // redelivered; a call either reaches a linked bot before its deadline or
 // fails with a code at once.
 package hub
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -47,6 +53,8 @@ const (
 type Hub struct {
 	log    *slog.Logger
 	tokens map[[32]byte]string
+	// keys are the birds' pinned release keys (Pin).
+	keys map[string]ed25519.PublicKey
 
 	mu      sync.Mutex
 	peers   map[string]*peer
@@ -73,6 +81,7 @@ func (h *Hub) Serve(verb string, fn Handler) {
 
 type peer struct {
 	name     string
+	trust    link.Trust
 	conn     *websocket.Conn
 	hello    link.Hello
 	since    time.Time
@@ -95,6 +104,7 @@ type pend struct {
 // Bird is one linked bot, for /status.
 type Bird struct {
 	Name, Build string
+	Trust       link.Trust
 	Since       time.Time
 	RTT         time.Duration
 	Inflight    int
@@ -121,6 +131,65 @@ func Parse(s string) (map[string]string, error) {
 		bots[name] = token
 	}
 	return bots, nil
+}
+
+// ParseKeys reads CYGNET_BIRD_KEYS: "name=key,name=key", each key a bird's
+// Ed25519 release key in standard base64 (tools/birdkey makes one).
+func ParseKeys(s string) (map[string]ed25519.PublicKey, error) {
+	keys := map[string]ed25519.PublicKey{}
+	if strings.TrimSpace(s) == "" {
+		return keys, nil
+	}
+	for pair := range strings.SplitSeq(s, ",") {
+		name, enc, ok := strings.Cut(strings.TrimSpace(pair), "=")
+		key, err := base64.StdEncoding.DecodeString(enc)
+		switch {
+		case !ok || name == "" || strings.Trim(name, "abcdefghijklmnopqrstuvwxyz0123456789") != "":
+			return nil, fmt.Errorf("CYGNET_BIRD_KEYS: %q is not name=key with a lowercase name", name)
+		case err != nil || len(key) != ed25519.PublicKeySize:
+			return nil, fmt.Errorf("CYGNET_BIRD_KEYS: %s's key isn't a base64 Ed25519 public key", name)
+		case keys[name] != nil:
+			return nil, fmt.Errorf("CYGNET_BIRD_KEYS: %s is listed twice", name)
+		}
+		keys[name] = key
+	}
+	return keys, nil
+}
+
+// Pin has h hold the birds in keys to their release keys: from now on
+// each links only with an attestation its key signed. Call it before the
+// hub serves anyone.
+func (h *Hub) Pin(keys map[string]ed25519.PublicKey) { h.keys = keys }
+
+// vouch is how far h trusts name's link, from the attestation in its
+// hello, or why the link is refused. A bird with no pinned key is trusted
+// by its token alone.
+func (h *Hub) vouch(name string, a *link.Attestation) (link.Trust, error) {
+	key, pinned := h.keys[name]
+	switch {
+	case !pinned:
+		return link.Untrusted, nil
+	case a == nil:
+		return link.Untrusted, errors.New("no attestation")
+	}
+	if err := a.Verify(name, key, time.Now()); err != nil {
+		return link.Untrusted, err
+	}
+	return link.Signed, nil
+}
+
+// TrustOf is how far h trusts caller: cygnet herself fully, a linked bird
+// as far as its hello earned, anyone else (a call over HTTP) not at all.
+func (h *Hub) TrustOf(caller string) link.Trust {
+	if caller == Self {
+		return link.Attested
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if p := h.peers[caller]; p != nil {
+		return p.trust
+	}
+	return link.Untrusted
 }
 
 // New makes a hub for bots (name to token).
@@ -180,8 +249,14 @@ func (h *Hub) serveLink(w http.ResponseWriter, r *http.Request, name string) {
 	if hello.Inflight <= 0 {
 		hello.Inflight = 64
 	}
-	p := &peer{name: name, conn: conn, hello: hello, since: time.Now()}
-	welcome, _ := json.Marshal(link.Welcome{Name: name})
+	trust, err := h.vouch(name, hello.Attest)
+	if err != nil {
+		h.log.Warn("bird refused: its build isn't attested", "name", name, "build", hello.Build, "why", err)
+		_ = conn.Close(websocket.StatusPolicyViolation, "attestation")
+		return
+	}
+	p := &peer{name: name, trust: trust, conn: conn, hello: hello, since: time.Now()}
+	welcome, _ := json.Marshal(link.Welcome{Name: name, Trust: trust})
 	if err := h.write(ctx, p, link.Frame{V: link.V, Kind: link.KindWelcome, Body: welcome}); err != nil {
 		return
 	}
@@ -190,7 +265,7 @@ func (h *Hub) serveLink(w http.ResponseWriter, r *http.Request, name string) {
 		return
 	}
 	defer h.leave(p)
-	h.log.Info("bird linked", "name", name, "build", hello.Build)
+	h.log.Info("bird linked", "name", name, "build", hello.Build, "trust", string(trust))
 
 	ctx, stop := context.WithCancel(ctx)
 	defer stop()
@@ -356,7 +431,7 @@ func (h *Hub) route(ctx context.Context, caller string, f link.Frame, deliver fu
 	h.pending[k] = pd
 	h.mu.Unlock()
 
-	f.V, f.From, f.To, f.Deadline = link.V, caller, "", deadline.UnixMilli()
+	f.V, f.From, f.Trust, f.To, f.Deadline = link.V, caller, h.TrustOf(caller), "", deadline.UnixMilli()
 	// ponytail: written from the caller's read loop, so a slow callee stalls
 	// that caller for up to writeWithin; a per-peer send queue if it ever shows.
 	wctx, cancel := context.WithDeadline(ctx, deadline)
@@ -388,14 +463,14 @@ func (h *Hub) complete(callee *peer, f link.Frame) {
 	if pd == nil {
 		return
 	}
-	f.V, f.From = link.V, callee.name
+	f.V, f.From, f.Trust = link.V, callee.name, callee.trust
 	pd.deliver(f)
 }
 
 // fanout stamps the event as from's and sends it to every other bot that
 // subscribed to it. Best effort, like the event itself.
 func (h *Hub) fanout(from *peer, f link.Frame) {
-	f.V, f.From, f.Method, f.ID, f.To = link.V, from.name, from.name+"."+f.Method, "", ""
+	f.V, f.From, f.Trust, f.Method, f.ID, f.To = link.V, from.name, from.trust, from.name+"."+f.Method, "", ""
 	h.mu.Lock()
 	var to []*peer
 	for _, p := range h.peers {
@@ -495,7 +570,7 @@ func (h *Hub) Fleet() []Bird {
 	out := make([]Bird, 0, len(h.peers))
 	for _, p := range h.peers {
 		out = append(out, Bird{
-			Name: p.name, Build: p.hello.Build, Since: p.since, RTT: time.Duration(p.rtt.Load()),
+			Name: p.name, Build: p.hello.Build, Trust: p.trust, Since: p.since, RTT: time.Duration(p.rtt.Load()),
 			Inflight: int(p.inflight.Load()), Draining: p.draining.Load(),
 		})
 	}
