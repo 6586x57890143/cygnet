@@ -111,11 +111,23 @@ func TestDriftProposed(t *testing.T) {
 		t.Fatalf("%d reports", len(posts))
 	}
 	text := say(posts[0])
-	if !strings.Contains(text, "! this server drifted from **flock**; here's what would put it back") || !strings.Contains(text, "! perms #rules: @everyone") {
+	want := "! this server drifted from flock\nperms: #rules: @everyone can't send messages, create public threads, send messages in threads\n#rules: mod can send messages"
+	if !strings.HasPrefix(text, want) || strings.Contains(text, "changes:") {
 		t.Fatal(text)
 	}
-	if posts[0].Flags&discord.MessageFlagEphemeral != 0 || len(buttons(posts[0].Components[0].(discord.ContainerComponent))) != 2 {
-		t.Fatal("a report goes in the channel, with apply and check again")
+	if posts[0].Flags != 0 || len(posts[0].Files) != 2 || len(rowButtons(posts[0].Components)) != 2 {
+		t.Fatal("a report is a record in the channel, with apply and check again under it")
+	}
+
+	// Pressed, it turns into the preview: its embed and files dropped, as
+	// Discord makes a message Components V2 only when its embeds go.
+	up, err := pressOn(t, m, g, rowButtons(posts[0].Components)[1].CustomID, "5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	u := (*up)[0].(discord.MessageUpdate)
+	if !u.Flags.Has(discord.MessageFlagIsComponentsV2) || u.Embeds == nil || len(*u.Embeds) != 0 || u.Attachments == nil || len(*u.Attachments) != 0 {
+		t.Fatalf("check again %+v", u)
 	}
 
 	// The same drift is reported once, and again once it changes.
@@ -140,7 +152,7 @@ func TestDriftWatched(t *testing.T) {
 	drift(g)
 	m.check(context.Background(), g, guild, self)
 	posts := g.posts(reports)
-	if len(posts) != 1 || len(buttons(posts[0].Components[0].(discord.ContainerComponent))) != 0 {
+	if len(posts) != 1 || len(rowButtons(posts[0].Components)) != 0 {
 		t.Fatal("watch reports without buttons")
 	}
 }
@@ -153,8 +165,7 @@ func TestDriftActedOn(t *testing.T) {
 	if len(posts) != 1 {
 		t.Fatalf("%d reports", len(posts))
 	}
-	card := posts[0].Components[0].(discord.ContainerComponent)
-	if text := say(posts[0]); !strings.Contains(text, "✓ this server drifted from **flock**, so cygnet put back 2 changes") || card.AccentColor != brand.ColorOK {
+	if text := say(posts[0]); !strings.HasPrefix(text, "✓ this server drifted from flock, so cygnet put back 2 changes\nperms: #rules: ") || posts[0].Embeds[0].Color != brand.ColorOK {
 		t.Fatal(text)
 	}
 	if again := planOn(t, g, map[string]snowflake.ID{"skua": skuaApp}); len(again.changes) != 0 {
@@ -165,7 +176,7 @@ func TestDriftActedOn(t *testing.T) {
 	drift(g)
 	g.fail["overwrite"] = errors.New("500")
 	m.check(context.Background(), g, guild, self)
-	if text := say(g.posts(reports)[1]); !strings.Contains(text, "✗ stopped after 0 of 2") {
+	if text := say(g.posts(reports)[1]); !strings.HasPrefix(text, "✗ this server drifted from flock; cygnet stopped after 0 of 2\nprogress: ") {
 		t.Fatal(text)
 	}
 
