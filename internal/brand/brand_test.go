@@ -7,27 +7,40 @@ import (
 	"io/fs"
 	"strings"
 	"testing"
+
+	"github.com/disgoorg/disgo/discord"
 )
 
 // Every colour must resolve to an icon that is actually embedded, and the
-// thumbnail URL must name the file that is uploaded with it.
+// thumbnail and the rule must each name a file that is uploaded with them.
 func TestEveryMoodHasItsFile(t *testing.T) {
 	for color := range moods {
 		e, files := Embed(color, "t", "d")
-		if len(files) != 1 {
-			t.Fatalf("%#06x: %d files before any sync, want the icon", color, len(files))
+		if len(files) != 2 {
+			t.Fatalf("%#06x: %d files before any sync, want the rule and the icon", color, len(files))
 		}
-		f := files[0]
-		if e.Thumbnail == nil || e.Thumbnail.URL != "attachment://"+f.Name {
-			t.Fatalf("%#06x: thumbnail %v does not match file %q", color, e.Thumbnail, f.Name)
-		}
-		b, _ := io.ReadAll(f.Reader)
-		if len(b) == 0 {
-			t.Fatalf("%#06x: %s is empty or missing", color, f.Name)
+		for i, url := range []*discord.EmbedResource{e.Image, e.Thumbnail} {
+			f := files[i]
+			if url == nil || url.URL != "attachment://"+f.Name {
+				t.Fatalf("%#06x: %v does not match file %q", color, url, f.Name)
+			}
+			b, _ := io.ReadAll(f.Reader)
+			if len(b) == 0 {
+				t.Fatalf("%#06x: %s is empty or missing", color, f.Name)
+			}
 		}
 	}
-	if _, f := Embed(0x123456, "", ""); !strings.Contains(f[0].Name, "info") {
-		t.Fatalf("unknown colour got %s, want the info icon", f[0].Name)
+	if _, f := Embed(0x123456, "", ""); !strings.Contains(f[1].Name, "info") {
+		t.Fatalf("unknown colour got %s, want the info icon", f[1].Name)
+	}
+}
+
+// A short value sits in a column and a long one takes the row, so three
+// abreast never wrap into a ragged block.
+func TestFieldsSetShortValuesAbreast(t *testing.T) {
+	got := Fields([][2]string{{"gateway", "42 ms"}, {"intents", "guilds, members, message content"}})
+	if len(got) != 2 || !*got[0].Inline || *got[1].Inline || got[0].Name != "gateway" || got[1].Value != "guilds, members, message content" {
+		t.Fatalf("fields %+v", got)
 	}
 }
 
@@ -46,28 +59,30 @@ func TestEmbeddedAssetsStaySmall(t *testing.T) {
 
 // Every icon is on its grid (UX.md): the attachments are 256px of 2px
 // cells, the bird's 128 cells scaled by 2. Emoji are 128px: a mood is the
-// bird at 1px cells, a module tile 4px cells. A cell that is not one flat
-// colour is a resampling bug.
+// bird at 1px cells, a module tile 4px cells. The rule is 1040x32 of 4px
+// cells. A cell that is not one flat colour is a resampling bug.
 func TestEmbeddedAssetsAreOnTheirGrid(t *testing.T) {
 	for _, a := range art(t) {
 		img, err := png.Decode(bytes.NewReader(a.data))
 		if err != nil {
 			t.Fatalf("%s: %v", a.path, err)
 		}
-		size, k := 256, 2
-		if strings.HasPrefix(a.path, "emoji/") {
-			size, k = 128, 1
-			if strings.HasPrefix(a.path, "emoji/mod_") {
-				k = 4
-			}
+		w, h, k := 256, 256, 2
+		switch {
+		case a.path == "assets/cygnet_rule.png":
+			w, h, k = 1040, 32, 4
+		case strings.HasPrefix(a.path, "emoji/mod_"):
+			w, h, k = 128, 128, 4
+		case strings.HasPrefix(a.path, "emoji/"):
+			w, h, k = 128, 128, 1
 		}
-		if b := img.Bounds(); b.Dx() != size || b.Dy() != size {
-			t.Errorf("%s is %dx%d, want %dx%d", a.path, b.Dx(), b.Dy(), size, size)
+		if b := img.Bounds(); b.Dx() != w || b.Dy() != h {
+			t.Errorf("%s is %dx%d, want %dx%d", a.path, b.Dx(), b.Dy(), w, h)
 			continue
 		}
 	cells:
-		for y := 0; y < size; y++ {
-			for x := 0; x < size; x++ {
+		for y := 0; y < h; y++ {
+			for x := 0; x < w; x++ {
 				if img.At(x, y) != img.At(x-x%k, y-y%k) {
 					t.Errorf("%s: pixel %d,%d breaks its %dpx cell", a.path, x, y, k)
 					break cells
