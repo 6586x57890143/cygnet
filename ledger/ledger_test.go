@@ -22,14 +22,16 @@ var update = flag.Bool("update", false, "rewrite the golden cards")
 var brand = ledger.Brand{
 	Name:  "tester",
 	Emoji: func(m string) string { return "<:mod_" + m + ":1>" },
-	Color: func(m ledger.Mood) int { return map[ledger.Mood]int{ledger.MoodOK: 1, ledger.MoodWarn: 2, ledger.MoodDanger: 3}[m] },
+	Color: func(m ledger.Mood) int {
+		return map[ledger.Mood]int{ledger.MoodOK: 1, ledger.MoodWarn: 2, ledger.MoodDanger: 3}[m]
+	},
 }
 
 func jail(user string) ledger.Entry {
 	return ledger.Entry{
 		ID: "41", Bird: "tester", Guild: "100", At: time.Date(2026, 10, 17, 12, 0, 0, 0, time.UTC),
 		Actor: ledger.Member("175928847299117063"), Action: "roles.jail", Mood: ledger.MoodOK,
-		Subjects: []ledger.Ref{ledger.User(user), ledger.Message("200", "300")},
+		Subjects: []ledger.Ref{ledger.User(user), ledger.Message("200", "300"), ledger.Role("501").As("kept"), ledger.Role("502").As("kept"), ledger.Role("503").As("restored")},
 		Summary:  "jailed for 2h; their 4 roles are kept for release",
 		Facts:    []ledger.Fact{{Label: "until", Value: "14:00 utc"}, {Label: "kept", Value: "booster, a role above merlin's own, and one more that wraps"}},
 		Changes:  []ledger.Change{{Field: "marker", From: "none", To: "jailed"}},
@@ -107,10 +109,13 @@ func TestValidateRefuses(t *testing.T) {
 		"backtick in grid":  func(e *ledger.Entry) { e.Changes[0].To = "`x`" },
 		"too many lines":    func(e *ledger.Entry) { e.Facts = make([]ledger.Fact, 12) },
 		"bad subject":       func(e *ledger.Entry) { e.Subjects = []ledger.Ref{{Kind: "planet", ID: "1"}} },
+		"loud label":        func(e *ledger.Entry) { e.Subjects = []ledger.Ref{ledger.User("1").As("Kept")} },
 		"message no slash":  func(e *ledger.Entry) { e.Subjects = []ledger.Ref{{Kind: ledger.RefMessage, ID: "1"}} },
 		"two targets":       func(e *ledger.Entry) { e.Buttons[0].URL = "https://x" },
 		"loud button":       func(e *ledger.Entry) { e.Buttons[0].Label = "Release" },
-		"six buttons":       func(e *ledger.Entry) { e.Buttons = append(e.Buttons, e.Buttons[0], e.Buttons[0], e.Buttons[0], e.Buttons[0]) },
+		"six buttons": func(e *ledger.Entry) {
+			e.Buttons = append(e.Buttons, e.Buttons[0], e.Buttons[0], e.Buttons[0], e.Buttons[0])
+		},
 	} {
 		e := jail("1001")
 		edit(&e)

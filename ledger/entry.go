@@ -87,14 +87,24 @@ const (
 type Ref struct {
 	Kind RefKind `json:"kind"`
 	ID   string  `json:"id"`
+	// Label is what this ref is to the entry ("kept", "restored"), in the
+	// shared voice. Refs with no label are the entry's who and where, on one
+	// line; refs sharing a label are a line of their own, "kept: @a, @b".
+	Label string `json:"label,omitempty"`
 }
 
-func User(id string) Ref    { return Ref{RefUser, id} }
-func Channel(id string) Ref { return Ref{RefChannel, id} }
-func Role(id string) Ref    { return Ref{RefRole, id} }
+// As is r labelled.
+func (r Ref) As(label string) Ref {
+	r.Label = label
+	return r
+}
+
+func User(id string) Ref    { return Ref{Kind: RefUser, ID: id} }
+func Channel(id string) Ref { return Ref{Kind: RefChannel, ID: id} }
+func Role(id string) Ref    { return Ref{Kind: RefRole, ID: id} }
 
 // Message is a message in channel.
-func Message(channel, message string) Ref { return Ref{RefMessage, channel + "/" + message} }
+func Message(channel, message string) Ref { return Ref{Kind: RefMessage, ID: channel + "/" + message} }
 
 // Fact is one line of the card's grid: a short label and a plain value.
 // Values sit in a code block, where a mention shows as its raw ID, so who

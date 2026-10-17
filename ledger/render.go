@@ -84,7 +84,8 @@ func batch(entries []Entry) string {
 	reason, cause := entries[0].Reason, entries[0].Cause
 	for _, e := range entries {
 		line := e.Summary
-		if s := subjects(e.Guild, e.Subjects); s != "" {
+		// One line per entry: only its who and where, not its labelled refs.
+		if s := subjects(e.Guild, unlabelled(e.Subjects)); s != "" {
 			line = s + " · " + line
 		}
 		lines = append(lines, line)
@@ -113,14 +114,33 @@ func footer(a Actor, reason, cause string) []string {
 	return out
 }
 
+// subjects is the refs as lines: the unlabelled ones together, then one
+// line per label in the order labels first appear.
 func subjects(guild string, refs []Ref) string {
-	parts := make([]string, 0, len(refs))
+	var plain []string
+	var labels []string
+	byLabel := map[string][]string{}
 	for _, r := range refs {
-		if m := mention(guild, r); m != "" {
-			parts = append(parts, m)
+		m := mention(guild, r)
+		switch {
+		case m == "":
+		case r.Label == "":
+			plain = append(plain, m)
+		default:
+			if _, ok := byLabel[r.Label]; !ok {
+				labels = append(labels, r.Label)
+			}
+			byLabel[r.Label] = append(byLabel[r.Label], m)
 		}
 	}
-	return strings.Join(parts, " · ")
+	var lines []string
+	if len(plain) > 0 {
+		lines = append(lines, strings.Join(plain, " · "))
+	}
+	for _, l := range labels {
+		lines = append(lines, l+": "+strings.Join(byLabel[l], ", "))
+	}
+	return strings.Join(lines, "\n")
 }
 
 // mention is how a Ref reads in Discord, or "" for one it cannot draw. A
@@ -246,3 +266,13 @@ func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
 // clipText keeps a card under Discord's limit. Only a batch at its cap with
 // long lines gets near it.
 func clipText(s string) string { return clip(s, maxText) }
+
+func unlabelled(refs []Ref) []Ref {
+	var out []Ref
+	for _, r := range refs {
+		if r.Label == "" {
+			out = append(out, r)
+		}
+	}
+	return out
+}
