@@ -18,19 +18,28 @@ type Brand struct {
 	Emoji func(module string) string
 	// Color is the card's accent for a mood, from the bird's own palette.
 	Color func(Mood) int
+	// Thumbnail is the URL of the bird's drawing for a mood, shown beside
+	// the head, or "" for none. The bird uploads what it names.
+	Thumbnail func(Mood) string
+	// Rule is the URL of a wide divider image drawn under the head, or ""
+	// for none. It is there for its width as much as its look: a container
+	// is sized to its content, so without one a two line card and a full
+	// grid render as boxes of every width down one channel.
+	Rule string
 }
 
-// maxText is Discord's limit on a text display's content, less room for
-// the head.
+// maxText is Discord's limit on a message's text, less room for the rest.
 const maxText = 3900
 
 // Render draws entries as one card in the UX.md card form: one Components
 // V2 container accented by mood, its head the module's emoji, the bird's
-// name in bold and the module. One entry is the full card: summary, who and
-// where as mentions, a grid of facts and changes, then who did it, why and
-// what it followed from as subtext, then its buttons. Several entries (a
-// batch, see Batcher) are one line each under a shared head, accented by the
-// loudest of them, with their common actor and reason once below.
+// name in bold and the module, beside the bird's drawing for the mood, with
+// the rule under it. One entry is the full card: its summary in the head,
+// then who and where as mentions, a grid of facts and changes, then who did
+// it, why and what it followed from as subtext, then its buttons. Several
+// entries (a batch, see Batcher) are one line each under a shared head,
+// accented by the loudest of them, with their common actor and reason once
+// below.
 func Render(b Brand, entries ...Entry) discord.ContainerComponent {
 	if len(entries) == 0 {
 		return discord.NewContainer()
@@ -46,6 +55,7 @@ func Render(b Brand, entries ...Entry) discord.ContainerComponent {
 	var body string
 	var extra []discord.ContainerSubComponent
 	if len(entries) == 1 {
+		head += "\n" + first.Summary
 		body = single(first)
 		if row := buttons(first.Buttons); row != nil {
 			extra = append(extra, *row)
@@ -61,12 +71,36 @@ func Render(b Brand, entries ...Entry) discord.ContainerComponent {
 	if b.Color != nil {
 		color = b.Color(mood)
 	}
-	parts := append([]discord.ContainerSubComponent{discord.NewTextDisplay(clipText(head + "\n" + body))}, extra...)
-	return discord.NewContainer(parts...).WithAccentColor(color)
+	return discord.NewContainer(append(face(b, mood, head, body), extra...)...).WithAccentColor(color)
+}
+
+// face is the head beside the mood's drawing, the rule, then the body at
+// full width, since beside a thumbnail a phone gives text a narrow column.
+// A brand with neither is one text display, as before there were faces.
+func face(b Brand, mood Mood, head, body string) []discord.ContainerSubComponent {
+	thumb := ""
+	if b.Thumbnail != nil {
+		thumb = b.Thumbnail(mood)
+	}
+	if thumb == "" && b.Rule == "" {
+		return []discord.ContainerSubComponent{discord.NewTextDisplay(clipText(head + "\n" + body))}
+	}
+	top := discord.ContainerSubComponent(discord.NewTextDisplay(head))
+	if thumb != "" {
+		top = discord.NewSection(discord.NewTextDisplay(head)).WithAccessory(discord.NewThumbnail(thumb))
+	}
+	parts := []discord.ContainerSubComponent{top}
+	if b.Rule != "" {
+		parts = append(parts, discord.NewMediaGallery(discord.MediaGalleryItem{Media: discord.UnfurledMediaItem{URL: b.Rule}}))
+	}
+	if body != "" {
+		parts = append(parts, discord.NewTextDisplay(clip(body, maxText-len(head))))
+	}
+	return parts
 }
 
 func single(e Entry) string {
-	lines := []string{e.Summary}
+	var lines []string
 	if s := subjects(e.Guild, e.Subjects); s != "" {
 		lines = append(lines, s)
 	}
