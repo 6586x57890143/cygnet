@@ -46,7 +46,8 @@ its mood, laid out top to bottom:
 3. **The rule.** The bird's wide divider image. It closes the body and divides off the
    footnote, never sits between the head and the body. It is there for its width as
    much as its look: a container is sized to its content, so without it every message
-   is a different width and a channel of them reads ragged.
+   is a different width and a channel of them reads ragged. On a panel the controls
+   are the body, so the rule sits below them.
 4. **The footnote**, as `-#` subtext: provenance, what this follows from, a hint.
 5. **Buttons**, inside the container, last.
 
