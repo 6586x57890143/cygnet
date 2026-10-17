@@ -4,8 +4,6 @@ import (
 	"context"
 	"sync"
 	"time"
-
-	"github.com/disgoorg/disgo/discord"
 )
 
 // Defaults for a Batcher left at its zero values.
@@ -30,9 +28,9 @@ type Batcher struct {
 	// Max is how many entries a card takes before the next starts a new one.
 	Max int
 	// Post sends a new card to guild's log channel and returns its message ID.
-	Post func(ctx context.Context, guild string, card discord.ContainerComponent) (string, error)
+	Post func(ctx context.Context, guild string, card Card) (string, error)
 	// Edit replaces the card at message.
-	Edit func(ctx context.Context, guild, message string, card discord.ContainerComponent) error
+	Edit func(ctx context.Context, guild, message string, card Card) error
 	// Now is the clock, for tests.
 	Now func() time.Time
 

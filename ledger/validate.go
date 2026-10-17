@@ -68,7 +68,7 @@ func Validate(e Entry) error {
 		}
 	}
 	for _, r := range e.Subjects {
-		if r.ID == "" || mention(e.Guild, r) == "" {
+		if r.ID == "" || mention(e.Guild, r, "") == "" {
 			bad("subject %+v: unknown kind or no ID", r)
 		}
 		if r.Label != "" && (utf8.RuneCountInString(r.Label) > maxLabel || voice(r.Label) != nil) {

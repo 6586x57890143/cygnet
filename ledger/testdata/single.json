@@ -1,58 +1,75 @@
 {
-  "type": 17,
-  "accent_color": 1,
-  "components": [
-    {
-      "type": 9,
-      "components": [
-        {
-          "type": 10,
-          "content": "\u003c:mod_roles:1\u003e **jailed for 2h; their 4 roles are kept for release**\n-# by \u003c@175928847299117063\u003e · roles"
-        }
-      ],
-      "accessory": {
-        "type": 11,
-        "media": {
-          "url": "attachment://tester_ok.png",
-          "flags": 0
-        }
+  "Embed": {
+    "title": "jailed for 2h; their 4 roles are kept for release",
+    "description": "\u003e spam links",
+    "color": 1,
+    "footer": {
+      "text": "follows tester:40"
+    },
+    "image": {
+      "url": "attachment://tester_rule.png"
+    },
+    "thumbnail": {
+      "url": "attachment://tester_ok.png"
+    },
+    "fields": [
+      {
+        "name": "actor",
+        "value": "\u003c@175928847299117063\u003e",
+        "inline": true
+      },
+      {
+        "name": "member",
+        "value": "\u003c@1001\u003e",
+        "inline": true
+      },
+      {
+        "name": "kept",
+        "value": "\u003c@\u0026501\u003e, \u003c@\u0026502\u003e",
+        "inline": false
+      },
+      {
+        "name": "restored",
+        "value": "\u003c@\u0026503\u003e",
+        "inline": true
+      },
+      {
+        "name": "until",
+        "value": "14:00 utc",
+        "inline": true
+      },
+      {
+        "name": "kept",
+        "value": "booster, a role above merlin's own, and one more that wraps",
+        "inline": false
+      },
+      {
+        "name": "marker",
+        "value": "none → jailed",
+        "inline": true
+      },
+      {
+        "name": "message",
+        "value": "[message](https://discord.com/channels/100/200/300)",
+        "inline": false
       }
-    },
-    {
-      "type": 10,
-      "content": "\u003e spam links\n\u003c@1001\u003e · [message](https://discord.com/channels/100/200/300)\n**kept** \u003c@\u0026501\u003e, \u003c@\u0026502\u003e\n**restored** \u003c@\u0026503\u003e\n**until** 14:00 utc\n**kept** booster, a role above merlin's own, and one more that wraps\n**marker** none → jailed"
-    },
-    {
-      "type": 12,
-      "items": [
-        {
-          "media": {
-            "url": "attachment://tester_rule.png",
-            "flags": 0
-          }
-        }
-      ]
-    },
-    {
-      "type": 10,
-      "content": "-# follows tester:40"
-    },
-    {
-      "type": 1,
-      "components": [
-        {
-          "type": 2,
-          "style": 4,
-          "label": "release",
-          "custom_id": "roles:release:1001"
-        },
-        {
-          "type": 2,
-          "style": 5,
-          "label": "sheet",
-          "url": "https://example.com"
-        }
-      ]
-    }
-  ]
+    ]
+  },
+  "Buttons": {
+    "type": 1,
+    "components": [
+      {
+        "type": 2,
+        "style": 4,
+        "label": "release",
+        "custom_id": "roles:release:1001"
+      },
+      {
+        "type": 2,
+        "style": 5,
+        "label": "sheet",
+        "url": "https://example.com"
+      }
+    ]
+  }
 }

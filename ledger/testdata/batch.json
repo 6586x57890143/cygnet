@@ -1,41 +1,24 @@
 {
-  "type": 17,
-  "accent_color": 3,
-  "components": [
-    {
-      "type": 9,
-      "components": [
-        {
-          "type": 10,
-          "content": "\u003c:mod_roles:1\u003e **jailed for 2h; their 4 roles are kept for release · 2**\n-# by \u003c@175928847299117063\u003e · roles"
-        }
-      ],
-      "accessory": {
-        "type": 11,
-        "media": {
-          "url": "attachment://tester_danger.png",
-          "flags": 0
-        }
+  "Embed": {
+    "title": "jailed for 2h; their 4 roles are kept for release · 2",
+    "description": "\u003c@1001\u003e · [message](https://discord.com/channels/100/200/300)\n\u003c@1003\u003e · [message](https://discord.com/channels/100/200/300)",
+    "color": 3,
+    "footer": {
+      "text": "follows tester:40"
+    },
+    "image": {
+      "url": "attachment://tester_rule.png"
+    },
+    "thumbnail": {
+      "url": "attachment://tester_danger.png"
+    },
+    "fields": [
+      {
+        "name": "actor",
+        "value": "\u003c@175928847299117063\u003e",
+        "inline": true
       }
-    },
-    {
-      "type": 10,
-      "content": "\u003c@1001\u003e · [message](https://discord.com/channels/100/200/300)\n\u003c@1003\u003e · [message](https://discord.com/channels/100/200/300)"
-    },
-    {
-      "type": 12,
-      "items": [
-        {
-          "media": {
-            "url": "attachment://tester_rule.png",
-            "flags": 0
-          }
-        }
-      ]
-    },
-    {
-      "type": 10,
-      "content": "-# follows tester:40"
-    }
-  ]
+    ]
+  },
+  "Buttons": null
 }
