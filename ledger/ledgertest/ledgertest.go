@@ -5,6 +5,7 @@ package ledgertest
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -69,10 +70,13 @@ func Entry(guild string, n int) ledger.Entry {
 }
 
 // Run holds a Store to the contract. newStore returns an empty store each
-// call; guild names are the test's own, so a shared database is fine.
+// call; guild names are the run's own, so a shared database is fine.
 func Run(t *testing.T, newStore func(t *testing.T) ledger.Store) {
 	ctx := context.Background()
-	guild := func(t *testing.T) string { return t.Name() }
+	// A guild of the run's own, so a database that outlives the run (a
+	// local one, reused) never hands back an earlier run's rows.
+	run := strconv.FormatInt(time.Now().UnixNano(), 36)
+	guild := func(t *testing.T) string { return t.Name() + "-" + run }
 
 	t.Run("chain", func(t *testing.T) {
 		s, g := newStore(t), guild(t)
