@@ -150,7 +150,7 @@ func (m *Module) check(ctx context.Context, r rest.Rest, guild, self snowflake.I
 	default:
 		card = p.drifted(k.Mode)
 	}
-	if err := m.post(ctx, r, guild, reports, card); err != nil {
+	if err := m.post(ctx, r, guild, reports, asPanel(card)); err != nil {
 		m.warn("reporting drift", guild, err)
 	}
 }
@@ -167,7 +167,7 @@ func (m *Module) report(ctx context.Context, r rest.Rest, guild snowflake.ID, l 
 		m.warn("reporting a layout", guild, errNoReports)
 		return
 	}
-	if err := m.post(ctx, r, guild, reports, card); err != nil {
+	if err := m.post(ctx, r, guild, reports, asPanel(card)); err != nil {
 		m.warn("reporting a layout", guild, err)
 	}
 }
@@ -177,17 +177,64 @@ type Poster interface {
 	CreateMessage(channelID snowflake.ID, messageCreate discord.MessageCreate, opts ...rest.RequestOpt) (*discord.Message, error)
 }
 
-func (m *Module) post(ctx context.Context, r Poster, guild, channel snowflake.ID, card discord.ContainerComponent) error {
+func (m *Module) post(ctx context.Context, r Poster, guild, channel snowflake.ID, msg discord.MessageCreate) error {
 	if err := m.guard.Allow(guild, guard.MessageSend); err != nil {
 		return err
 	}
-	_, err := r.CreateMessage(channel, discord.MessageCreate{
-		Components:      []discord.LayoutComponent{card},
-		Flags:           discord.MessageFlagIsComponentsV2,
-		AllowedMentions: core.NoPings(),
-	}, rest.WithCtx(ctx))
+	msg.AllowedMentions = core.NoPings()
+	_, err := r.CreateMessage(channel, msg, rest.WithCtx(ctx))
 	m.guard.Report(guild, struggling(err))
 	return err
+}
+
+// asPanel is card as a message of its own.
+func asPanel(card discord.ContainerComponent) discord.MessageCreate {
+	return discord.MessageCreate{Components: []discord.LayoutComponent{card}, Flags: discord.MessageFlagIsComponentsV2}
+}
+
+// record is a report of something that happened (DESIGN.md's A record):
+// an embed wearing cygnet's face for color and her rule, the files those
+// take, and a row of controls under it when it has any.
+type record struct {
+	embed discord.Embed
+	files []*discord.File
+	row   []discord.InteractiveComponent
+}
+
+// newRecord is a record titled title, its facts in rows and notes in the
+// footer, with controls in row.
+func newRecord(color int, title string, rows [][2]string, notes []string, row ...discord.InteractiveComponent) record {
+	e, files := brand.Embed(color, title, "")
+	e.Fields = brand.Fields(rows)
+	if len(notes) > 0 {
+		e.Footer = &discord.EmbedFooter{Text: strings.Join(notes, " · ")}
+	}
+	return record{embed: e, files: files, row: row}
+}
+
+func (r record) components() []discord.LayoutComponent {
+	if len(r.row) == 0 {
+		return []discord.LayoutComponent{}
+	}
+	return []discord.LayoutComponent{discord.NewActionRow(r.row...)}
+}
+
+// create is r as a new message.
+func (r record) create() discord.MessageCreate {
+	return discord.MessageCreate{Embeds: []discord.Embed{r.embed}, Files: r.files, Components: r.components()}
+}
+
+// update is r replacing a message that was a record: its files are sent
+// again and the old ones dropped, so the embed never points at nothing.
+func (r record) update() discord.MessageUpdate {
+	c := r.components()
+	return discord.MessageUpdate{
+		Embeds:          &[]discord.Embed{r.embed},
+		Components:      &c,
+		Files:           r.files,
+		Attachments:     &[]discord.AttachmentUpdate{},
+		AllowedMentions: core.NoPings(),
+	}
 }
 
 var errNoReports = errors.New("the layout's report channel is gone")

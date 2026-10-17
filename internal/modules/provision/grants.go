@@ -217,7 +217,7 @@ func (m *Module) answer(ctx context.Context, r Grants, l lack) string {
 		}
 	}
 	did := "reported"
-	var card discord.ContainerComponent
+	var card record
 	switch {
 	case l.bird == cygnet && !l.inChannel:
 		m.grants.mu.Lock()
@@ -227,13 +227,13 @@ func (m *Module) answer(ctx context.Context, r Grants, l lack) string {
 	case mode == Act && l.role != 0:
 		if err := m.grant(ctx, r, l); err != nil {
 			m.warn("granting a bird", l.guild, err)
-			card = l.card("✗ cygnet couldn't grant it: "+refusal(err), brand.ColorError, false)
+			card = l.card(brand.ColorError, false, "✗ couldn't: "+refusal(err))
 		} else {
 			did = "granted"
 			card = l.granted()
 		}
 	default:
-		card = l.card("", brand.ColorWarn, mode == Propose && l.role != 0)
+		card = l.card(brand.ColorWarn, mode == Propose && l.role != 0, "")
 		if mode == Propose {
 			did = "proposed"
 		}
@@ -248,7 +248,7 @@ func (m *Module) answer(ctx context.Context, r Grants, l lack) string {
 		m.warn("reporting a refusal", l.guild, errNoReports)
 		return did
 	}
-	if err := m.post(ctx, r, l.guild, at, card); err != nil {
+	if err := m.post(ctx, r, l.guild, at, card.create()); err != nil {
 		m.warn("reporting a refusal", l.guild, err)
 	}
 	return did
@@ -278,35 +278,42 @@ func (m *Module) grant(ctx context.Context, r Grants, l lack) error {
 	return err
 }
 
-// where is the grant's place in words.
-func (l lack) where() string {
+// where is the grant's place as a fact: the channel, or the bird's role.
+func (l lack) where() [2]string {
 	if l.inChannel {
-		return "in <#" + l.channel.String() + ">"
+		return [2]string{"on", "<#" + l.channel.String() + ">"}
 	}
-	return "on its role"
+	return [2]string{"on", "its role"}
+}
+
+// refusal is the title of a report about l: who was refused what.
+func (l lack) refusal() string {
+	return l.bird + " was refused `" + string(l.op) + "`"
 }
 
 // card is the report: who was refused what, where, and what it lacks,
-// with the grant button when offered.
-func (l lack) card(note string, color int, offer bool) discord.ContainerComponent {
-	in := ""
+// what came of granting it when that failed, and the grant button when
+// offered.
+func (l lack) card(color int, offer bool, failed string) record {
+	var rows [][2]string
 	if l.channel != 0 {
-		in = " in <#" + l.channel.String() + ">"
+		rows = append(rows, [2]string{"channel", "<#" + l.channel.String() + ">"})
 	}
-	body := "! **" + l.bird + "** was refused `" + string(l.op) + "`" + in + "\n-# it lacks " + l.lacks.Names()
-	if note != "" {
-		body += "\n" + note
+	rows = append(rows, [2]string{"lacks", l.lacks.Names()})
+	if failed != "" {
+		rows = append(rows, [2]string{"grant", failed})
 	}
+	var notes []string
 	if l.role == 0 {
-		body += "\n-# discord made it no role here; add it again from the fleet card"
+		notes = append(notes, "discord made it no role here; add it again from the fleet card")
 	}
 	if !offer {
-		return brand.Card(color, "provision", "grant", body)
+		return newRecord(color, "! "+l.refusal(), rows, notes)
 	}
+	where := l.where()
+	notes = append(notes, "grant gives it that "+where[0]+" "+where[1])
 	id := fmt.Sprintf("%s:%s:%d:%s", grantID, l.bird, l.channel, l.op)
-	return brand.Card(color, "provision", "grant", body+"\n-# grant gives it that "+l.where(),
-		discord.NewSeparator(discord.SeparatorSpacingSizeSmall),
-		discord.NewActionRow(discord.NewSuccessButton("grant "+l.bird, id)))
+	return newRecord(color, "! "+l.refusal(), rows, notes, discord.NewSuccessButton("grant "+l.bird, id))
 }
 
 // selfWant is everything cygnet's role needs in l's server: what her
@@ -326,17 +333,20 @@ func (m *Module) selfWant(l lack) discord.Permissions {
 // self is the report of cygnet's own refusal server wide: Discord lets
 // only a person give her more, so it carries her install link for this
 // server, which updates her role in place.
-func (l lack) self(link string) discord.ContainerComponent {
-	body := "! **cygnet** was refused `" + string(l.op) + "`\n-# she lacks " + l.lacks.Names() +
-		"; discord lets only a person give a bot more, and the button does it in one go: her role gets everything she needs here"
-	return brand.Card(brand.ColorWarn, "provision", "grant", body,
-		discord.NewSeparator(discord.SeparatorSpacingSizeSmall),
-		discord.NewActionRow(discord.NewLinkButton("give cygnet what she needs", link)))
+func (l lack) self(link string) record {
+	return newRecord(brand.ColorWarn, "! "+l.refusal(), [][2]string{{"lacks", l.lacks.Names()}},
+		[]string{"discord lets only a person give a bot more, and the button does it in one go: her role gets everything she needs here"},
+		discord.NewLinkButton("give cygnet what she needs", link))
 }
 
 // granted is the report once cygnet granted it.
-func (l lack) granted() discord.ContainerComponent {
-	return brand.Card(brand.ColorOK, "provision", "grant", "✓ **"+l.bird+"** was refused `"+string(l.op)+"`, so cygnet gave it "+l.lacks.Names()+" "+l.where())
+func (l lack) granted() record {
+	return newRecord(brand.ColorOK, "✓ "+l.refusal()+", so cygnet gave it", [][2]string{{"gave", l.lacks.Names()}, l.where()}, nil)
+}
+
+// answered is the report once there is nothing left to grant.
+func (l lack) answered() record {
+	return newRecord(brand.ColorOK, "✓ "+l.bird+" has what `"+string(l.op)+"` needs now", nil, nil)
 }
 
 // grantPressed grants what a report offered, worked out again from the
@@ -362,7 +372,7 @@ func (m *Module) grantPressed(ctx context.Context, e *events.ComponentInteractio
 	if err != nil {
 		return fmt.Errorf("%w: %w", core.Tell("couldn't read "+parts[1]+" here; try again in a moment"), err)
 	}
-	card := brand.Card(brand.ColorOK, "provision", "grant", "✓ **"+l.bird+"** has what `"+string(op)+"` needs now")
+	card := l.answered()
 	if l.lacks != 0 {
 		if l.role == 0 {
 			return core.Tell(l.bird + " has no role here; add it again from the fleet card")
@@ -372,5 +382,10 @@ func (m *Module) grantPressed(ctx context.Context, e *events.ComponentInteractio
 		}
 		card = l.granted()
 	}
-	return e.UpdateMessage(discord.NewMessageUpdateV2(card).WithAllowedMentions(core.NoPings()))
+	// A report posted before records were embeds can't drop the
+	// Components V2 flag, so it gets the same words as a container.
+	if e.Message.Flags.Has(discord.MessageFlagIsComponentsV2) {
+		return e.UpdateMessage(discord.NewMessageUpdateV2(brand.Card(card.embed.Color, "provision", "grant", card.embed.Title)).WithAllowedMentions(core.NoPings()))
+	}
+	return e.UpdateMessage(card.update())
 }

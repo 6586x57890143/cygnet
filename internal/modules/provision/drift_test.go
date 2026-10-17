@@ -61,7 +61,39 @@ func drift(g *guildFake) {
 	}
 }
 
-func say(m discord.MessageCreate) string { return coretest.Text("", m.Components) }
+func say(m discord.MessageCreate) string { return coretest.Text(read(m.Embeds), m.Components) }
+
+// read is a record's text: its title, a "key: value" line per field and
+// its footer.
+func read(embeds []discord.Embed) string {
+	var lines []string
+	for _, e := range embeds {
+		lines = append(lines, e.Title)
+		for _, f := range e.Fields {
+			lines = append(lines, f.Name+": "+f.Value)
+		}
+		if e.Footer != nil {
+			lines = append(lines, "footer: "+e.Footer.Text)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// rowButtons is every button in a message's action rows, outside any
+// container: the controls under a record.
+func rowButtons(components []discord.LayoutComponent) []discord.ButtonComponent {
+	var out []discord.ButtonComponent
+	for _, c := range components {
+		if r, ok := c.(discord.ActionRowComponent); ok {
+			for _, b := range r.Components {
+				if b, ok := b.(discord.ButtonComponent); ok {
+					out = append(out, b)
+				}
+			}
+		}
+	}
+	return out
+}
 
 func TestDriftProposed(t *testing.T) {
 	m, g, reports, _ := provisioned(t, Propose)
