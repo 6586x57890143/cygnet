@@ -7,7 +7,8 @@ private bot that the others connect to so they can call each other, and that
 provisions Discord servers for them (layouts, fleet installs, invite codes, signups).
 It is built from skua's spine at skua `fdcf388`: same layout, same rules, same voice.
 Read [`SPEC.md`](./SPEC.md) first, then [`HANDOFF.md`](./HANDOFF.md). Anything a person
-sees follows [`UX.md`](./UX.md).
+sees follows [`DESIGN.md`](./DESIGN.md), the guide every bird shares, and [`UX.md`](./UX.md),
+what is cygnet's own. A lesson about how a surface reads goes in DESIGN.md's log.
 
 - `cmd/cygnet/main.go`: wiring only.
 - `internal/core`, `guard`, `intents`, `obs`, `ratelimit`, `store`, `brand`: copied from

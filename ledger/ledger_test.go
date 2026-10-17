@@ -20,7 +20,6 @@ import (
 var update = flag.Bool("update", false, "rewrite the golden cards")
 
 var brand = ledger.Brand{
-	Name:  "tester",
 	Emoji: func(m string) string { return "<:mod_" + m + ":1>" },
 	Color: func(m ledger.Mood) int {
 		return map[ledger.Mood]int{ledger.MoodOK: 1, ledger.MoodWarn: 2, ledger.MoodDanger: 3}[m]
@@ -70,7 +69,7 @@ func TestRenderedCards(t *testing.T) {
 
 	auto := jail("1002")
 	auto.Actor, auto.Facts, auto.Changes, auto.Buttons, auto.Reason, auto.Cause = ledger.Auto(), nil, nil, nil, "", ""
-	golden(t, "automatic", ledger.Render(ledger.Brand{Name: "tester"}, auto))
+	golden(t, "automatic", ledger.Render(ledger.Brand{}, auto))
 
 	second := jail("1003")
 	second.Mood, second.Reason = ledger.MoodDanger, "other"
@@ -107,8 +106,7 @@ func TestValidateRefuses(t *testing.T) {
 		"empty summary":     func(e *ledger.Entry) { e.Summary = "" },
 		"long reason":       func(e *ledger.Entry) { e.Reason = strings.Repeat("x", 501) },
 		"long label":        func(e *ledger.Entry) { e.Facts[0].Label = "much too long a label" },
-		"mention in grid":   func(e *ledger.Entry) { e.Facts[0].Value = "<@1>" },
-		"backtick in grid":  func(e *ledger.Entry) { e.Changes[0].To = "`x`" },
+		"split fact":        func(e *ledger.Entry) { e.Facts[0].Value = "one\ntwo" },
 		"too many lines":    func(e *ledger.Entry) { e.Facts = make([]ledger.Fact, 12) },
 		"bad subject":       func(e *ledger.Entry) { e.Subjects = []ledger.Ref{{Kind: "planet", ID: "1"}} },
 		"loud label":        func(e *ledger.Entry) { e.Subjects = []ledger.Ref{ledger.User("1").As("Kept")} },
@@ -239,7 +237,7 @@ func TestBatcherFoldsARunIntoOneCard(t *testing.T) {
 	if ch.posts != 1 || ch.edits["a"] != 2 {
 		t.Fatalf("three jails in 3s: %d posts, %d edits; want one card edited twice", ch.posts, ch.edits["a"])
 	}
-	if got := text(ch.cards["a"]); !strings.Contains(got, "roles · 3") || !strings.Contains(got, "<@3>") {
+	if got := text(ch.cards["a"]); !strings.Contains(got, "release · 3**") || !strings.Contains(got, "<@3>") {
 		t.Fatalf("the card did not grow: %s", got)
 	}
 
