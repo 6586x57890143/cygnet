@@ -73,6 +73,9 @@ func Validate(e Entry) error {
 		if r.ID == "" || mention(e.Guild, r) == "" {
 			bad("subject %+v: unknown kind or no ID", r)
 		}
+		if r.Label != "" && (utf8.RuneCountInString(r.Label) > maxLabel || voice(r.Label) != nil) {
+			bad("subject label %q: over %d or not in the voice", r.Label, maxLabel)
+		}
 	}
 	if len(e.Buttons) > maxButtons {
 		bad("%d buttons, over %d", len(e.Buttons), maxButtons)
