@@ -87,9 +87,8 @@ func (m *Module) ping(_ context.Context, e *events.ApplicationCommandInteraction
 	})
 }
 
-// status is a two-column readout in a code block: a monospace grid lines up
-// the same on every client, where how embed fields wrap is up to each
-// client. Anything that is not a short fact goes in a line below the block.
+// status is a readout of facts (DESIGN.md). Anything that is not a short
+// fact goes in a line below them.
 func (m *Module) status(ctx context.Context, e *events.ApplicationCommandInteractionCreate) error {
 	p := m.probe()
 	color := brand.ColorOK

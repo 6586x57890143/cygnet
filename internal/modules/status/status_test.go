@@ -84,11 +84,11 @@ func TestStatus(t *testing.T) {
 		color int
 		want  string
 	}{
-		{"no database", Probe{Granted: gateway.IntentGuilds}, nil, brand.ColorOK, "\ndatabase    not configured\n"},
-		{"database up", Probe{}, pinger{}, brand.ColorOK, "\ndatabase    0."},
-		{"database down", Probe{}, pinger{errors.New("refused")}, brand.ColorError, "```\n-# database: refused"},
-		{"gateway not measured", Probe{}, nil, brand.ColorOK, "\ngateway     not measured yet\n"},
-		{"module skipped", Probe{Skipped: []string{"whisper"}}, nil, brand.ColorWarn, "\nskipped     whisper\n"},
+		{"no database", Probe{Granted: gateway.IntentGuilds}, nil, brand.ColorOK, "\n**database** not configured\n"},
+		{"database up", Probe{}, pinger{}, brand.ColorOK, "\n**database** 0."},
+		{"database down", Probe{}, pinger{errors.New("refused")}, brand.ColorError, "**database** unreachable\n"},
+		{"gateway not measured", Probe{}, nil, brand.ColorOK, "**gateway** not measured yet\n"},
+		{"module skipped", Probe{Skipped: []string{"whisper"}}, nil, brand.ColorWarn, "\n**skipped** whisper\n"},
 	}
 	for _, c := range cases {
 		m := New(func() Probe { return c.probe }, c.db, func() time.Duration { return 0 })

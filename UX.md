@@ -6,7 +6,7 @@ and a layout claim is checked by measuring or by a test, never by eye.
 
 [`DESIGN.md`](./DESIGN.md) is the design every bird shares and wins where the two
 disagree; this file adds what is cygnet's own. Surfaces still drawn the older way
-(the code block grids in `status.readout` and `/help`) move to it in their next PR.
+(`/perf`'s code block grid) move to it in their next PR.
 
 ## Voice
 
@@ -62,20 +62,19 @@ The rules every bird shares, which `brand/voice_test.go` holds the status lines 
   below at full width, because beside a thumbnail a phone gives text a narrow column.
   The about says what the module does and how to use it before anything else.
 - An ASCII glyph that leads a line (`├ └ ▸`) leads only a line short enough never to
-  wrap, or one inside a code block: a wrapped line leaves its text hanging under the
-  glyph on a phone. The `/help` index's tree marks each module's name line, and its
-  command grid branches subcommands inside the code block.
-- Every other reply is a card (`brand.Card`): one
-  Components V2 container, accented in the mood of what it says (ok when done, warn
-  while working, error when it failed, info for a readout), whose first line is the
-  module's emoji, its name in bold and what the reply is: `<emoji> **provision** · apply`.
-  Below it the content is text: a `✓`/`!` line, a code block grid, `-#` detail, an ASCII
-  bar (`▰▱`) or tree (`├ └`). An icon is an app emoji inline, never an attachment, so a
-  card uploads nothing and before the emoji sync its head is text alone. A thumbnail
-  or other asset is for a page that is about the thing it shows (`/help`'s), not for
-  decoration. Buttons go inside the container, below the text. A live readout is
-  edited as a card too (`discord.NewMessageUpdateV2`) and its accent follows its state.
-  Errors stay `core.Tell`, plain text.
+  wrap: a wrapped line leaves its text hanging under the glyph on a phone. The `/help`
+  index's tree marks each module's name line; a page lists each command as a fact (its
+  invocation in bold, then its options), a subcommand under its full invocation.
+- Every other reply is a card (`brand.Card`), laid out as DESIGN.md's A message:
+  accented in the mood of what it says (ok when done, warn while working, error when it
+  failed, info for a readout), its head beside cygnet's face for that mood, the rule
+  closing the body. The title is the module's emoji, its name in bold and what the reply
+  is: `<emoji> **provision** · apply`. The body is text: a `✓`/`!` line, facts, `-#`
+  detail, an ASCII bar (`▰▱`) or tree (`├ └`). The face and the rule are the same images
+  a log card wears (`ledger.Brand`). Cards still drawn without them move to
+  it in their next PR. A live readout is edited as a card too
+  (`discord.NewMessageUpdateV2`) and its accent follows its state. Errors stay
+  `core.Tell`, plain text.
 - A message cygnet posts as someone else (a bridge or a webhook) is their text. What
   cygnet adds to it, such as who it replies to, is a `-#` subtext line below it, never an
   embed: a webhook can't make a real Discord reply, and a box outweighs the message it
