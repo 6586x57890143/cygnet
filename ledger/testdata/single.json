@@ -1,0 +1,27 @@
+{
+  "type": 17,
+  "accent_color": 1,
+  "components": [
+    {
+      "type": 10,
+      "content": "\u003c:mod_roles:1\u003e **tester** · roles\njailed for 2h; their 4 roles are kept for release\n\u003c@1001\u003e · [message](https://discord.com/channels/100/200/300)\n```\nuntil   14:00 utc\nkept    booster, a role above\n        merlin's own,\n        and one more that wraps\nmarker  none → jailed\n```\n-# by \u003c@175928847299117063\u003e\n-# reason: spam links\n-# follows tester:40"
+    },
+    {
+      "type": 1,
+      "components": [
+        {
+          "type": 2,
+          "style": 4,
+          "label": "release",
+          "custom_id": "roles:release:1001"
+        },
+        {
+          "type": 2,
+          "style": 5,
+          "label": "sheet",
+          "url": "https://example.com"
+        }
+      ]
+    }
+  ]
+}
