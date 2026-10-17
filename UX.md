@@ -6,8 +6,8 @@ and a layout claim is checked by measuring or by a test, never by eye.
 
 [`DESIGN.md`](./DESIGN.md) is the design every bird shares and wins where the two
 disagree; this file adds what is cygnet's own. Surfaces still drawn the older way
-(the provision module's grant and drift reports, records drawn as containers) move to
-it in their next PR.
+(the provision module's drift reports, records drawn as containers) move to it in
+their next PR.
 
 ## Voice
 

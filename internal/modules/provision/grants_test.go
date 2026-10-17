@@ -9,6 +9,7 @@ import (
 
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/gateway"
+	"github.com/disgoorg/disgo/rest"
 	"github.com/disgoorg/snowflake/v2"
 
 	"github.com/6586x57890143/cygnet/internal/brand"
@@ -65,10 +66,13 @@ func TestRefusedProposed(t *testing.T) {
 		t.Fatalf("%d reports", len(posts))
 	}
 	text := say(posts[0])
-	if !strings.Contains(text, "! **skua** was refused `message.embed` in <#"+general.String()+">\n-# it lacks embed links") || !strings.Contains(text, "grant gives it that on its role") {
+	if !strings.Contains(text, "! skua was refused `message.embed`\nchannel: <#"+general.String()+">\nlacks: embed links") || !strings.Contains(text, "footer: grant gives it that on its role") {
 		t.Fatal(text)
 	}
-	btn := buttons(posts[0].Components[0].(discord.ContainerComponent))
+	if posts[0].Flags.Has(discord.MessageFlagIsComponentsV2) || len(posts[0].Files) != 2 || posts[0].Embeds[0].Image == nil {
+		t.Fatalf("a report is a record, wearing the rule: %+v", posts[0])
+	}
+	btn := rowButtons(posts[0].Components)
 	if len(btn) != 1 || btn[0].CustomID != grantID+":skua:"+general.String()+":message.embed" {
 		t.Fatalf("buttons %+v", btn)
 	}
@@ -82,15 +86,21 @@ func TestRefusedProposed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if text := coretest.Text("", *(*got)[0].(discord.MessageUpdate).Components); !strings.Contains(text, "so cygnet gave it embed links on its role") {
+	// The report becomes what happened, its button gone and its files sent
+	// again in place of the old ones.
+	up := (*got)[0].(discord.MessageUpdate)
+	if text := read(*up.Embeds); text != "✓ skua was refused `message.embed`, so cygnet gave it\ngave: embed links\non: its role" {
 		t.Fatal(text)
+	}
+	if len(*up.Components) != 0 || len(up.Files) != 2 || up.Attachments == nil || len(*up.Attachments) != 0 {
+		t.Fatalf("update %+v", up)
 	}
 	if role := g.roles[2]; role.ID != skuaRole || !role.Permissions.Has(discord.PermissionEmbedLinks) {
 		t.Fatalf("skua's role %+v", role)
 	}
 	// Pressed again, there's nothing left to grant.
 	got, _ = pressOn(t, m, g, btn[0].CustomID, "5")
-	if text := coretest.Text("", *(*got)[0].(discord.MessageUpdate).Components); !strings.Contains(text, "has what `message.embed` needs now") {
+	if text := read(*(*got)[0].(discord.MessageUpdate).Embeds); text != "✓ skua has what `message.embed` needs now" {
 		t.Fatal(text)
 	}
 	for _, id := range []string{grantID + ":skua", grantID + ":skua:x:message.send", grantID + ":skua:0:nope"} {
@@ -119,7 +129,7 @@ func TestRefusedActed(t *testing.T) {
 	if err != nil || out["did"] != "granted" {
 		t.Fatalf("%v, %v", out, err)
 	}
-	if text := say(g.posts(reports)[0]); !strings.Contains(text, "so cygnet gave it send messages in <#"+rules.String()+">") {
+	if text := say(g.posts(reports)[0]); !strings.Contains(text, "so cygnet gave it\ngave: send messages\non: <#"+rules.String()+">") {
 		t.Fatal(text)
 	}
 	for _, c := range g.chans {
@@ -140,12 +150,37 @@ func TestRefusedActed(t *testing.T) {
 		t.Fatalf("refused grant: %v", out)
 	}
 	posts := g.posts(reports)
-	if card := posts[len(posts)-1].Components[0].(discord.ContainerComponent); card.AccentColor != brand.ColorError {
-		t.Fatal("not an error")
+	last := posts[len(posts)-1]
+	if last.Embeds[0].Color != brand.ColorError || !strings.Contains(say(last), "\ngrant: ✗ couldn't: ") {
+		t.Fatal(say(last))
 	}
 }
 
 var errBoom = &link.Error{Code: link.Internal}
+
+// A report posted while reports were containers can't drop the Components
+// V2 flag, so pressing its grant edits it as a container still.
+func TestGrantOnAnOldReport(t *testing.T) {
+	m, g, _ := birdsIn(t, Propose)
+	general := chanID(g, "general")
+	e, _ := coretest.Button(t, grantID+":skua:"+general.String()+":message.embed", func(p map[string]any) {
+		p["member"].(map[string]any)["user"] = map[string]any{"id": "5", "username": "u"}
+		p["message"].(map[string]any)["flags"] = int(discord.MessageFlagIsComponentsV2)
+	})
+	e.Client().Rest = g
+	var got []discord.InteractionResponseData
+	e.Respond = func(_ discord.InteractionResponseType, d discord.InteractionResponseData, _ ...rest.RequestOpt) error {
+		got = append(got, d)
+		return nil
+	}
+	if err := m.grantPressed(context.Background(), e); err != nil {
+		t.Fatal(err)
+	}
+	up := got[0].(discord.MessageUpdate)
+	if up.Embeds != nil || !up.Flags.Has(discord.MessageFlagIsComponentsV2) || !strings.Contains(coretest.Text("", *up.Components), "✓ skua was refused `message.embed`, so cygnet gave it") {
+		t.Fatalf("update %+v", up)
+	}
+}
 
 func TestRefusedWatched(t *testing.T) {
 	m, g, reports := birdsIn(t, Watch)
@@ -153,7 +188,7 @@ func TestRefusedWatched(t *testing.T) {
 	if err != nil || out["did"] != "reported" || out["lacks"] != "1099511627776" {
 		t.Fatalf("%v, %v", out, err)
 	}
-	if posts := g.posts(reports); len(buttons(posts[0].Components[0].(discord.ContainerComponent))) != 0 || !strings.Contains(say(posts[0]), "refused `member.timeout`\n-# it lacks timeout members") {
+	if posts := g.posts(reports); len(rowButtons(posts[0].Components)) != 0 || !strings.Contains(say(posts[0]), "refused `member.timeout`\nlacks: timeout members") {
 		t.Fatal(say(posts[0]))
 	}
 	// Nothing lacking: answered, not reported.
@@ -226,14 +261,12 @@ func TestRefusedCygnet(t *testing.T) {
 		t.Fatalf("%v, %v", out, err)
 	}
 	post := g.posts(reports)[0]
-	if text := say(post); !strings.Contains(text, "! **cygnet** was refused `member.ban`\n-# she lacks ban members; discord lets only a person give a bot more") {
+	if text := say(post); !strings.Contains(text, "! cygnet was refused `member.ban`\nlacks: ban members\nfooter: discord lets only a person give a bot more") {
 		t.Fatal(text)
 	}
 	var url string
-	for _, c := range post.Components[0].(discord.ContainerComponent).Components {
-		if row, ok := c.(discord.ActionRowComponent); ok {
-			url = row.Components[0].(discord.ButtonComponent).URL
-		}
+	if b := rowButtons(post.Components); len(b) == 1 {
+		url = b[0].URL
 	}
 	want := needs(flock) | discord.PermissionCreateInstantInvite | discord.PermissionBanMembers
 	if !strings.HasSuffix(url, fmt.Sprintf("client_id=%d&scope=bot+applications.commands&permissions=%d&guild_id=%d&disable_guild_select=true", self, want, guild)) {
