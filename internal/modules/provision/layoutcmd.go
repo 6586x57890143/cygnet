@@ -157,7 +157,7 @@ func (m *Module) previewAgain(ctx context.Context, e *events.ComponentInteractio
 	if err != nil {
 		return fmt.Errorf("%w: %w", core.Tell("couldn't read this server; try again in a moment"), err)
 	}
-	return e.UpdateMessage(discord.NewMessageUpdateV2(p.preview("")).WithAllowedMentions(core.NoPings()))
+	return e.UpdateMessage(asPanelUpdate(p.preview("")))
 }
 
 // shown re-reads the server for the plan a button carries
@@ -180,7 +180,7 @@ func (m *Module) shown(ctx context.Context, e *events.ComponentInteractionCreate
 }
 
 func (m *Module) changed(e *events.ComponentInteractionCreate, p planned) error {
-	return e.UpdateMessage(discord.NewMessageUpdateV2(p.preview("the server changed since that preview, so here's what it would do now")).WithAllowedMentions(core.NoPings()))
+	return e.UpdateMessage(asPanelUpdate(p.preview("the server changed since that preview, so here's what it would do now")))
 }
 
 // confirmPressed asks before a fresh start deletes anything.
@@ -192,7 +192,7 @@ func (m *Module) confirmPressed(ctx context.Context, e *events.ComponentInteract
 	if !same || (how != replace && how != keepOld) {
 		return m.changed(e, p)
 	}
-	return e.UpdateMessage(discord.NewMessageUpdateV2(p.confirm(how)).WithAllowedMentions(core.NoPings()))
+	return e.UpdateMessage(asPanelUpdate(p.confirm(how)))
 }
 
 // applyPressed applies the plan the card showed, and only that one: if the
@@ -223,7 +223,7 @@ func (m *Module) applyPressed(ctx context.Context, e *events.ComponentInteractio
 	work := context.WithoutCancel(ctx)
 	client, app, token := e.Client().Rest, e.ApplicationID(), e.Token()
 	edit := func(card discord.ContainerComponent) error {
-		_, err := client.UpdateInteractionResponse(app, token, discord.NewMessageUpdateV2(card).WithAllowedMentions(core.NoPings()), rest.WithCtx(work))
+		_, err := client.UpdateInteractionResponse(app, token, asPanelUpdate(card), rest.WithCtx(work))
 		return err
 	}
 	m.running.Go(func() {
@@ -315,15 +315,28 @@ func (p planned) card(note string, act bool) discord.ContainerComponent {
 	for _, w := range p.waiting {
 		b.WriteString("\n-# " + w)
 	}
-	var buttons []discord.InteractiveComponent
 	if p.short != 0 {
 		color = brand.ColorWarn
 		b.WriteString("\n! cygnet needs " + names(p.short) + " first")
-		buttons = append(buttons, discord.NewLinkButton("grant cygnet", install(p.self, needs(p.l), p.s.guild)))
 	}
 	if !act {
 		return brand.Card(color, "provision", p.l.Name, b.String())
 	}
+	if chans, cats, roles := p.removals(); chans+cats+roles > 0 {
+		b.WriteString("\n-# what's marked - goes. replace deletes it, messages and all; archive moves those channels into " + archiveName + ", hidden from everyone but admins, and deletes the rest")
+	}
+	return brand.Card(color, "provision", p.l.Name, b.String(),
+		discord.NewSeparator(discord.SeparatorSpacingSizeSmall), discord.NewActionRow(p.buttons()...))
+}
+
+// buttons are the plan's controls: grant cygnet what she's short of, apply
+// it (or archive and replace in a fresh start), and check again.
+func (p planned) buttons() []discord.InteractiveComponent {
+	var buttons []discord.InteractiveComponent
+	if p.short != 0 {
+		buttons = append(buttons, discord.NewLinkButton("grant cygnet", install(p.self, needs(p.l), p.s.guild)))
+	}
+	todo := p.todo()
 	id, again := applyID+":"+p.l.Name+":"+digest(p.changes), previewID+":"+p.l.Name
 	if p.fresh {
 		id, again = id+":"+replace, again+":fresh"
@@ -332,7 +345,6 @@ func (p planned) card(note string, act bool) discord.ContainerComponent {
 	switch {
 	case chans+cats+roles > 0:
 		// Nothing goes before the admin has said how, and then confirmed.
-		b.WriteString("\n-# what's marked - goes. replace deletes it, messages and all; archive moves those channels into " + archiveName + ", hidden from everyone but admins, and deletes the rest")
 		ask := confirmID + strings.TrimPrefix(id, applyID)
 		archiveBtn := discord.NewPrimaryButton("archive old", strings.TrimSuffix(ask, replace)+keepOld)
 		replaceBtn := discord.NewDangerButton("replace", ask)
@@ -352,9 +364,69 @@ func (p planned) card(note string, act bool) discord.ContainerComponent {
 		}
 		buttons = append(buttons, applyBtn)
 	}
-	buttons = append(buttons, discord.NewSecondaryButton("check again", again))
-	return brand.Card(color, "provision", p.l.Name, b.String(),
-		discord.NewSeparator(discord.SeparatorSpacingSizeSmall), discord.NewActionRow(buttons...))
+	return append(buttons, discord.NewSecondaryButton("check again", again))
+}
+
+// facts is the plan as a record's facts: what it adds, changes and
+// removes, a line each, then who may post where, what cygnet can't do and
+// what she needs first.
+func (p planned) facts() [][2]string {
+	groups := map[byte][]string{}
+	var perms, cant []string
+	for _, c := range p.changes {
+		if c.blocked != "" {
+			cant = append(cant, strings.Join(strings.Fields(c.line()[2:]), " ")+": "+c.blocked)
+			continue
+		}
+		// An overwrite is said in full under perms, so it's listed once.
+		if c.kind == overwriteSet {
+			perms = append(perms, "#"+c.channel.Name+": "+c.ow.says())
+			continue
+		}
+		line := c.line()
+		groups[line[0]] = append(groups[line[0]], strings.Join(strings.Fields(line[2:]), " "))
+		if c.kind == channelCreate {
+			for _, o := range c.channel.Overwrites {
+				perms = append(perms, "#"+c.channel.Name+": "+o.says())
+			}
+		}
+	}
+	var rows [][2]string
+	for _, g := range []struct {
+		mark byte
+		key  string
+	}{{'+', "adds"}, {'!', "changes"}, {'-', "removes"}} {
+		if len(groups[g.mark]) > 0 {
+			rows = append(rows, [2]string{g.key, upTo1024(groups[g.mark])})
+		}
+	}
+	if len(perms) > 0 {
+		rows = append(rows, [2]string{"perms", upTo1024(perms)})
+	}
+	if len(cant) > 0 {
+		rows = append(rows, [2]string{"can't", upTo1024(cant)})
+	}
+	if p.short != 0 {
+		rows = append(rows, [2]string{"needs", names(p.short)})
+	}
+	return rows
+}
+
+// upTo1024 is ls a line each, as many as fit a field's 1024 characters, and
+// how many more there are.
+func upTo1024(ls []string) string {
+	out := ""
+	for i, l := range ls {
+		more := fmt.Sprintf("\nand %d more", len(ls)-i)
+		if len(out)+1+len(l)+len(more) > 1024 {
+			return out + more
+		}
+		if out != "" {
+			out += "\n"
+		}
+		out += l
+	}
+	return out
 }
 
 // removals is how many channels, categories and roles a fresh start

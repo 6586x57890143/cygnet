@@ -134,7 +134,7 @@ func (m *Module) check(ctx context.Context, r rest.Rest, guild, self snowflake.I
 		return
 	}
 	m.posted.Store(guild, d)
-	var card discord.ContainerComponent
+	var card record
 	switch {
 	case k.Mode == Act && p.short == 0 && p.todo() > 0:
 		if _, busy := m.applying.LoadOrStore(guild, true); busy {
@@ -150,7 +150,7 @@ func (m *Module) check(ctx context.Context, r rest.Rest, guild, self snowflake.I
 	default:
 		card = p.drifted(k.Mode)
 	}
-	if err := m.post(ctx, r, guild, reports, asPanel(card)); err != nil {
+	if err := m.post(ctx, r, guild, reports, card.create()); err != nil {
 		m.warn("reporting drift", guild, err)
 	}
 }
@@ -192,13 +192,24 @@ func asPanel(card discord.ContainerComponent) discord.MessageCreate {
 	return discord.MessageCreate{Components: []discord.LayoutComponent{card}, Flags: discord.MessageFlagIsComponentsV2}
 }
 
+// asPanelUpdate is card replacing the message a button is on. A drift
+// report is a record until pressed, and Discord turns a message into
+// Components V2 on an edit only when the edit empties its embeds; its
+// files go with them.
+func asPanelUpdate(card discord.ContainerComponent) discord.MessageUpdate {
+	u := discord.NewMessageUpdateV2(card).WithAllowedMentions(core.NoPings())
+	u.Embeds = &[]discord.Embed{}
+	u.Attachments = &[]discord.AttachmentUpdate{}
+	return u
+}
+
 // record is a report of something that happened (DESIGN.md's A record):
 // an embed wearing cygnet's face for color and her rule, the files those
-// take, and a row of controls under it when it has any.
+// take, and the rows of controls under it.
 type record struct {
 	embed discord.Embed
 	files []*discord.File
-	row   []discord.InteractiveComponent
+	rows  []discord.LayoutComponent
 }
 
 // newRecord is a record titled title, its facts in rows and notes in the
@@ -209,14 +220,29 @@ func newRecord(color int, title string, rows [][2]string, notes []string, row ..
 	if len(notes) > 0 {
 		e.Footer = &discord.EmbedFooter{Text: strings.Join(notes, " · ")}
 	}
-	return record{embed: e, files: files, row: row}
+	return record{embed: e, files: files}.with(row...)
+}
+
+// with is r with another row of controls under it, or r for none.
+func (r record) with(row ...discord.InteractiveComponent) record {
+	if len(row) > 0 {
+		r.rows = append(slices.Clone(r.rows), discord.NewActionRow(row...))
+	}
+	return r
+}
+
+// note is r with one more line in its footer.
+func (r record) note(s string) record {
+	if r.embed.Footer == nil {
+		r.embed.Footer = &discord.EmbedFooter{Text: s}
+		return r
+	}
+	r.embed.Footer = &discord.EmbedFooter{Text: r.embed.Footer.Text + " · " + s}
+	return r
 }
 
 func (r record) components() []discord.LayoutComponent {
-	if len(r.row) == 0 {
-		return []discord.LayoutComponent{}
-	}
-	return []discord.LayoutComponent{discord.NewActionRow(r.row...)}
+	return append([]discord.LayoutComponent{}, r.rows...)
 }
 
 // create is r as a new message.
@@ -255,29 +281,39 @@ func (s state) named(name string) (snowflake.ID, bool) {
 	return 0, false
 }
 
-// drifted is the report in watch and propose: what changed, and in propose
-// the button that puts it back.
-func (p planned) drifted(mode string) discord.ContainerComponent {
-	note := "this server drifted from **" + p.l.Name + "**; here's what would put it back"
-	return p.leavable(p.card(note, mode != Watch), "")
+// drifted is the report in watch and propose: what would put it back, and
+// in propose the buttons that do.
+func (p planned) drifted(mode string) record {
+	r := newRecord(brand.ColorWarn, "! this server drifted from "+p.l.Name, p.facts(), p.waiting)
+	if mode != Watch {
+		r = r.with(p.buttons()...)
+	}
+	return p.leavable(r, "")
 }
 
-// putBack is the report in act: what drifted, and that cygnet put it back.
-func (p planned) putBack(done int, err error) discord.ContainerComponent {
+// putBack is the report in act: what drifted, and that cygnet put it back
+// or where she stopped.
+func (p planned) putBack(done int, err error) record {
 	if err != nil {
-		return p.result(done, p.todo(), err)
+		why := refusal(err)
+		if tell, ok := asTell(err); ok {
+			why = tell
+		}
+		title := fmt.Sprintf("✗ this server drifted from %s; cygnet stopped after %d of %d", p.l.Name, done, p.todo())
+		return newRecord(brand.ColorError, title, [][2]string{{"progress", bar(done, p.todo())}, {"why", why}}, nil,
+			discord.NewSecondaryButton("check again", previewID+":"+p.l.Name))
 	}
-	body := "✓ this server drifted from **" + p.l.Name + "**, so cygnet put back " + count(done, "change") + "\n" + p.diff()
-	return p.leavable(brand.Card(brand.ColorOK, "provision", "drift", body), "if one was on purpose, leave it alone and make the change again; cygnet won't put it back")
+	r := newRecord(brand.ColorOK, "✓ this server drifted from "+p.l.Name+", so cygnet put back "+count(done, "change"), p.facts(), p.waiting)
+	return p.leavable(r, "if one was on purpose, leave it alone and make the change again; cygnet won't put it back")
 }
 
 // leaveID is the select on a drift report that leaves changes alone.
 const leaveID = "provision-leave"
 
 // leavable adds the select that leaves some of p's changes alone to a
-// drift report, with why above it. A fresh start's removals aren't drift,
-// so they're never offered.
-func (p planned) leavable(card discord.ContainerComponent, why string) discord.ContainerComponent {
+// drift report, with why in its footer. A fresh start's removals aren't
+// drift, so they're never offered.
+func (p planned) leavable(r record, why string) record {
 	var opts []discord.StringSelectMenuOption
 	seen := map[string]bool{}
 	for _, c := range p.changes {
@@ -289,14 +325,12 @@ func (p planned) leavable(card discord.ContainerComponent, why string) discord.C
 		opts = append(opts, discord.StringSelectMenuOption{Label: key, Value: key})
 	}
 	if len(opts) == 0 {
-		return card
+		return r
 	}
 	if why != "" {
-		card.Components = append(card.Components, discord.NewTextDisplay("-# "+why))
+		r = r.note(why)
 	}
-	menu := discord.NewStringSelectMenu(leaveID, "leave some alone", opts...).WithMinValues(1).WithMaxValues(len(opts))
-	card.Components = append(card.Components, discord.NewActionRow(menu))
-	return card
+	return r.with(discord.NewStringSelectMenu(leaveID, "leave some alone", opts...).WithMinValues(1).WithMaxValues(len(opts)))
 }
 
 // most is how many changes a server can leave alone.
@@ -331,12 +365,11 @@ func (m *Module) leavePressed(ctx context.Context, e *events.ComponentInteractio
 	}
 	k.Leave = leave
 	m.store(ctx, guild, k)
-	body := "✓ cygnet leaves " + count(len(picked), "change") + " alone here now\n```\n" + strings.Join(picked, "\n") + "\n```\n-# /provision shows what's left alone and forgets it"
-	return e.CreateMessage(discord.MessageCreate{
-		Components:      []discord.LayoutComponent{brand.Card(brand.ColorOK, "provision", "drift", body)},
-		Flags:           discord.MessageFlagEphemeral | discord.MessageFlagIsComponentsV2,
-		AllowedMentions: core.NoPings(),
-	})
+	reply := newRecord(brand.ColorOK, "✓ cygnet leaves "+count(len(picked), "change")+" alone here now",
+		[][2]string{{"left", strings.Join(picked, "\n")}}, []string{"/provision shows what's left alone and forgets it"}).create()
+	reply.Flags = discord.MessageFlagEphemeral
+	reply.AllowedMentions = core.NoPings()
+	return e.CreateMessage(reply)
 }
 
 // keep remembers that guild now follows l, keeping its mode, and what it
