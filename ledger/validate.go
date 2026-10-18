@@ -89,12 +89,15 @@ func Validate(e Entry) error {
 	return errors.Join(errs...)
 }
 
-// voice is the shared rule for words a bird writes: no closing full stop,
+// voice is the shared rule for words a bird writes: lowercase outside
+// backticks, no closing full stop,
 // no exclamation marks outside backticks, nothing that reads
 // as generated.
 func voice(s string) error {
 	plain := stripCode(s)
 	switch {
+	case plain != strings.ToLower(plain):
+		return errors.New("not lowercase")
 	case strings.HasSuffix(s, "."):
 		return errors.New("ends on a full stop")
 	case strings.Contains(plain, "!"):

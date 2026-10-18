@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/disgoorg/disgo/discord"
@@ -62,16 +61,23 @@ const (
 // there is room and stacked on a phone. A container can only stack lines,
 // which reads as a form rather than a record.
 //
-//	<icon> AI moderation: message rewritten          [face]
+//	<icon> ai moderation: message rewritten          [face]
 //	> the reason, in the actor's words
-//	Actor               Member        Channel
+//	actor               member        channel
 //	merlin (automatic)  @who          #where
-//	Policy              Confidence
-//	Hate speech         ▰▰▰▰▱ 80%
-//	Message
-//	Deleted → Reposted
+//	policy              confidence
+//	hate speech         ▰▰▰▰▱ 80%
+//	message
+//	deleted → reposted
 //	[rule]
-//	follows <cause>
+//	aimod · follows <cause>
+//
+// In the shared voice throughout, all lowercase as the entry wrote it, so
+// a record reads as one with every other surface. The bold is Discord's
+// own on the title and the keys, and nothing else is bolded: those are the
+// two things a reader scans for. The footer is the subtext line the
+// container cards carried under their head: which module, and what this
+// follows from.
 //
 // Several entries (a batch, see Batcher) are one line each under the shared
 // title with their count, accented by the loudest of them, their shared
@@ -85,7 +91,7 @@ func Render(b Brand, entries ...Entry) Card {
 	for _, e := range entries[1:] {
 		mood = louder(mood, e.Mood)
 	}
-	e := discord.Embed{Title: sentence(first.Summary)}
+	e := discord.Embed{Title: first.Summary}
 	if b.Icon != nil {
 		if i := b.Icon(first.Module()); i != "" {
 			e.Title = i + " " + e.Title
@@ -121,9 +127,11 @@ func Render(b Brand, entries ...Entry) Card {
 		e.Description, cause = batch(entries)
 		e.Fields = grid([]discord.EmbedField{actor})
 	}
+	foot := first.Module()
 	if cause != "" {
-		e.Footer = &discord.EmbedFooter{Text: "follows " + cause}
+		foot += " · follows " + cause
 	}
+	e.Footer = &discord.EmbedFooter{Text: foot}
 	e.Title = clip(e.Title, 256)
 	e.Description = clip(e.Description, maxDescription)
 	card.Embed = e
@@ -156,7 +164,7 @@ func fields(e Entry) (who, what []discord.EmbedField) {
 	for _, r := range e.Subjects {
 		switch {
 		case r.Kind == RefMessage:
-			messages = append(messages, mention(e.Guild, r, sentence(r.Label)))
+			messages = append(messages, mention(e.Guild, r, r.Label))
 		case r.Label != "":
 			if _, ok := byLabel[r.Label]; !ok {
 				labels = append(labels, r.Label)
@@ -174,7 +182,7 @@ func fields(e Entry) (who, what []discord.EmbedField) {
 		what = append(what, field(c.Field, c.From+" → "+c.To))
 	}
 	// The messages last, as one field read in order: a message removed and
-	// its repost are one thing that happened, so "Deleted → Reposted", each
+	// its repost are one thing that happened, so "deleted → reposted", each
 	// word its link.
 	if len(messages) > 0 {
 		f := field("message", strings.Join(messages, " → "))
@@ -243,26 +251,14 @@ var (
 	markup = regexp.MustCompile(`<(@&|@!?|#)\d+>`)
 )
 
-// field is one entry of the list, its key in sentence case, in a column
-// when what the reader sees of its value fits one: a link shows as its
-// words and a mention as a pill about a name wide, not as the markup behind
-// them.
+// field is one entry of the list, in a column when what the reader sees of
+// its value fits one: a link shows as its words and a mention as a pill
+// about a name wide, not as the markup behind them.
 func field(name, value string) discord.EmbedField {
 	value = clip(value, maxFieldValue)
 	seen := markup.ReplaceAllString(link.ReplaceAllString(value, "$1"), "@abcdefghij")
 	inline := utf8.RuneCountInString(seen) <= columnWidth && !strings.Contains(value, "\n")
-	return discord.EmbedField{Name: sentence(name), Value: value, Inline: &inline}
-}
-
-// sentence is s with its first letter capitalised: titles and keys are in
-// sentence case (Carbon), whatever case the entry wrote them in, and
-// anything already capitalised ("AI moderation") is left as written.
-func sentence(s string) string {
-	r, n := utf8.DecodeRuneInString(s)
-	if r == utf8.RuneError {
-		return s
-	}
-	return string(unicode.ToUpper(r)) + s[n:]
+	return discord.EmbedField{Name: name, Value: value, Inline: &inline}
 }
 
 // batch is the shared reason, then one line per entry: its who and where,

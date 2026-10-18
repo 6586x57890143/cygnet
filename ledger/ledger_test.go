@@ -102,6 +102,8 @@ func TestValidateRefuses(t *testing.T) {
 		"exclamation":       func(e *ledger.Entry) { e.Summary = "jailed!" },
 		"generated":         func(e *ledger.Entry) { e.Summary = "jailed " + string(rune(0x2014)) + " for spam" },
 		"empty summary":     func(e *ledger.Entry) { e.Summary = "" },
+		"capitals":          func(e *ledger.Entry) { e.Summary = "Jailed" },
+		"loud label":        func(e *ledger.Entry) { e.Subjects = []ledger.Ref{ledger.User("1").As("Kept")} },
 		"long reason":       func(e *ledger.Entry) { e.Reason = strings.Repeat("x", 501) },
 		"long label":        func(e *ledger.Entry) { e.Facts[0].Label = "much too long a label" },
 		"split fact":        func(e *ledger.Entry) { e.Facts[0].Value = "one\ntwo" },

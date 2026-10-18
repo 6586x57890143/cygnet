@@ -60,12 +60,13 @@ in one reads as a form.
 
 ## Voice
 
-- Prose (replies, lines, reasons the bird writes) is all lowercase, except what has
-  to be typed exactly: names in backticks, URLs, code. Titles and keys on a record are
-  in sentence case (Carbon), set by the renderer: `AI moderation: message rewritten`,
-  `Actor`, `Confidence`. A title is a noun phrase or starts with one (`Permission
-  refused`, `Member jailed`), never with a bird's name: sentence case would capitalise
-  it, and a bird's name is always lowercase.
+- All lowercase, on every surface, titles and keys included: `ai moderation: message
+  rewritten`, `actor`, `confidence`. The exceptions are what has to be typed exactly:
+  names in backticks, URLs, code.
+- Bold is intentful: what a reader scans for and nothing else. On a record that is the
+  title and the keys (Discord bolds both); on a panel, the title and a fact's key.
+  Secondary information (which module, provenance, a hint) is subtext: `-#` on a
+  panel, the footer on a record.
 - No closing full stop. Clauses join with `; `, or with `:` when the second explains
   the first.
 - Say what happened, then what to do. Errors stay plain, with no wit.
@@ -85,14 +86,13 @@ Both wear the bird's face and the rule, and are accented in the colour of their 
 
 ## A record
 
-1. **The title** is the surface's icon (the module's app emoji) and what happened, in
-   sentence case, beside the bird's face (the embed thumbnail, the bird's drawing for
-   the mood).
+1. **The title** is the surface's icon (the module's app emoji) and what happened,
+   beside the bird's face (the embed thumbnail, the bird's drawing for the mood).
 2. **The description** is somebody's own words (a reason, a quoted message) as a `>`
    quote, so they read as theirs and not the bird's. Nothing else goes there.
 3. **The fields** are the summary list, in the same order on every card, in two
    sections: who did it, to whom and where; then the facts of the action, ending with
-   what it touched (messages, `Deleted → Reposted`). An automatic actor is the bird by
+   what it touched (messages, `deleted → reposted`). An automatic actor is the bird by
    name: `merlin (automatic)`. No field without a value.
 4. **The grid.** Discord divides each row by the inline fields in it, so a row of two
    sits in halves under a row of three in thirds and nothing lines up. So every row is
@@ -104,7 +104,8 @@ Both wear the bird's face and the rule, and are accented in the colour of their 
 5. **The rule** is the embed image, closing the card. It is there for its width as
    much as its look: an embed is sized to its content, so without it every card is a
    different width and a channel of them reads ragged.
-6. **The footer** is provenance, what this follows from.
+6. **The footer** is the record's subtext line, as a panel's `-#` line is: which
+   module, then provenance (`aimod · follows merlin:40`).
 7. **Buttons** under the embed.
 
 A record can become a panel when somebody presses one of its buttons, but a panel can
@@ -124,8 +125,8 @@ record is answered with a new message, not an edit.
 
 ## Facts
 
-- A key is one or two words, 10 characters at most, shown in sentence case. A key
-  shared by several values takes them all, comma separated: `Kept` `@booster, @staff`.
+- A key is one or two words, 10 characters at most, lowercase. A key shared by several
+  values takes them all, comma separated: `kept` `@booster, @staff`.
 - A change reads `from → to`.
 - In a record, facts are fields. In a panel's text, a fact is one line with its key in
   bold: `**retention** 30d`.
@@ -141,9 +142,9 @@ record is answered with a new message, not an edit.
 What a bird posts to a server's log channel about something it did, drawn by
 `ledger.Render`, so a channel holding several birds' cards reads as one log. A record
 as above: the module's icon and the summary as the title, the reason quoted, then the
-first section `Actor` (`merlin (automatic)` or the member), `Member`, `Channel`,
-`Role`, and the second each labelled ref, the facts, the changes and `Message`
-(`Deleted → Reposted`, each word its link). A run of the same action by the
+first section `actor` (`merlin (automatic)` or the member), `member`, `channel`,
+`role`, and the second each labelled ref, the facts, the changes and `message`
+(`deleted → reposted`, each word its link). A run of the same action by the
 same actor is one card that edits itself as it grows, its count in the title, one line
 per entry in the description. Moods are `ok`, `info`, `warn`, `error`, `idle` and
 `danger` (what cannot be undone). Every entry passes `ledger.Validate` in the bird's
@@ -151,8 +152,14 @@ tests.
 
 ## Log
 
+- **2026-10-18** Records are part of the new design, not a return to the old one, so
+  they take its voice: all lowercase, titles and keys included, bold only on what a
+  reader scans for, and the module as footer subtext like a panel's `-#` line. This
+  replaces the sentence case below, which made records read as a different product
+  from every other surface. An embed is used only because it lays out a grid that a
+  container cannot.
 - **2026-10-18** The record grid lines up and fills evenly, and titles and keys are
-  in sentence case with the surface's icon. The first embed log cards set rows of
+  in sentence case (since replaced, above) with the surface's icon. The first embed log cards set rows of
   two under rows of three, so columns drifted, and lost the old card's capitals, its
   named actor and the module icons. The old card had solved the alignment by padding
   rows; the rebuild had not read it. The grid now keeps that and adds sections that
