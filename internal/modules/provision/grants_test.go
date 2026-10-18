@@ -66,7 +66,7 @@ func TestRefusedProposed(t *testing.T) {
 		t.Fatalf("%d reports", len(posts))
 	}
 	text := say(posts[0])
-	if !strings.HasPrefix(text, "Permission refused\nBird: skua\nChannel: <#"+general.String()+">\n_\nRefused: `message.embed`\nLacks: embed links\n_\nfooter: grant gives it that on its role") {
+	if !strings.HasPrefix(text, "permission refused\nbird: skua\nchannel: <#"+general.String()+">\n_\nrefused: `message.embed`\nlacks: embed links\n_\nfooter: provision · grant gives it that on its role") {
 		t.Fatal(text)
 	}
 	if posts[0].Flags.Has(discord.MessageFlagIsComponentsV2) || len(posts[0].Files) != 2 || posts[0].Embeds[0].Image == nil {
@@ -89,7 +89,7 @@ func TestRefusedProposed(t *testing.T) {
 	// The report becomes what happened, its button gone and its files sent
 	// again in place of the old ones.
 	up := (*got)[0].(discord.MessageUpdate)
-	if text := read(*up.Embeds); text != "Permission granted\nActor: <@5>\nBird: skua\nChannel: <#"+general.String()+">\nRefused: `message.embed`\nGave: embed links\nOn: its role" {
+	if text := read(*up.Embeds); text != "permission granted\nactor: <@5>\nbird: skua\nchannel: <#"+general.String()+">\nrefused: `message.embed`\ngave: embed links\non: its role\nfooter: provision" {
 		t.Fatal(text)
 	}
 	if len(*up.Components) != 0 || len(up.Files) != 2 || up.Attachments == nil || len(*up.Attachments) != 0 {
@@ -100,7 +100,7 @@ func TestRefusedProposed(t *testing.T) {
 	}
 	// Pressed again, there's nothing left to grant.
 	got, _ = pressOn(t, m, g, btn[0].CustomID, "5")
-	if text := read(*(*got)[0].(discord.MessageUpdate).Embeds); text != "Nothing left to grant\nActor: <@5>\nBird: skua\nChannel: <#"+general.String()+">\nRefused: `message.embed`\n_\n_" {
+	if text := read(*(*got)[0].(discord.MessageUpdate).Embeds); text != "nothing left to grant\nactor: <@5>\nbird: skua\nchannel: <#"+general.String()+">\nrefused: `message.embed`\n_\n_\nfooter: provision" {
 		t.Fatal(text)
 	}
 	for _, id := range []string{grantID + ":skua", grantID + ":skua:x:message.send", grantID + ":skua:0:nope"} {
@@ -129,7 +129,7 @@ func TestRefusedActed(t *testing.T) {
 	if err != nil || out["did"] != "granted" {
 		t.Fatalf("%v, %v", out, err)
 	}
-	if text := say(g.posts(reports)[0]); text != "Permission granted\nActor: cygnet (automatic)\nBird: skua\nChannel: <#"+rules.String()+">\nRefused: `message.send`\nGave: send messages\nOn: <#"+rules.String()+">" {
+	if text := say(g.posts(reports)[0]); text != "permission granted\nactor: cygnet (automatic)\nbird: skua\nchannel: <#"+rules.String()+">\nrefused: `message.send`\ngave: send messages\non: <#"+rules.String()+">\nfooter: provision" {
 		t.Fatal(text)
 	}
 	for _, c := range g.chans {
@@ -151,7 +151,7 @@ func TestRefusedActed(t *testing.T) {
 	}
 	posts := g.posts(reports)
 	last := posts[len(posts)-1]
-	if last.Embeds[0].Color != brand.ColorError || !strings.Contains(say(last), "\nGrant: ✗ couldn't: ") {
+	if last.Embeds[0].Color != brand.ColorError || !strings.Contains(say(last), "\ngrant: ✗ couldn't: ") {
 		t.Fatal(say(last))
 	}
 }
@@ -177,7 +177,7 @@ func TestGrantOnAnOldReport(t *testing.T) {
 		t.Fatal(err)
 	}
 	up := got[0].(discord.MessageUpdate)
-	if up.Embeds != nil || !up.Flags.Has(discord.MessageFlagIsComponentsV2) || !strings.Contains(coretest.Text("", *up.Components), "**Permission granted**\n**Actor** <@5>\n**Bird** skua\n**Channel** <#") || strings.Contains(coretest.Text("", *up.Components), "\u200b") {
+	if up.Embeds != nil || !up.Flags.Has(discord.MessageFlagIsComponentsV2) || !strings.Contains(coretest.Text("", *up.Components), "**permission granted**\n**actor** <@5>\n**bird** skua\n**channel** <#") || strings.Contains(coretest.Text("", *up.Components), "\u200b") {
 		t.Fatalf("update %+v", up)
 	}
 }
@@ -188,7 +188,7 @@ func TestRefusedWatched(t *testing.T) {
 	if err != nil || out["did"] != "reported" || out["lacks"] != "1099511627776" {
 		t.Fatalf("%v, %v", out, err)
 	}
-	if posts := g.posts(reports); len(rowButtons(posts[0].Components)) != 0 || !strings.Contains(say(posts[0]), "Refused: `member.timeout`\nLacks: timeout members") {
+	if posts := g.posts(reports); len(rowButtons(posts[0].Components)) != 0 || !strings.Contains(say(posts[0]), "refused: `member.timeout`\nlacks: timeout members") {
 		t.Fatal(say(posts[0]))
 	}
 	// Nothing lacking: answered, not reported.
@@ -261,7 +261,7 @@ func TestRefusedCygnet(t *testing.T) {
 		t.Fatalf("%v, %v", out, err)
 	}
 	post := g.posts(reports)[0]
-	if text := say(post); !strings.Contains(text, "Permission refused\nBird: cygnet\n_\n_\nRefused: `member.ban`\nLacks: ban members\n_\nfooter: discord lets only a person give a bot more") {
+	if text := say(post); !strings.Contains(text, "permission refused\nbird: cygnet\n_\n_\nrefused: `member.ban`\nlacks: ban members\n_\nfooter: provision · discord lets only a person give a bot more") {
 		t.Fatal(text)
 	}
 	var url string

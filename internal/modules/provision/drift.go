@@ -217,8 +217,8 @@ type record struct {
 func newRecord(color int, title string, sections [][][2]string, notes []string, row ...discord.InteractiveComponent) record {
 	e, files := brand.Embed(color, "provision", title, "")
 	e.Fields = brand.Fields(sections...)
-	if len(notes) > 0 {
-		e.Footer = &discord.EmbedFooter{Text: strings.Join(notes, " · ")}
+	for _, n := range notes {
+		brand.Note(&e, n)
 	}
 	return record{embed: e, files: files}.with(row...)
 }
@@ -248,11 +248,7 @@ func (r record) with(row ...discord.InteractiveComponent) record {
 
 // note is r with one more line in its footer.
 func (r record) note(s string) record {
-	if r.embed.Footer == nil {
-		r.embed.Footer = &discord.EmbedFooter{Text: s}
-		return r
-	}
-	r.embed.Footer = &discord.EmbedFooter{Text: r.embed.Footer.Text + " · " + s}
+	brand.Note(&r.embed, s)
 	return r
 }
 

@@ -64,7 +64,7 @@ func (m *Module) Commands() []core.Command {
 func (m *Module) perf(_ context.Context, e *events.ApplicationCommandInteractionCreate) error {
 	embed, files := brand.Embed(brand.ColorInfo, "perf", "perf", "")
 	embed.Fields = brand.Fields(m.readout())
-	embed.Footer = &discord.EmbedFooter{Text: "since boot · in: gateway to dispatch · run: handler · wait: rate limit · http: round trip · build " + core.Revision()}
+	brand.Note(&embed, "since boot · in: gateway to dispatch · run: handler · wait: rate limit · http: round trip · build "+core.Revision())
 	return e.CreateMessage(discord.MessageCreate{
 		Embeds:          []discord.Embed{embed},
 		Files:           files,
