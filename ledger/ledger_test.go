@@ -18,6 +18,8 @@ import (
 var update = flag.Bool("update", false, "rewrite the golden cards")
 
 var brand = ledger.Brand{
+	Name: "tester",
+	Icon: func(m string) string { return "<:mod_" + m + ":1>" },
 	Color: func(m ledger.Mood) int {
 		return map[ledger.Mood]int{ledger.MoodOK: 1, ledger.MoodWarn: 2, ledger.MoodDanger: 3}[m]
 	},
@@ -96,7 +98,6 @@ func TestValidateRefuses(t *testing.T) {
 		"mood":              func(e *ledger.Entry) { e.Mood = "loud" },
 		"member without id": func(e *ledger.Entry) { e.Actor = ledger.Actor{Kind: ledger.ActorMember} },
 		"actor kind":        func(e *ledger.Entry) { e.Actor = ledger.Actor{Kind: "robot"} },
-		"capitals":          func(e *ledger.Entry) { e.Summary = "Jailed" },
 		"full stop":         func(e *ledger.Entry) { e.Summary = "jailed." },
 		"exclamation":       func(e *ledger.Entry) { e.Summary = "jailed!" },
 		"generated":         func(e *ledger.Entry) { e.Summary = "jailed " + string(rune(0x2014)) + " for spam" },
@@ -106,10 +107,8 @@ func TestValidateRefuses(t *testing.T) {
 		"split fact":        func(e *ledger.Entry) { e.Facts[0].Value = "one\ntwo" },
 		"too many lines":    func(e *ledger.Entry) { e.Facts = make([]ledger.Fact, 12) },
 		"bad subject":       func(e *ledger.Entry) { e.Subjects = []ledger.Ref{{Kind: "planet", ID: "1"}} },
-		"loud label":        func(e *ledger.Entry) { e.Subjects = []ledger.Ref{ledger.User("1").As("Kept")} },
 		"message no slash":  func(e *ledger.Entry) { e.Subjects = []ledger.Ref{{Kind: ledger.RefMessage, ID: "1"}} },
 		"two targets":       func(e *ledger.Entry) { e.Buttons[0].URL = "https://x" },
-		"loud button":       func(e *ledger.Entry) { e.Buttons[0].Label = "Release" },
 		"six buttons": func(e *ledger.Entry) {
 			e.Buttons = append(e.Buttons, e.Buttons[0], e.Buttons[0], e.Buttons[0], e.Buttons[0])
 		},

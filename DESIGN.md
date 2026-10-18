@@ -22,6 +22,9 @@ bird's guide is stale.
   the old one before it ships, and the squint test is run on both (blur it: the
   groups and the most important thing should still show). If the old one read better
   somewhere, keep that part.
+- **Read the code it replaces.** An old layout's details (a padding rule, a width it
+  measured, a case it kept) are usually there because something read wrong once.
+  Carry each one over or say why it goes; never rebuild from the screenshot alone.
 - **Test what can be tested.** A layout rule a test can hold (a limit, an order, the
   voice) gets one, so it holds without anyone remembering it.
 
@@ -57,7 +60,10 @@ in one reads as a form.
 
 ## Voice
 
-- All lowercase, except what has to be typed exactly: names in backticks, URLs, code.
+- Prose (replies, lines, reasons the bird writes) is all lowercase, except what has
+  to be typed exactly: names in backticks, URLs, code. Titles and keys on a record are
+  in sentence case (Carbon), set by the renderer: `AI moderation: message rewritten`,
+  `Actor`, `Confidence`.
 - No closing full stop. Clauses join with `; `, or with `:` when the second explains
   the first.
 - Say what happened, then what to do. Errors stay plain, with no wit.
@@ -77,19 +83,27 @@ Both wear the bird's face and the rule, and are accented in the colour of their 
 
 ## A record
 
-1. **The title** says what happened, beside the bird's face (the embed thumbnail, the
-   bird's drawing for the mood).
+1. **The title** is the surface's icon (the module's app emoji) and what happened, in
+   sentence case, beside the bird's face (the embed thumbnail, the bird's drawing for
+   the mood).
 2. **The description** is somebody's own words (a reason, a quoted message) as a `>`
    quote, so they read as theirs and not the bird's. Nothing else goes there.
-3. **The fields** are the summary list, in the same order on every card: who did it,
-   to whom and where; then the facts of the action; then what it touched (messages).
-   A short value (what the reader sees, under about 24 characters) sits in a column;
-   a longer one takes the row. No field without a value.
-4. **The rule** is the embed image, closing the card. It is there for its width as
+3. **The fields** are the summary list, in the same order on every card, in two
+   sections: who did it, to whom and where; then the facts of the action, ending with
+   what it touched (messages, `Deleted → Reposted`). An automatic actor is the bird by
+   name: `merlin (automatic)`. No field without a value.
+4. **The grid.** Discord divides each row by the inline fields in it, so a row of two
+   sits in halves under a row of three in thirds and nothing lines up. So every row is
+   three columns, padded with blank fields; each section starts a row of its own; a
+   section's fields are spread evenly over its rows (four as two and two, five as three
+   and two), so no row is a lone field under a full one; and a value too wide for a
+   column (what the reader sees, over about 16 characters, or more than one line) goes
+   under its section at full width.
+5. **The rule** is the embed image, closing the card. It is there for its width as
    much as its look: an embed is sized to its content, so without it every card is a
    different width and a channel of them reads ragged.
-5. **The footer** is provenance, what this follows from.
-6. **Buttons** under the embed.
+6. **The footer** is provenance, what this follows from.
+7. **Buttons** under the embed.
 
 A record can become a panel when somebody presses one of its buttons, but a panel can
 never become a record again: Discord lets an edit add the Components V2 flag only when
@@ -108,8 +122,8 @@ record is answered with a new message, not an edit.
 
 ## Facts
 
-- A key is one or two words, 10 characters at most, lowercase. A key shared by several
-  values takes them all, comma separated: `kept` `@booster, @staff`.
+- A key is one or two words, 10 characters at most, shown in sentence case. A key
+  shared by several values takes them all, comma separated: `Kept` `@booster, @staff`.
 - A change reads `from → to`.
 - In a record, facts are fields. In a panel's text, a fact is one line with its key in
   bold: `**retention** 30d`.
@@ -124,9 +138,10 @@ record is answered with a new message, not an edit.
 
 What a bird posts to a server's log channel about something it did, drawn by
 `ledger.Render`, so a channel holding several birds' cards reads as one log. A record
-as above: the summary as the title, the reason quoted, then `actor` (`automatic` or the
-member), `member`, `channel`, `role`, each labelled ref, the facts, the changes, and
-`message` (`deleted → reposted`, each word its link). A run of the same action by the
+as above: the module's icon and the summary as the title, the reason quoted, then the
+first section `Actor` (`merlin (automatic)` or the member), `Member`, `Channel`,
+`Role`, and the second each labelled ref, the facts, the changes and `Message`
+(`Deleted → Reposted`, each word its link). A run of the same action by the
 same actor is one card that edits itself as it grows, its count in the title, one line
 per entry in the description. Moods are `ok`, `info`, `warn`, `error`, `idle` and
 `danger` (what cannot be undone). Every entry passes `ledger.Validate` in the bird's
@@ -134,6 +149,12 @@ tests.
 
 ## Log
 
+- **2026-10-18** The record grid lines up and fills evenly, and titles and keys are
+  in sentence case with the surface's icon. The first embed log cards set rows of
+  two under rows of three, so columns drifted, and lost the old card's capitals, its
+  named actor and the module icons. The old card had solved the alignment by padding
+  rows; the rebuild had not read it. The grid now keeps that and adds sections that
+  each start a row and fields spread evenly over a section's rows.
 - **2026-10-18** A record can become a panel on an edit, never the reverse. Found
   moving drift reports to embeds: their buttons open a panel, and the edit that did it
   was refused until it emptied the embeds.
