@@ -206,12 +206,13 @@ func grid(sections ...[]discord.EmbedField) []discord.EmbedField {
 				wide = append(wide, f)
 			}
 		}
-		rows := (len(cols) + columns - 1) / columns
+		total := len(cols)
+		rows := (total + columns - 1) / columns
 		for r := range rows {
 			// Rows before the remainder take one more, so 4 is 2+2, 5 is 3+2
 			// and 7 is 3+2+2.
-			n := len(cols) / rows
-			if r < len(cols)%rows {
+			n := total / rows
+			if r < total%rows {
 				n++
 			}
 			out = append(out, cols[:n]...)
