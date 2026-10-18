@@ -1,6 +1,6 @@
 {
   "Embed": {
-    "title": "jailed for 2h; their 4 roles are kept for release",
+    "title": "\u003c:mod_roles:1\u003e Jailed for 2h; their 4 roles are kept for release",
     "description": "\u003e spam links",
     "color": 1,
     "footer": {
@@ -14,42 +14,47 @@
     },
     "fields": [
       {
-        "name": "actor",
+        "name": "Actor",
         "value": "\u003c@175928847299117063\u003e",
         "inline": true
       },
       {
-        "name": "member",
+        "name": "Member",
         "value": "\u003c@1001\u003e",
         "inline": true
       },
       {
-        "name": "kept",
-        "value": "\u003c@\u0026501\u003e, \u003c@\u0026502\u003e",
-        "inline": false
+        "name": "​",
+        "value": "​",
+        "inline": true
       },
       {
-        "name": "restored",
+        "name": "Restored",
         "value": "\u003c@\u0026503\u003e",
         "inline": true
       },
       {
-        "name": "until",
+        "name": "Until",
         "value": "14:00 utc",
         "inline": true
       },
       {
-        "name": "kept",
-        "value": "booster, a role above merlin's own, and one more that wraps",
-        "inline": false
-      },
-      {
-        "name": "marker",
+        "name": "Marker",
         "value": "none → jailed",
         "inline": true
       },
       {
-        "name": "message",
+        "name": "Kept",
+        "value": "\u003c@\u0026501\u003e, \u003c@\u0026502\u003e",
+        "inline": false
+      },
+      {
+        "name": "Kept",
+        "value": "booster, a role above merlin's own, and one more that wraps",
+        "inline": false
+      },
+      {
+        "name": "Message",
         "value": "[message](https://discord.com/channels/100/200/300)",
         "inline": false
       }
