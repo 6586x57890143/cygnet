@@ -15,7 +15,7 @@ import (
 // thumbnail and the rule must each name a file that is uploaded with them.
 func TestEveryMoodHasItsFile(t *testing.T) {
 	for color := range moods {
-		e, files := Embed(color, "t", "d")
+		e, files := Embed(color, "status", "t", "d")
 		if len(files) != 2 {
 			t.Fatalf("%#06x: %d files before any sync, want the rule and the icon", color, len(files))
 		}
@@ -30,17 +30,67 @@ func TestEveryMoodHasItsFile(t *testing.T) {
 			}
 		}
 	}
-	if _, f := Embed(0x123456, "", ""); !strings.Contains(f[1].Name, "info") {
+	if e, f := Embed(0x123456, "status", "", ""); !strings.Contains(f[1].Name, "info") || e.Title != "" {
 		t.Fatalf("unknown colour got %s, want the info icon", f[1].Name)
+	}
+	// Before the sync there's no icon to lead with: the title alone, in
+	// sentence case.
+	if e, _ := Embed(ColorOK, "status", "status", ""); e.Title != "Status" {
+		t.Fatalf("title %q", e.Title)
 	}
 }
 
-// A short value sits in a column and a long one takes the row, so three
-// abreast never wrap into a ragged block.
-func TestFieldsSetShortValuesAbreast(t *testing.T) {
-	got := Fields([][2]string{{"gateway", "42 ms"}, {"intents", "guilds, members, message content"}})
-	if len(got) != 2 || !*got[0].Inline || *got[1].Inline || got[0].Name != "gateway" || got[1].Value != "guilds, members, message content" {
-		t.Fatalf("fields %+v", got)
+// grid is fields as rows of what each column holds, "_" for a blank and
+// "=" before a field at full width.
+func grid(fs []discord.EmbedField) string {
+	var out []string
+	row := ""
+	n := 0
+	for _, f := range fs {
+		name := f.Name
+		if name == zwsp {
+			name = "_"
+		}
+		if !*f.Inline {
+			out = append(out, "="+name)
+			continue
+		}
+		row += name + " "
+		if n++; n == columns {
+			out = append(out, strings.TrimSpace(row))
+			row, n = "", 0
+		}
+	}
+	return strings.Join(out, " | ")
+}
+
+// The grid (DESIGN.md): every row is three columns so the columns line up,
+// each section starts its own row, a section's fields are spread evenly
+// over its rows, and a value too wide for a column, or on more than one
+// line, goes under its section at full width. Keys are in sentence case.
+func TestFieldsGrid(t *testing.T) {
+	for _, c := range []struct {
+		name     string
+		sections [][][2]string
+		want     string
+	}{
+		{"one", [][][2]string{{{"a", "1"}}}, "A _ _"},
+		{"four as two and two", [][][2]string{{{"a", "1"}, {"b", "2"}, {"c", "3"}, {"d", "4"}}}, "A B _ | C D _"},
+		{"five as three and two", [][][2]string{{{"a", "1"}, {"b", "2"}, {"c", "3"}, {"d", "4"}, {"e", "5"}}}, "A B C | D E _"},
+		{"sections start rows", [][][2]string{{{"a", "1"}}, {{"b", "2"}, {"c", "3"}}}, "A _ _ | B C _"},
+		{"wide under its section", [][][2]string{{{"a", "1"}, {"long", "guilds, members, message content"}, {"lines", "x\ny"}}, {{"b", "2"}}}, "A _ _ | =Long | =Lines | B _ _"},
+		{"a mention is a name wide", [][][2]string{{{"by", "<@175928847299117063>"}, {"in", "[a long link name here](https://x.y)"}}}, "By _ _ | =In"},
+	} {
+		if got := grid(Fields(c.sections...)); got != c.want {
+			t.Errorf("%s: %s, want %s", c.name, got, c.want)
+		}
+	}
+	many := make([][2]string, 40)
+	for i := range many {
+		many[i] = [2]string{"k", "v"}
+	}
+	if got := Fields(many); len(got) != maxFields {
+		t.Errorf("%d fields, want Discord's %d", len(got), maxFields)
 	}
 }
 

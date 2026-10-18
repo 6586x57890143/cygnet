@@ -212,15 +212,30 @@ type record struct {
 	rows  []discord.LayoutComponent
 }
 
-// newRecord is a record titled title, its facts in rows and notes in the
-// footer, with controls in row.
-func newRecord(color int, title string, rows [][2]string, notes []string, row ...discord.InteractiveComponent) record {
-	e, files := brand.Embed(color, title, "")
-	e.Fields = brand.Fields(rows)
+// newRecord is a record titled title, its facts in sections (who and
+// where, then what) and notes in the footer, with controls in row.
+func newRecord(color int, title string, sections [][][2]string, notes []string, row ...discord.InteractiveComponent) record {
+	e, files := brand.Embed(color, "provision", title, "")
+	e.Fields = brand.Fields(sections...)
 	if len(notes) > 0 {
 		e.Footer = &discord.EmbedFooter{Text: strings.Join(notes, " · ")}
 	}
 	return record{embed: e, files: files}.with(row...)
+}
+
+// automatic is cygnet as the actor of what she did on her own.
+const automatic = "cygnet (automatic)"
+
+// text is r as a panel's lines: its title, then a line per fact with its
+// key in bold, for a message that can't hold an embed.
+func (r record) text() string {
+	out := "**" + r.embed.Title + "**"
+	for _, f := range r.embed.Fields {
+		if strings.TrimSpace(f.Name) != "" && f.Name != "\u200b" {
+			out += "\n**" + f.Name + "** " + strings.ReplaceAll(f.Value, "\n", ", ")
+		}
+	}
+	return out
 }
 
 // with is r with another row of controls under it, or r for none.
@@ -284,7 +299,7 @@ func (s state) named(name string) (snowflake.ID, bool) {
 // drifted is the report in watch and propose: what would put it back, and
 // in propose the buttons that do.
 func (p planned) drifted(mode string) record {
-	r := newRecord(brand.ColorWarn, "! this server drifted from "+p.l.Name, p.facts(), p.waiting)
+	r := newRecord(brand.ColorWarn, "layout drifted", [][][2]string{{{"layout", p.l.Name}, {"mode", mode}}, p.facts()}, p.waiting)
 	if mode != Watch {
 		r = r.with(p.buttons()...)
 	}
@@ -299,11 +314,13 @@ func (p planned) putBack(done int, err error) record {
 		if tell, ok := asTell(err); ok {
 			why = tell
 		}
-		title := fmt.Sprintf("✗ this server drifted from %s; cygnet stopped after %d of %d", p.l.Name, done, p.todo())
-		return newRecord(brand.ColorError, title, [][2]string{{"progress", bar(done, p.todo())}, {"why", why}}, nil,
+		who := [][2]string{{"actor", automatic}, {"layout", p.l.Name}}
+		what := [][2]string{{"put back", fmt.Sprintf("%d of %d", done, p.todo())}, {"progress", bar(done, p.todo())}, {"why", why}}
+		return newRecord(brand.ColorError, "putting the layout back stopped", [][][2]string{who, what}, nil,
 			discord.NewSecondaryButton("check again", previewID+":"+p.l.Name))
 	}
-	r := newRecord(brand.ColorOK, "✓ this server drifted from "+p.l.Name+", so cygnet put back "+count(done, "change"), p.facts(), p.waiting)
+	who := [][2]string{{"actor", automatic}, {"layout", p.l.Name}, {"put back", count(done, "change")}}
+	r := newRecord(brand.ColorOK, "layout put back", [][][2]string{who, p.facts()}, p.waiting)
 	return p.leavable(r, "if one was on purpose, leave it alone and make the change again; cygnet won't put it back")
 }
 
@@ -365,8 +382,8 @@ func (m *Module) leavePressed(ctx context.Context, e *events.ComponentInteractio
 	}
 	k.Leave = leave
 	m.store(ctx, guild, k)
-	reply := newRecord(brand.ColorOK, "✓ cygnet leaves "+count(len(picked), "change")+" alone here now",
-		[][2]string{{"left", strings.Join(picked, "\n")}}, []string{"/provision shows what's left alone and forgets it"}).create()
+	reply := newRecord(brand.ColorOK, "changes left alone",
+		[][][2]string{{{"left", strings.Join(picked, "\n")}}}, []string{"/provision shows what's left alone and forgets it"}).create()
 	reply.Flags = discord.MessageFlagEphemeral
 	reply.AllowedMentions = core.NoPings()
 	return e.CreateMessage(reply)
