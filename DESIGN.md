@@ -63,7 +63,9 @@ in one reads as a form.
 - Prose (replies, lines, reasons the bird writes) is all lowercase, except what has
   to be typed exactly: names in backticks, URLs, code. Titles and keys on a record are
   in sentence case (Carbon), set by the renderer: `AI moderation: message rewritten`,
-  `Actor`, `Confidence`.
+  `Actor`, `Confidence`. A title is a noun phrase or starts with one (`Permission
+  refused`, `Member jailed`), never with a bird's name: sentence case would capitalise
+  it, and a bird's name is always lowercase.
 - No closing full stop. Clauses join with `; `, or with `:` when the second explains
   the first.
 - Say what happened, then what to do. Errors stay plain, with no wit.
