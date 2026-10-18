@@ -1,10 +1,10 @@
 {
   "Embed": {
-    "title": "\u003c:mod_roles:1\u003e Jailed for 2h; their 4 roles are kept for release · 2",
+    "title": "\u003c:mod_roles:1\u003e jailed for 2h; their 4 roles are kept for release · 2",
     "description": "\u003c@1001\u003e · [message](https://discord.com/channels/100/200/300)\n\u003c@1003\u003e · [message](https://discord.com/channels/100/200/300)",
     "color": 3,
     "footer": {
-      "text": "follows tester:40"
+      "text": "roles · follows tester:40"
     },
     "image": {
       "url": "attachment://tester_rule.png"
@@ -14,7 +14,7 @@
     },
     "fields": [
       {
-        "name": "Actor",
+        "name": "actor",
         "value": "\u003c@175928847299117063\u003e",
         "inline": true
       },

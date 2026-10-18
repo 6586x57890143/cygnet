@@ -1,14 +1,17 @@
 {
   "Embed": {
-    "title": "Jailed for 2h; their 4 roles are kept for release",
+    "title": "jailed for 2h; their 4 roles are kept for release",
+    "footer": {
+      "text": "roles"
+    },
     "fields": [
       {
-        "name": "Actor",
+        "name": "actor",
         "value": "automatic",
         "inline": true
       },
       {
-        "name": "Member",
+        "name": "member",
         "value": "\u003c@1002\u003e",
         "inline": true
       },
@@ -18,7 +21,7 @@
         "inline": true
       },
       {
-        "name": "Restored",
+        "name": "restored",
         "value": "\u003c@\u0026503\u003e",
         "inline": true
       },
@@ -33,12 +36,12 @@
         "inline": true
       },
       {
-        "name": "Kept",
+        "name": "kept",
         "value": "\u003c@\u0026501\u003e, \u003c@\u0026502\u003e",
         "inline": false
       },
       {
-        "name": "Message",
+        "name": "message",
         "value": "[message](https://discord.com/channels/100/200/300)",
         "inline": false
       }

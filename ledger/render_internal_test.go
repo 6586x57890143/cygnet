@@ -15,12 +15,12 @@ func TestGridSpreadsEvenlyAndKeepsEverything(t *testing.T) {
 		in   []string
 		want string
 	}{
-		{[]string{"a"}, "A _ _"},
-		{[]string{"a", "b"}, "A B _"},
-		{[]string{"a", "b", "c"}, "A B C"},
-		{[]string{"a", "b", "c", "d"}, "A B _ | C D _"},
-		{[]string{"a", "b", "c", "d", "e"}, "A B C | D E _"},
-		{[]string{"a", "b", "c", "d", "e", "f", "g"}, "A B C | D E _ | F G _"},
+		{[]string{"a"}, "a _ _"},
+		{[]string{"a", "b"}, "a b _"},
+		{[]string{"a", "b", "c"}, "a b c"},
+		{[]string{"a", "b", "c", "d"}, "a b _ | c d _"},
+		{[]string{"a", "b", "c", "d", "e"}, "a b c | d e _"},
+		{[]string{"a", "b", "c", "d", "e", "f", "g"}, "a b c | d e _ | f g _"},
 	} {
 		var s []discord.EmbedField
 		for _, n := range tc.in {
@@ -49,7 +49,7 @@ func TestGridSpreadsEvenlyAndKeepsEverything(t *testing.T) {
 	for _, f := range got {
 		names = append(names, f.Name)
 	}
-	if strings.Join(names, ",") != strings.Join([]string{"A", zwsp, zwsp, "Long", "B", zwsp, zwsp}, ",") {
+	if strings.Join(names, ",") != strings.Join([]string{"a", zwsp, zwsp, "long", "b", zwsp, zwsp}, ",") {
 		t.Errorf("sections: %q", names)
 	}
 }
