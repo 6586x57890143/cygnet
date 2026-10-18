@@ -87,12 +87,13 @@ func (m *Module) ping(_ context.Context, e *events.ApplicationCommandInteraction
 	})
 }
 
-// status is a record (DESIGN.md): its facts as fields, and what explains
-// them (an error, a hint) in the footer.
+// status is a record (DESIGN.md): how she's doing, then what she runs as,
+// each a section of fields, and what explains them (an error, a hint) in
+// the footer.
 func (m *Module) status(ctx context.Context, e *events.ApplicationCommandInteractionCreate) error {
 	p := m.probe()
 	color := brand.ColorOK
-	var rows [][2]string
+	var rows, runs [][2]string
 	var notes []string
 
 	rows = append(rows, [2]string{"gateway", gatewayMs(m.latency())})
@@ -111,21 +112,24 @@ func (m *Module) status(ctx context.Context, e *events.ApplicationCommandInterac
 			rows = append(rows, [2]string{"database", ms(time.Since(start))})
 		}
 	}
-	rows = append(rows, [2]string{"fleet", fleet(m.fleet)})
 	rows = append(rows,
 		[2]string{"uptime", core.Duration(time.Since(m.started))},
+		[2]string{"fleet", fleet(m.fleet)},
+	)
+	runs = append(runs,
+		[2]string{"runtime", runtime.Version()},
+		[2]string{"build", core.Revision()},
 		[2]string{"intents", names(p.Identified)},
 		[2]string{"privileged", names(p.Granted & gateway.IntentsPrivileged)},
 	)
 	if len(p.Skipped) > 0 {
 		color = brand.ColorWarn
-		rows = append(rows, [2]string{"skipped", strings.Join(p.Skipped, ", ")})
+		runs = append(runs, [2]string{"skipped", strings.Join(p.Skipped, ", ")})
 		notes = append(notes, "skipped modules need an intent that is off in the developer portal")
 	}
-	rows = append(rows, [2]string{"runtime", runtime.Version()}, [2]string{"build", core.Revision()})
 
-	embed, files := brand.Embed(color, "status", "")
-	embed.Fields = brand.Fields(rows)
+	embed, files := brand.Embed(color, "status", "status", "")
+	embed.Fields = brand.Fields(rows, runs)
 	if len(notes) > 0 {
 		embed.Footer = &discord.EmbedFooter{Text: strings.Join(notes, " · ")}
 	}

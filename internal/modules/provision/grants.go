@@ -230,7 +230,7 @@ func (m *Module) answer(ctx context.Context, r Grants, l lack) string {
 			card = l.card(brand.ColorError, false, "✗ couldn't: "+refusal(err))
 		} else {
 			did = "granted"
-			card = l.granted()
+			card = l.granted(automatic)
 		}
 	default:
 		card = l.card(brand.ColorWarn, mode == Propose && l.role != 0, "")
@@ -286,34 +286,40 @@ func (l lack) where() [2]string {
 	return [2]string{"on", "its role"}
 }
 
-// refusal is the title of a report about l: who was refused what.
-func (l lack) refusal() string {
-	return l.bird + " was refused `" + string(l.op) + "`"
+// who is a report's first section: who acted when anyone did, the bird
+// refused, and where.
+func (l lack) who(actor string) [][2]string {
+	var rows [][2]string
+	if actor != "" {
+		rows = append(rows, [2]string{"actor", actor})
+	}
+	rows = append(rows, [2]string{"bird", l.bird})
+	if l.channel != 0 {
+		rows = append(rows, [2]string{"channel", "<#" + l.channel.String() + ">"})
+	}
+	return rows
 }
 
 // card is the report: who was refused what, where, and what it lacks,
 // what came of granting it when that failed, and the grant button when
 // offered.
 func (l lack) card(color int, offer bool, failed string) record {
-	var rows [][2]string
-	if l.channel != 0 {
-		rows = append(rows, [2]string{"channel", "<#" + l.channel.String() + ">"})
-	}
-	rows = append(rows, [2]string{"lacks", l.lacks.Names()})
+	what := [][2]string{{"refused", "`" + string(l.op) + "`"}, {"lacks", l.lacks.Names()}}
 	if failed != "" {
-		rows = append(rows, [2]string{"grant", failed})
+		what = append(what, [2]string{"grant", failed})
 	}
 	var notes []string
 	if l.role == 0 {
 		notes = append(notes, "discord made it no role here; add it again from the fleet card")
 	}
+	sections := [][][2]string{l.who(""), what}
 	if !offer {
-		return newRecord(color, "! "+l.refusal(), rows, notes)
+		return newRecord(color, "permission refused", sections, notes)
 	}
 	where := l.where()
 	notes = append(notes, "grant gives it that "+where[0]+" "+where[1])
 	id := fmt.Sprintf("%s:%s:%d:%s", grantID, l.bird, l.channel, l.op)
-	return newRecord(color, "! "+l.refusal(), rows, notes, discord.NewSuccessButton("grant "+l.bird, id))
+	return newRecord(color, "permission refused", sections, notes, discord.NewSuccessButton("grant "+l.bird, id))
 }
 
 // selfWant is everything cygnet's role needs in l's server: what her
@@ -334,19 +340,22 @@ func (m *Module) selfWant(l lack) discord.Permissions {
 // only a person give her more, so it carries her install link for this
 // server, which updates her role in place.
 func (l lack) self(link string) record {
-	return newRecord(brand.ColorWarn, "! "+l.refusal(), [][2]string{{"lacks", l.lacks.Names()}},
+	what := [][2]string{{"refused", "`" + string(l.op) + "`"}, {"lacks", l.lacks.Names()}}
+	return newRecord(brand.ColorWarn, "permission refused", [][][2]string{l.who(""), what},
 		[]string{"discord lets only a person give a bot more, and the button does it in one go: her role gets everything she needs here"},
 		discord.NewLinkButton("give cygnet what she needs", link))
 }
 
-// granted is the report once cygnet granted it.
-func (l lack) granted() record {
-	return newRecord(brand.ColorOK, "✓ "+l.refusal()+", so cygnet gave it", [][2]string{{"gave", l.lacks.Names()}, l.where()}, nil)
+// granted is the report once actor granted it.
+func (l lack) granted(actor string) record {
+	where := l.where()
+	what := [][2]string{{"refused", "`" + string(l.op) + "`"}, {"gave", l.lacks.Names()}, {where[0], where[1]}}
+	return newRecord(brand.ColorOK, "permission granted", [][][2]string{l.who(actor), what}, nil)
 }
 
 // answered is the report once there is nothing left to grant.
-func (l lack) answered() record {
-	return newRecord(brand.ColorOK, "✓ "+l.bird+" has what `"+string(l.op)+"` needs now", nil, nil)
+func (l lack) answered(actor string) record {
+	return newRecord(brand.ColorOK, "nothing left to grant", [][][2]string{l.who(actor), {{"refused", "`" + string(l.op) + "`"}}}, nil)
 }
 
 // grantPressed grants what a report offered, worked out again from the
@@ -372,7 +381,8 @@ func (m *Module) grantPressed(ctx context.Context, e *events.ComponentInteractio
 	if err != nil {
 		return fmt.Errorf("%w: %w", core.Tell("couldn't read "+parts[1]+" here; try again in a moment"), err)
 	}
-	card := l.answered()
+	actor := "<@" + e.User().ID.String() + ">"
+	card := l.answered(actor)
 	if l.lacks != 0 {
 		if l.role == 0 {
 			return core.Tell(l.bird + " has no role here; add it again from the fleet card")
@@ -380,12 +390,13 @@ func (m *Module) grantPressed(ctx context.Context, e *events.ComponentInteractio
 		if err := m.grant(ctx, r, l); err != nil {
 			return fmt.Errorf("%w: %w", core.Tell("couldn't grant it: "+refusal(err)), err)
 		}
-		card = l.granted()
+		card = l.granted(actor)
 	}
 	// A report posted before records were embeds can't drop the
-	// Components V2 flag, so it gets the same words as a container.
+	// Components V2 flag, so it gets the same facts as a container.
 	if e.Message.Flags.Has(discord.MessageFlagIsComponentsV2) {
-		return e.UpdateMessage(discord.NewMessageUpdateV2(brand.Card(card.embed.Color, "provision", "grant", card.embed.Title)).WithAllowedMentions(core.NoPings()))
+		box := discord.NewContainer(discord.NewTextDisplay(card.text())).WithAccentColor(card.embed.Color)
+		return e.UpdateMessage(discord.NewMessageUpdateV2(box).WithAllowedMentions(core.NoPings()))
 	}
 	return e.UpdateMessage(card.update())
 }

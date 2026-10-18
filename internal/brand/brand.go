@@ -9,7 +9,9 @@ package brand
 import (
 	"bytes"
 	"embed"
+	"regexp"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/disgoorg/disgo/discord"
@@ -44,13 +46,18 @@ var moods = map[int]string{
 // that colour's mood as its thumbnail and the rule as its image, and the
 // files to send with it. The rule is always attached, being too wide for an
 // emoji; the face is too until the emoji are synced. An unknown colour gets
-// "info": never claim success for something unrecognised.
-func Embed(color int, title, description string) (discord.Embed, []*discord.File) {
+// "info": never claim success for something unrecognised. The title is in
+// sentence case behind module's icon, once the emoji are synced.
+func Embed(color int, module, title, description string) (discord.Embed, []*discord.File) {
 	face, faceURL := Icon(color)
 	rule, ruleURL := asset("cygnet_rule")
 	files := []*discord.File{rule}
 	if face != nil {
 		files = append(files, face)
+	}
+	title = Sentence(title)
+	if e := Mention("mod_" + module); e != "" {
+		title = e + " " + title
 	}
 	return discord.Embed{
 		Title:       title,
@@ -61,22 +68,92 @@ func Embed(color int, title, description string) (discord.Embed, []*discord.File
 	}, files
 }
 
-// inlineWidth is the longest value set in a column: past it, three abreast
-// wrap into a ragged block, so a longer one takes the row.
-const inlineWidth = 24
+// The record grid, as ledger.Render lays out a log card, so cygnet's
+// records and her log line up the same way.
+const (
+	// columns is how many inline fields Discord sets in a row. It divides
+	// each row by the fields in it, so a row of two sits in halves under a
+	// row of three in thirds; every row is padded to three.
+	columns = 3
+	// columnWidth is the longest value, as the reader sees it, that fits a
+	// third of an embed beside its thumbnail on one line. A longer one wraps
+	// into a tall strip that drags its row out of line.
+	columnWidth = 16
+	maxFields   = 25
+)
 
-// Fields is rows as a record's summary list: a key over its value, three
-// abreast where every line of the values is short, in the order given.
-func Fields(rows [][2]string) []discord.EmbedField {
-	out := make([]discord.EmbedField, 0, len(rows))
-	for _, r := range rows {
-		inline := true
-		for line := range strings.SplitSeq(r[1], "\n") {
-			inline = inline && utf8.RuneCountInString(line) <= inlineWidth
+// Fields is sections of rows as a record's summary list (DESIGN.md's grid):
+// a key in sentence case over its value. Each section starts a row of its
+// own, its short values spread evenly over whole rows of three (four as
+// two and two, five as three and two) padded with blank fields, and the
+// values too wide for a column under it at full width.
+func Fields(sections ...[][2]string) []discord.EmbedField {
+	var out []discord.EmbedField
+	for _, s := range sections {
+		var cols, wide []discord.EmbedField
+		for _, r := range s {
+			f := field(r[0], r[1])
+			if *f.Inline {
+				cols = append(cols, f)
+			} else {
+				wide = append(wide, f)
+			}
 		}
-		out = append(out, discord.EmbedField{Name: r[0], Value: r[1], Inline: &inline})
+		total := len(cols)
+		rows := (total + columns - 1) / columns
+		for r := range rows {
+			// Rows before the remainder take one more: 4 is 2+2, 5 is 3+2
+			// and 7 is 3+2+2.
+			n := total / rows
+			if r < total%rows {
+				n++
+			}
+			out = append(out, cols[:n]...)
+			cols = cols[n:]
+			for range columns - n {
+				out = append(out, blank())
+			}
+		}
+		out = append(out, wide...)
 	}
-	return out
+	return out[:min(len(out), maxFields)]
+}
+
+var (
+	link   = regexp.MustCompile(`\[([^\]]*)\]\([^)]*\)`)
+	markup = regexp.MustCompile(`<(@&|@!?|#)\d+>`)
+)
+
+// field is one fact, in a column when what the reader sees of its value
+// fits one: a link shows as its words and a mention as a pill about a name
+// wide, not as the markup behind them. The actor is always a column, as on
+// a log card: who did it heads the grid, and "cygnet (automatic)" is only
+// just over the width.
+func field(name, value string) discord.EmbedField {
+	seen := markup.ReplaceAllString(link.ReplaceAllString(value, "$1"), "@abcdefghij")
+	inline := name == "actor" || utf8.RuneCountInString(seen) <= columnWidth && !strings.Contains(value, "\n")
+	return discord.EmbedField{Name: Sentence(name), Value: value, Inline: &inline}
+}
+
+// zwsp is a zero width space, built from its code point so the source holds
+// nothing invisible.
+var zwsp = string(rune(0x200b))
+
+// blank is an empty column holding a row's place. A zero width space, since
+// Discord refuses an empty name or value.
+func blank() discord.EmbedField {
+	inline := true
+	return discord.EmbedField{Name: zwsp, Value: zwsp, Inline: &inline}
+}
+
+// Sentence is s with its first letter capitalised: a record's titles and
+// keys are in sentence case, while prose stays lowercase.
+func Sentence(s string) string {
+	r, n := utf8.DecodeRuneInString(s)
+	if r == utf8.RuneError {
+		return s
+	}
+	return string(unicode.ToUpper(r)) + s[n:]
 }
 
 // Icon is color's mood icon for a component that shows it: its emoji's URL

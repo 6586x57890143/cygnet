@@ -62,7 +62,7 @@ func (m *Module) Commands() []core.Command {
 }
 
 func (m *Module) perf(_ context.Context, e *events.ApplicationCommandInteractionCreate) error {
-	embed, files := brand.Embed(brand.ColorInfo, "perf", "")
+	embed, files := brand.Embed(brand.ColorInfo, "perf", "perf", "")
 	embed.Fields = brand.Fields(m.readout())
 	embed.Footer = &discord.EmbedFooter{Text: "since boot · in: gateway to dispatch · run: handler · wait: rate limit · http: round trip · build " + core.Revision()}
 	return e.CreateMessage(discord.MessageCreate{
@@ -73,17 +73,17 @@ func (m *Module) perf(_ context.Context, e *events.ApplicationCommandInteraction
 	})
 }
 
-// labelW keeps a stage's key on one line in a column of three.
+// labelW keeps a stage's key short enough for a column.
 const labelW = 16
 
-// readout is a record's facts (DESIGN.md), slowest first: each stage's p99
-// with a bar scaled to the slowest, then its p50 and how many calls, and
-// the go runtime's own overhead last.
-func (m *Module) readout() [][2]string {
+// readout is a record's facts (DESIGN.md) in two sections. The stages,
+// slowest first, each a line at full width: its p99 with a bar scaled to
+// the slowest, its p50 and how many calls. Then the go runtime's own
+// overhead, in columns.
+func (m *Module) readout() (stages, runtime [][2]string) {
 	rows := m.rec.Rows()
-	var out [][2]string
 	if len(rows) == 0 {
-		out = append(out, [2]string{"stages", "nothing measured yet"})
+		stages = append(stages, [2]string{"stages", "nothing measured yet"})
 	}
 	var slowest time.Duration
 	if len(rows) > 0 {
@@ -91,10 +91,10 @@ func (m *Module) readout() [][2]string {
 	}
 	for _, r := range rows[:min(top, len(rows))] {
 		label := clip(r.Who, labelW-1-len(r.Stage.String())) + " " + r.Stage.String()
-		out = append(out, [2]string{label, bar(r.P99, slowest) + " " + dur(r.P99) + "\np50 " + dur(r.P50) + " · " + count(r.N)})
+		stages = append(stages, [2]string{label, bar(r.P99, slowest) + " " + dur(r.P99) + " · p50 " + dur(r.P50) + " · " + count(r.N)})
 	}
 	sched, gc := m.runtime()
-	return append(out, [2]string{"go sched", dur(sched)}, [2]string{"go gc pause", dur(gc)})
+	return stages, [][2]string{{"go sched", dur(sched)}, {"go gc pause", dur(gc)}}
 }
 
 // bar is d against max in five cells (DESIGN.md's bar), at least one for

@@ -31,15 +31,18 @@ func TestReadout(t *testing.T) {
 	for range 1500 {
 		rec.Add("bird", obs.In, 40*time.Millisecond)
 	}
-	rows := module(rec).readout()
+	rows, runtime := module(rec).readout()
 	var got strings.Builder
-	for _, r := range rows {
+	for _, r := range append(rows, runtime...) {
 		if n := utf8.RuneCountInString(r[0]); n > labelW {
 			t.Errorf("key %q is %d long", r[0], n)
 		}
+		if strings.Contains(r[1], "\n") {
+			t.Errorf("%q is more than one line", r[1])
+		}
 		got.WriteString(r[0] + ": " + r[1] + "\n")
 	}
-	if !strings.HasPrefix(rows[0][0], "put ") || !strings.HasSuffix(rows[0][0], " wait") || !strings.HasPrefix(rows[0][1], "▰▰▰▰▰ ") {
+	if !strings.HasPrefix(rows[0][0], "put ") || !strings.HasSuffix(rows[0][0], " wait") || !strings.HasPrefix(rows[0][1], "▰▰▰▰▰ ") || !strings.Contains(rows[0][1], " ms · p50 ") {
 		t.Errorf("first row %q, want the rate limit wait with a full bar", rows[0])
 	}
 	for _, s := range []string{"whisper run: ▰▱▱▱▱", "· 1.5k", "go sched: 40 µs", "go gc pause: 300 µs"} {
@@ -50,7 +53,7 @@ func TestReadout(t *testing.T) {
 }
 
 func TestEmptyReadout(t *testing.T) {
-	if got := module(obs.New()).readout(); got[0] != [2]string{"stages", "nothing measured yet"} {
+	if got, _ := module(obs.New()).readout(); got[0] != [2]string{"stages", "nothing measured yet"} {
 		t.Fatalf("empty readout: %q", got)
 	}
 }
@@ -68,7 +71,7 @@ func TestPerfReplies(t *testing.T) {
 	if err := c[0].Run(t.Context(), e); err != nil {
 		t.Fatal(err)
 	}
-	if len(*sent) != 1 || !(*sent)[0].Flags.Has(discord.MessageFlagEphemeral) || (*sent)[0].Embeds[0].Title != "perf" {
+	if len(*sent) != 1 || !(*sent)[0].Flags.Has(discord.MessageFlagEphemeral) || (*sent)[0].Embeds[0].Title != "Perf" {
 		t.Fatalf("sent %+v", *sent)
 	}
 }
