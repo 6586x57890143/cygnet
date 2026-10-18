@@ -130,8 +130,8 @@ func (m *Module) status(ctx context.Context, e *events.ApplicationCommandInterac
 
 	embed, files := brand.Embed(color, "status", "status", "")
 	embed.Fields = brand.Fields(rows, runs)
-	if len(notes) > 0 {
-		embed.Footer = &discord.EmbedFooter{Text: strings.Join(notes, " · ")}
+	for _, n := range notes {
+		brand.Note(&embed, n)
 	}
 	return e.CreateMessage(discord.MessageCreate{
 		Embeds:          []discord.Embed{embed},

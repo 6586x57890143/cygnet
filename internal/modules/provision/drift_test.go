@@ -115,8 +115,8 @@ func TestDriftProposed(t *testing.T) {
 		t.Fatalf("%d reports", len(posts))
 	}
 	text := say(posts[0])
-	want := "Layout drifted\nLayout: flock\nMode: propose\n_\nPerms: #rules: @everyone can't send messages, create public threads, send messages in threads\n#rules: mod can send messages"
-	if !strings.HasPrefix(text, want) || strings.Contains(text, "Changes:") {
+	want := "layout drifted\nlayout: flock\nmode: propose\n_\nperms: #rules: @everyone can't send messages, create public threads, send messages in threads\n#rules: mod can send messages"
+	if !strings.HasPrefix(text, want) || strings.Contains(text, "changes:") {
 		t.Fatal(text)
 	}
 	if posts[0].Flags != 0 || len(posts[0].Files) != 2 || len(rowButtons(posts[0].Components)) != 2 {
@@ -169,7 +169,7 @@ func TestDriftActedOn(t *testing.T) {
 	if len(posts) != 1 {
 		t.Fatalf("%d reports", len(posts))
 	}
-	if text := say(posts[0]); !strings.HasPrefix(text, "Layout put back\nActor: cygnet (automatic)\nLayout: flock\nPut back: 2 changes\nPerms: #rules: ") || posts[0].Embeds[0].Color != brand.ColorOK {
+	if text := say(posts[0]); !strings.HasPrefix(text, "layout put back\nactor: cygnet (automatic)\nlayout: flock\nput back: 2 changes\nperms: #rules: ") || posts[0].Embeds[0].Color != brand.ColorOK {
 		t.Fatal(text)
 	}
 	if again := planOn(t, g, map[string]snowflake.ID{"skua": skuaApp}); len(again.changes) != 0 {
@@ -180,7 +180,7 @@ func TestDriftActedOn(t *testing.T) {
 	drift(g)
 	g.fail["overwrite"] = errors.New("500")
 	m.check(context.Background(), g, guild, self)
-	if text := say(g.posts(reports)[1]); !strings.HasPrefix(text, "Putting the layout back stopped\nActor: cygnet (automatic)\nLayout: flock\n_\nPut back: 0 of 2\nProgress: ") {
+	if text := say(g.posts(reports)[1]); !strings.HasPrefix(text, "putting the layout back stopped\nactor: cygnet (automatic)\nlayout: flock\n_\nput back: 0 of 2\nprogress: ") {
 		t.Fatal(text)
 	}
 

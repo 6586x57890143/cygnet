@@ -86,7 +86,7 @@ func TestSyncUploadsOnlyWhatIsMissing(t *testing.T) {
 		t.Fatalf("synced embed: thumbnail %q, %d files", e.Thumbnail.URL, len(files))
 	}
 	// The title leads with the module's icon, once there is one.
-	if !strings.HasPrefix(e.Title, "<:mod_status_") || !strings.HasSuffix(e.Title, "> T") {
+	if !strings.HasPrefix(e.Title, "<:mod_status_") || !strings.HasSuffix(e.Title, "> t") {
 		t.Fatalf("synced title %q", e.Title)
 	}
 	for _, get := range []func() (*discord.File, string){Avatar, func() (*discord.File, string) { return ModuleIcon("status", ColorWarn) }} {

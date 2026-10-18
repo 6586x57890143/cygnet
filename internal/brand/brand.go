@@ -11,7 +11,6 @@ import (
 	"embed"
 	"regexp"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/disgoorg/disgo/discord"
@@ -46,8 +45,9 @@ var moods = map[int]string{
 // that colour's mood as its thumbnail and the rule as its image, and the
 // files to send with it. The rule is always attached, being too wide for an
 // emoji; the face is too until the emoji are synced. An unknown colour gets
-// "info": never claim success for something unrecognised. The title is in
-// sentence case behind module's icon, once the emoji are synced.
+// "info": never claim success for something unrecognised. The title leads
+// with module's icon once the emoji are synced, and the footer with its
+// name; Note adds to the footer.
 func Embed(color int, module, title, description string) (discord.Embed, []*discord.File) {
 	face, faceURL := Icon(color)
 	rule, ruleURL := asset("cygnet_rule")
@@ -55,7 +55,6 @@ func Embed(color int, module, title, description string) (discord.Embed, []*disc
 	if face != nil {
 		files = append(files, face)
 	}
-	title = Sentence(title)
 	if e := Mention("mod_" + module); e != "" {
 		title = e + " " + title
 	}
@@ -65,7 +64,17 @@ func Embed(color int, module, title, description string) (discord.Embed, []*disc
 		Color:       color,
 		Thumbnail:   &discord.EmbedResource{URL: faceURL},
 		Image:       &discord.EmbedResource{URL: ruleURL},
+		Footer:      &discord.EmbedFooter{Text: module},
 	}, files
+}
+
+// Note adds s to e's footer, after what is there.
+func Note(e *discord.Embed, s string) {
+	if e.Footer == nil || e.Footer.Text == "" {
+		e.Footer = &discord.EmbedFooter{Text: s}
+		return
+	}
+	e.Footer = &discord.EmbedFooter{Text: e.Footer.Text + " · " + s}
 }
 
 // The record grid, as ledger.Render lays out a log card, so cygnet's
@@ -83,7 +92,7 @@ const (
 )
 
 // Fields is sections of rows as a record's summary list (DESIGN.md's grid):
-// a key in sentence case over its value. Each section starts a row of its
+// a key over its value, all lowercase. Each section starts a row of its
 // own, its short values spread evenly over whole rows of three (four as
 // two and two, five as three and two) padded with blank fields, and the
 // values too wide for a column under it at full width.
@@ -132,7 +141,7 @@ var (
 func field(name, value string) discord.EmbedField {
 	seen := markup.ReplaceAllString(link.ReplaceAllString(value, "$1"), "@abcdefghij")
 	inline := name == "actor" || utf8.RuneCountInString(seen) <= columnWidth && !strings.Contains(value, "\n")
-	return discord.EmbedField{Name: Sentence(name), Value: value, Inline: &inline}
+	return discord.EmbedField{Name: name, Value: value, Inline: &inline}
 }
 
 // zwsp is a zero width space, built from its code point so the source holds
@@ -144,16 +153,6 @@ var zwsp = string(rune(0x200b))
 func blank() discord.EmbedField {
 	inline := true
 	return discord.EmbedField{Name: zwsp, Value: zwsp, Inline: &inline}
-}
-
-// Sentence is s with its first letter capitalised: a record's titles and
-// keys are in sentence case, while prose stays lowercase.
-func Sentence(s string) string {
-	r, n := utf8.DecodeRuneInString(s)
-	if r == utf8.RuneError {
-		return s
-	}
-	return string(unicode.ToUpper(r)) + s[n:]
 }
 
 // Icon is color's mood icon for a component that shows it: its emoji's URL

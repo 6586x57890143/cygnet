@@ -71,7 +71,7 @@ func TestPerfReplies(t *testing.T) {
 	if err := c[0].Run(t.Context(), e); err != nil {
 		t.Fatal(err)
 	}
-	if len(*sent) != 1 || !(*sent)[0].Flags.Has(discord.MessageFlagEphemeral) || (*sent)[0].Embeds[0].Title != "Perf" {
+	if len(*sent) != 1 || !(*sent)[0].Flags.Has(discord.MessageFlagEphemeral) || (*sent)[0].Embeds[0].Title != "perf" {
 		t.Fatalf("sent %+v", *sent)
 	}
 }

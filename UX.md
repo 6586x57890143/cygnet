@@ -52,11 +52,12 @@ The rules every bird shares, which `brand/voice_test.go` holds the status lines 
   happened) comes from `brand.Embed`: cygnet's face for its mood as the thumbnail, the
   rule (`cygnet_rule`, the bird afloat on a waterline, drawn by `tools/sprites`) as the
   image, its facts from `brand.Fields` on DESIGN.md's grid (the same one
-  `ledger.Render` lays a log card on), and what explains them in the footer. The rule
-  is always attached, too wide to be an emoji; the face is too until the emoji sync.
-  The title is the module's emoji and a short noun phrase (`Permission refused`,
-  `Layout put back`), so sentence case never capitalises a bird's name; who and which
-  go in the fields. Something cygnet did on her own has `Actor` `cygnet (automatic)`.
+  `ledger.Render` lays a log card on), and the footer: the module, then what explains
+  the facts (`brand.Note`). The rule is always attached, too wide to be an emoji; the
+  face is too until the emoji sync. Everything is lowercase, title and keys included.
+  The title is the module's emoji and a short phrase (`permission refused`, `layout put
+  back`); who and which go in the fields. Something cygnet did on her own has `actor`
+  `cygnet (automatic)`.
 - **A module has one command, and it opens a panel.** Everything else the module does is
   a button, a select or a form on that panel or on a card it leads to, and each of those
   has `◂ back` to the panel. A new feature is a button on a panel, not a new subcommand:

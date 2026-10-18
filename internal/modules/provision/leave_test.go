@@ -72,7 +72,7 @@ func TestLeave(t *testing.T) {
 		t.Fatal(err)
 	}
 	reply := got[0].(discord.MessageCreate)
-	if reply.Flags != discord.MessageFlagEphemeral || !strings.Contains(say(reply), "Changes left alone\nLeft: "+opts[0]) {
+	if reply.Flags != discord.MessageFlagEphemeral || !strings.Contains(say(reply), "changes left alone\nleft: "+opts[0]) {
 		t.Fatal(say(reply))
 	}
 	if last := (*saved)[len(*saved)-1]; !slices.Equal(last.Leave, opts[:1]) {
@@ -89,7 +89,7 @@ func TestLeave(t *testing.T) {
 	// The same drift again: only what wasn't left alone is put back.
 	drift(g)
 	m.check(ctx, g, guild, self)
-	if text := say(g.posts(reports)[1]); !strings.Contains(text, "Put back: 1 change") || strings.Contains(text, opts[0]) {
+	if text := say(g.posts(reports)[1]); !strings.Contains(text, "put back: 1 change") || strings.Contains(text, opts[0]) {
 		t.Fatal(text)
 	}
 
@@ -163,7 +163,7 @@ func TestPlanFacts(t *testing.T) {
 func TestLeavableNothing(t *testing.T) {
 	p := planned{l: flock, changes: []change{{kind: remove, id: snowflake.ID(1), name: "old"}}}
 	r := p.leavable(p.drifted(Watch), "why")
-	if len(options(r.rows)) != 0 || r.embed.Footer != nil {
+	if len(options(r.rows)) != 0 || r.embed.Footer.Text != "provision" {
 		t.Fatal("a removal was offered")
 	}
 }

@@ -33,10 +33,16 @@ func TestEveryMoodHasItsFile(t *testing.T) {
 	if e, f := Embed(0x123456, "status", "", ""); !strings.Contains(f[1].Name, "info") || e.Title != "" {
 		t.Fatalf("unknown colour got %s, want the info icon", f[1].Name)
 	}
-	// Before the sync there's no icon to lead with: the title alone, in
-	// sentence case.
-	if e, _ := Embed(ColorOK, "status", "status", ""); e.Title != "Status" {
-		t.Fatalf("title %q", e.Title)
+	// Before the sync there's no icon to lead with: the title alone, as
+	// written. The footer leads with the module, and notes follow it.
+	e, _ := Embed(ColorOK, "status", "status", "")
+	Note(&e, "since boot")
+	if e.Title != "status" || e.Footer.Text != "status · since boot" {
+		t.Fatalf("title %q, footer %q", e.Title, e.Footer.Text)
+	}
+	var bare discord.Embed
+	if Note(&bare, "x"); bare.Footer.Text != "x" {
+		t.Fatalf("footer %q", bare.Footer.Text)
 	}
 }
 
@@ -67,19 +73,20 @@ func grid(fs []discord.EmbedField) string {
 // The grid (DESIGN.md): every row is three columns so the columns line up,
 // each section starts its own row, a section's fields are spread evenly
 // over its rows, and a value too wide for a column, or on more than one
-// line, goes under its section at full width. Keys are in sentence case.
+// line, goes under its section at full width. Keys stay lowercase.
 func TestFieldsGrid(t *testing.T) {
 	for _, c := range []struct {
 		name     string
 		sections [][][2]string
 		want     string
 	}{
-		{"one", [][][2]string{{{"a", "1"}}}, "A _ _"},
-		{"four as two and two", [][][2]string{{{"a", "1"}, {"b", "2"}, {"c", "3"}, {"d", "4"}}}, "A B _ | C D _"},
-		{"five as three and two", [][][2]string{{{"a", "1"}, {"b", "2"}, {"c", "3"}, {"d", "4"}, {"e", "5"}}}, "A B C | D E _"},
-		{"sections start rows", [][][2]string{{{"a", "1"}}, {{"b", "2"}, {"c", "3"}}}, "A _ _ | B C _"},
-		{"wide under its section", [][][2]string{{{"a", "1"}, {"long", "guilds, members, message content"}, {"lines", "x\ny"}}, {{"b", "2"}}}, "A _ _ | =Long | =Lines | B _ _"},
-		{"a mention is a name wide", [][][2]string{{{"by", "<@175928847299117063>"}, {"in", "[a long link name here](https://x.y)"}}}, "By _ _ | =In"},
+		{"one", [][][2]string{{{"a", "1"}}}, "a _ _"},
+		{"four as two and two", [][][2]string{{{"a", "1"}, {"b", "2"}, {"c", "3"}, {"d", "4"}}}, "a b _ | c d _"},
+		{"five as three and two", [][][2]string{{{"a", "1"}, {"b", "2"}, {"c", "3"}, {"d", "4"}, {"e", "5"}}}, "a b c | d e _"},
+		{"sections start rows", [][][2]string{{{"a", "1"}}, {{"b", "2"}, {"c", "3"}}}, "a _ _ | b c _"},
+		{"wide under its section", [][][2]string{{{"a", "1"}, {"long", "guilds, members, message content"}, {"lines", "x\ny"}}, {{"b", "2"}}}, "a _ _ | =long | =lines | b _ _"},
+		{"a mention is a name wide", [][][2]string{{{"by", "<@175928847299117063>"}, {"in", "[a long link name here](https://x.y)"}}}, "by _ _ | =in"},
+		{"the actor is always a column", [][][2]string{{{"actor", "cygnet (automatic)"}}}, "actor _ _"},
 	} {
 		if got := grid(Fields(c.sections...)); got != c.want {
 			t.Errorf("%s: %s, want %s", c.name, got, c.want)
