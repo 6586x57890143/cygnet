@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"slices"
 	"strings"
@@ -55,6 +56,8 @@ type Hub struct {
 	tokens map[[32]byte]string
 	// keys are the birds' pinned release keys (Pin).
 	keys map[string]ed25519.PublicKey
+	// host sees what runs behind a link on cygnet's own host (Watch).
+	host Host
 
 	mu      sync.Mutex
 	peers   map[string]*peer
@@ -161,10 +164,13 @@ func ParseKeys(s string) (map[string]ed25519.PublicKey, error) {
 // hub serves anyone.
 func (h *Hub) Pin(keys map[string]ed25519.PublicKey) { h.keys = keys }
 
-// vouch is how far h trusts name's link, from the attestation in its
-// hello, or why the link is refused. A bird with no pinned key is trusted
-// by its token alone.
-func (h *Hub) vouch(name string, a *link.Attestation) (link.Trust, error) {
+// vouch is how far h trusts name's link from ip, from the attestation in
+// its hello, or why the link is refused. A bird with no pinned key is
+// trusted by its token alone. A signed bird whose container h can see is
+// attested when it runs the signed image and refused when it runs any
+// other; where h can't see (no host, a bird come through the tunnel, the
+// daemon not answering) it stays signed.
+func (h *Hub) vouch(ctx context.Context, name string, a *link.Attestation, ip string) (link.Trust, error) {
 	key, pinned := h.keys[name]
 	switch {
 	case !pinned:
@@ -175,7 +181,20 @@ func (h *Hub) vouch(name string, a *link.Attestation) (link.Trust, error) {
 	if err := a.Verify(name, key, time.Now()); err != nil {
 		return link.Untrusted, err
 	}
-	return link.Signed, nil
+	if h.host == nil || a.Image == "" {
+		return link.Signed, nil
+	}
+	digests, own, err := h.host.Images(ctx, ip)
+	switch {
+	case err != nil:
+		h.log.Warn("couldn't see the container behind a link; trusting its signature", "name", name, "err", err)
+		return link.Signed, nil
+	case own:
+		return link.Signed, nil
+	case slices.Contains(digests, a.Image):
+		return link.Attested, nil
+	}
+	return link.Untrusted, errors.New("the container linking runs another image than the one signed")
 }
 
 // TrustOf is how far h trusts caller: cygnet herself fully, a linked bird
@@ -249,7 +268,8 @@ func (h *Hub) serveLink(w http.ResponseWriter, r *http.Request, name string) {
 	if hello.Inflight <= 0 {
 		hello.Inflight = 64
 	}
-	trust, err := h.vouch(name, hello.Attest)
+	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+	trust, err := h.vouch(ctx, name, hello.Attest, ip)
 	if err != nil {
 		h.log.Warn("bird refused: its build isn't attested", "name", name, "build", hello.Build, "why", err)
 		_ = conn.Close(websocket.StatusPolicyViolation, "attestation")

@@ -206,6 +206,11 @@ func run(log *slog.Logger) error {
 			return err
 		}
 		h.Pin(keys)
+		// On her own host cygnet also checks a signed bird's container runs
+		// the image that was signed, through a proxy that only reads.
+		if v := os.Getenv("CYGNET_DOCKER"); v != "" {
+			h.Watch(hub.Docker{URL: v, Client: &http.Client{Timeout: 3 * time.Second}, Project: "cygnet", Network: "fleet"})
+		}
 		_, verb, _ := link.Target(perms.MissingMethod)
 		h.Serve(verb, func(ctx context.Context, caller string, body json.RawMessage) (any, error) {
 			if len(keys) > 0 && !h.TrustOf(caller).AtLeast(link.Signed) {
