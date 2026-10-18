@@ -36,6 +36,9 @@ func hello(t *testing.T, url, name string, a *link.Attestation) (link.Welcome, w
 	}
 	var w link.Welcome
 	_ = json.Unmarshal(f.Body, &w)
+	// Gone straight away, so a client linking as name next isn't racing
+	// a socket that never answers.
+	_ = conn.Close(websocket.StatusNormalClosure, "done")
 	return w, -1
 }
 
@@ -78,6 +81,11 @@ func TestAttestedLinks(t *testing.T) {
 	done := make(chan struct{})
 	go func() { _ = skua.Run(ctx); close(done) }()
 	t.Cleanup(func() { cancel(); <-done })
+	for deadline := time.Now().Add(5 * time.Second); skua.Name() != "skua"; time.Sleep(time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("skua never linked")
+		}
+	}
 	linked(t, h, "merlin", "skua")
 	if err := skua.Call(context.Background(), "merlin.who", nil, nil); err != nil {
 		t.Fatal(err)
