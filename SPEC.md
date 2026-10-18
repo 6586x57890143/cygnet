@@ -179,6 +179,17 @@ The contract every bird speaks, the same over the WebSocket and `POST /v1/call`.
   a gap to that bird's portal.
 - **cygnet authenticates, the callee authorizes.** Every frame's `from` is stamped by
   cygnet from the connection's token. What a bot will do for whom is its own decision.
+- **A bird proves its build.** A token says who a bird is, not what it runs. Each bird
+  has a release key that lives only in its CI's deploy job on `main`; CI signs the bird,
+  commit and image (`link.Attestation`, `link/cmd/attest`) and the deploy hands it to
+  the bird for its hello. cygnet pins each bird's public key (`CYGNET_BIRD_KEYS`) and
+  refuses a pinned bird's link without a good attestation, so a fork or an altered
+  build holding the token is turned away. Every frame carries the caller's `trust`,
+  stamped like `from`: untrusted (token only), signed, or attested (signed, and cygnet
+  saw the signed image running the link, on her own host). Once any key is pinned,
+  cygnet grants permissions only to signed birds, and a callee may take trust into
+  its decision. This proves what CI built, not what runs on a host cygnet can't see:
+  the trust boundary is her host and each bird's CI secrets.
 - **Bots never talk to each other through Discord.** A bird ignores other bots'
   messages, so no two of them can loop in a channel.
 

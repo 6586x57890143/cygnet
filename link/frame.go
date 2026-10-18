@@ -42,6 +42,9 @@ type Frame struct {
 	// From is stamped by the hub from the connection's token; whatever a bot
 	// puts here is overwritten.
 	From string `json:"from,omitempty"`
+	// Trust is stamped by the hub with how far it checked From's build
+	// (attest.go); whatever a bot puts here is overwritten too.
+	Trust Trust `json:"trust,omitempty"`
 	// To is set on a reply only: the caller it goes back to.
 	To string `json:"to,omitempty"`
 	// Method is "<bot>.<verb>" on a call and "<bot>.<event>" on an event.
@@ -62,11 +65,16 @@ type Hello struct {
 	Subscribes []string `json:"subscribes,omitempty"`
 	// Inflight is how many calls it takes at once; more are refused busy.
 	Inflight int `json:"inflight,omitempty"`
+	// Attest is the bird's signed build. A bird whose release key cygnet
+	// pins can't link without a good one.
+	Attest *Attestation `json:"attest,omitempty"`
 }
 
-// Welcome is the hub's answer: the name the token belongs to.
+// Welcome is the hub's answer: the name the token belongs to, and how far
+// cygnet trusts this link.
 type Welcome struct {
-	Name string `json:"name"`
+	Name  string `json:"name"`
+	Trust Trust  `json:"trust,omitempty"`
 }
 
 // Code says why a call failed.
