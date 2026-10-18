@@ -243,6 +243,16 @@ func run(log *slog.Logger) error {
 				return nil, link.Err(link.Busy, "cygnet is starting")
 			})
 		}
+		// Whether cygnet is in a server, from her cache: what a bird leans
+		// on before it trusts an attested bird further there.
+		h.Serve(hub.HereVerb, hub.Here(func(g string) bool {
+			id, err := snowflake.Parse(g)
+			if err != nil || client == nil {
+				return false
+			}
+			_, ok := client.Caches.Guild(id)
+			return ok
+		}))
 		fleet = h
 		st.WithFleet(h.Fleet)
 		srv := &http.Server{Addr: env("CYGNET_HUB_ADDR", ":7700"), Handler: h, ReadHeaderTimeout: 5 * time.Second}

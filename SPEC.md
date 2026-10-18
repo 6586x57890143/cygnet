@@ -190,6 +190,8 @@ The contract every bird speaks, the same over the WebSocket and `POST /v1/call`.
   cygnet grants permissions only to signed birds, and a callee may take trust into
   its decision. This proves what CI built, not what runs on a host cygnet can't see:
   the trust boundary is her host and each bird's CI secrets.
+  A bird that would do more for an attested caller where cygnet keeps watch asks her
+  `cygnet.here`: whether she is a member of that server, yes or no.
 - **Bots never talk to each other through Discord.** A bird ignores other bots'
   messages, so no two of them can loop in a channel.
 
