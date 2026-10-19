@@ -85,6 +85,9 @@ func main() {
 	if err := write(filepath.Join(out, "cygnet_avatar.png"), icon); err != nil {
 		log.Fatal(err)
 	}
+	if err := write(filepath.Join(out, "cygnet_rule.png"), scale(rule(), 4)); err != nil {
+		log.Fatal(err)
+	}
 	writeEmoji(b)
 	// Profile art lives outside the embedded assets: the binary never sends
 	// it, only tools/setup uploads it and the README shows it.

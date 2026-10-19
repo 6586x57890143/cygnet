@@ -4,6 +4,11 @@ Every surface cygnet has follows this: replies, embeds, webhook posts, command n
 descriptions, the setup CLI, and the art. A change to a surface is checked against it,
 and a layout claim is checked by measuring or by a test, never by eye.
 
+[`DESIGN.md`](./DESIGN.md) is the design every bird shares and wins where the two
+disagree; this file adds what is cygnet's own. Surfaces still drawn the older way
+(the code blocks in `/provision`'s preview and its list of changes left alone, which
+are layout rather than something to copy) move to it in their next PR.
+
 ## Voice
 
 cygnet is a quiet, clever bird who knows more than she says and is casual about it, a
@@ -43,8 +48,16 @@ The rules every bird shares, which `brand/voice_test.go` holds the status lines 
   the rest.
 - A refusal is tested through `core.Router` with `coretest.Event`, checking the reply the
   member gets, not only the error the handler returns.
-- An embed comes from `brand.Embed`, with its mood file attached. The title is one
-  lowercase word.
+- **A record** (DESIGN.md's A record: `/status`, `/perf`, a report of something that
+  happened) comes from `brand.Embed`: cygnet's face for its mood as the thumbnail, the
+  rule (`cygnet_rule`, the bird afloat on a waterline, drawn by `tools/sprites`) as the
+  image, its facts from `brand.Fields` on DESIGN.md's grid (the same one
+  `ledger.Render` lays a log card on), and the footer: the module, then what explains
+  the facts (`brand.Note`). The rule is always attached, too wide to be an emoji; the
+  face is too until the emoji sync. Everything is lowercase, title and keys included.
+  The title is the module's emoji and a short phrase (`permission refused`, `layout put
+  back`); who and which go in the fields. Something cygnet did on her own has `actor`
+  `cygnet (automatic)`.
 - **A module has one command, and it opens a panel.** Everything else the module does is
   a button, a select or a form on that panel or on a card it leads to, and each of those
   has `◂ back` to the panel. A new feature is a button on a panel, not a new subcommand:
@@ -58,42 +71,26 @@ The rules every bird shares, which `brand/voice_test.go` holds the status lines 
   below at full width, because beside a thumbnail a phone gives text a narrow column.
   The about says what the module does and how to use it before anything else.
 - An ASCII glyph that leads a line (`├ └ ▸`) leads only a line short enough never to
-  wrap, or one inside a code block: a wrapped line leaves its text hanging under the
-  glyph on a phone. The `/help` index's tree marks each module's name line, and its
-  command grid branches subcommands inside the code block.
-- Every other reply is a card (`brand.Card`): one
-  Components V2 container, accented in the mood of what it says (ok when done, warn
-  while working, error when it failed, info for a readout), whose first line is the
-  module's emoji, its name in bold and what the reply is: `<emoji> **provision** · apply`.
-  Below it the content is text: a `✓`/`!` line, a code block grid, `-#` detail, an ASCII
-  bar (`▰▱`) or tree (`├ └`). An icon is an app emoji inline, never an attachment, so a
-  card uploads nothing and before the emoji sync its head is text alone. A thumbnail
-  or other asset is for a page that is about the thing it shows (`/help`'s), not for
-  decoration. Buttons go inside the container, below the text. A live readout is
-  edited as a card too (`discord.NewMessageUpdateV2`) and its accent follows its state.
-  Errors stay `core.Tell`, plain text.
+  wrap: a wrapped line leaves its text hanging under the glyph on a phone. The `/help`
+  index's tree marks each module's name line; a page lists each command as a fact (its
+  invocation in bold, then its options), a subcommand under its full invocation.
+- **A panel's state** (`brand.Card`: a panel, or what one of its buttons turns it into)
+  is DESIGN.md's A panel, accented in the mood of what it says (ok when done, warn
+  while working, error when it failed, info otherwise). Its first line is the module's
+  emoji, its name in bold and what this is: `<emoji> **provision** · apply`. The body is
+  text: a `✓`/`!` line, facts, `-#` detail, an ASCII bar (`▰▱`) or tree (`├ └`).
+  Buttons go inside the container. A panel edited in place stays a container
+  (`discord.NewMessageUpdateV2`): Discord lets a message take the Components V2 flag
+  on an edit but never drop it, so a record can turn into a panel and a panel cannot
+  turn back. Errors stay `core.Tell`, plain text.
 - A message cygnet posts as someone else (a bridge or a webhook) is their text. What
   cygnet adds to it, such as who it replies to, is a `-#` subtext line below it, never an
   embed: a webhook can't make a real Discord reply, and a box outweighs the message it
   annotates. When cygnet needs more than a line, it borrows `/help`'s colour identity and
   layout rather than inventing a new one.
-- Facts go in a code block grid (`status.readout`): the label column is the longest
-  label plus two spaces, a value wraps after a comma inside 28 columns, and a whole line
-  stays within 40. A 360 px phone fits only about 34 columns of code block, so a grid
-  read on phones keeps to 32 (`/help`'s command grid does). Anything that is not a short fact goes on a line below the block,
-  detail as `-#` subtext. A code block, because monospace lines up the same in every
-  client, where how embed fields wrap is up to the client.
-- **A log card** is what a bird posts to the server's log channel about something it
-  did, and every bird draws it with `ledger.Render`, so a channel holding several birds'
-  cards reads as one log. It is a card as above, its head `<emoji> **bird** · module`:
-  then the summary in the shared voice, who and where as mentions on one line, the
-  facts and changes as a grid (a change reads `from → to`), then `-#` lines for who
-  did it (or `automatic`), why, and what it follows from, then its buttons (undo,
-  open a sheet). A grid value never runs past the grid: items wrap after a comma, and
-  an item longer than a line wraps by words. A run of the same action by the same
-  actor is one card that edits itself as it grows (`ledger.Batcher`), headed with the
-  count and one line per entry, in the loudest mood among them. Moods add `danger`
-  for what cannot be undone. Every entry passes `ledger.Validate` in the bird's tests.
+- Facts are fields in a record and bold-label lines in a panel (`core.Readout`), and a
+  code block holds only what somebody copies: DESIGN.md's Facts.
+- **A log card** is drawn by `ledger.Render` and laid out as DESIGN.md's Log cards.
 - Numbers: `42 ms` with a space, one decimal under 10 ms. Durations use the two largest
   units: `45s`, `12m`, `3h 12m`, `2d 4h`. A value not measured yet says so, never `0`.
 - Command and option descriptions: lowercase, no full stop, what it does in a few words.

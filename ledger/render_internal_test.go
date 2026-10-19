@@ -1,37 +1,55 @@
 package ledger
 
 import (
-	"slices"
 	"strings"
 	"testing"
-	"unicode/utf8"
+
+	"github.com/disgoorg/disgo/discord"
 )
 
-func TestWrapFitsAndKeepsEverything(t *testing.T) {
+// A section's columns are spread evenly over whole rows of three and none
+// is dropped; a wide field follows its section.
+func TestGridSpreadsEvenlyAndKeepsEverything(t *testing.T) {
+	col := func(n string) discord.EmbedField { return field(n, "x") }
 	for _, tc := range []struct {
-		in   string
-		want []string
+		in   []string
+		want string
 	}{
-		{"short", []string{"short"}},
-		{"a, b, c", []string{"a, b, c"}},
-		// Items stay whole while one fits a line: a list reads by its items.
-		{"booster, a role above the bot, one more", []string{"booster,", "a role above the bot,", "one more"}},
-		{"alpha, beta, gamma, delta, epsilon, zeta", []string{"alpha, beta, gamma,", "delta, epsilon, zeta"}},
-		// An item longer than a line goes by words, a word longer by cuts.
-		{"one, an item far too long for a line", []string{"one, an item far too", "long for a line"}},
-		{strings.Repeat("x", 30), []string{strings.Repeat("x", 24), "xxxxxx"}},
+		{[]string{"a"}, "a _ _"},
+		{[]string{"a", "b"}, "a b _"},
+		{[]string{"a", "b", "c"}, "a b c"},
+		{[]string{"a", "b", "c", "d"}, "a b _ | c d _"},
+		{[]string{"a", "b", "c", "d", "e"}, "a b c | d e _"},
+		{[]string{"a", "b", "c", "d", "e", "f", "g"}, "a b c | d e _ | f g _"},
 	} {
-		got := wrap(tc.in, 25)
-		if !slices.Equal(got, tc.want) {
-			t.Errorf("wrap(%q) = %q, want %q", tc.in, got, tc.want)
+		var s []discord.EmbedField
+		for _, n := range tc.in {
+			s = append(s, col(n))
 		}
-		for _, l := range got {
-			if utf8.RuneCountInString(l) > 25 {
-				t.Errorf("%q: line %q runs past the grid", tc.in, l)
+		var rows []string
+		var row []string
+		for _, f := range grid(s) {
+			name := f.Name
+			if name == zwsp {
+				name = "_"
+			}
+			row = append(row, name)
+			if len(row) == columns {
+				rows = append(rows, strings.Join(row, " "))
+				row = nil
 			}
 		}
-		if strings.ReplaceAll(strings.Join(got, ""), " ", "") != strings.ReplaceAll(tc.in, " ", "") {
-			t.Errorf("%q lost text: %q", tc.in, got)
+		if got := strings.Join(rows, " | "); got != tc.want || len(row) != 0 {
+			t.Errorf("%d fields: got %q (+%v), want %q", len(tc.in), got, row, tc.want)
 		}
+	}
+	wide := field("long", strings.Repeat("y", columnWidth+1))
+	got := grid([]discord.EmbedField{col("a"), wide}, []discord.EmbedField{col("b")})
+	var names []string
+	for _, f := range got {
+		names = append(names, f.Name)
+	}
+	if strings.Join(names, ",") != strings.Join([]string{"a", zwsp, zwsp, "long", "b", zwsp, zwsp}, ",") {
+		t.Errorf("sections: %q", names)
 	}
 }

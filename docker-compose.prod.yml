@@ -15,6 +15,10 @@ services:
       - ALL
     env_file:
       - .env
+    # The read-only Docker proxy below, for checking a bird's container
+    # runs the image its CI signed (internal/hub/host.go).
+    environment:
+      CYGNET_DOCKER: ${CYGNET_DOCKER:-http://docker:2375}
     depends_on:
       postgres:
         condition: service_healthy
@@ -24,6 +28,7 @@ services:
     # published to the host. The other birds join the same network.
     networks:
       default:
+      dockerapi:
       fleet:
         aliases: [cygnet]
     restart: unless-stopped
@@ -73,6 +78,27 @@ services:
     restart: unless-stopped
     mem_limit: 128m
 
+  # What cygnet reads of the Docker daemon: the containers and images on
+  # this host, nothing else and nothing written (POST is off, and every
+  # section but CONTAINERS and IMAGES is closed). Only on dockerapi, an
+  # internal network with cygnet alone on it, so no bird reaches it.
+  docker:
+    image: tecnativa/docker-socket-proxy:v0.5.0@sha256:1f5038b54f06c3e18422902cf00ba21803d1c97805aae032e5e6673d532d3459
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1
+      POST: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - dockerapi
+    read_only: true
+    tmpfs:
+      - /run
+      - /tmp
+    restart: unless-stopped
+    mem_limit: 64m
+
 volumes:
   pgdata:
 
@@ -81,3 +107,5 @@ volumes:
 networks:
   fleet:
     external: true
+  dockerapi:
+    internal: true

@@ -199,8 +199,23 @@ func run(log *slog.Logger) error {
 			return err
 		}
 		h := hub.New(bots, log)
+		// A bird whose release key is pinned links only with its signed
+		// build; once any is pinned, only those get permissions granted.
+		keys, err := hub.ParseKeys(os.Getenv("CYGNET_BIRD_KEYS"))
+		if err != nil {
+			return err
+		}
+		h.Pin(keys)
+		// On her own host cygnet also checks a signed bird's container runs
+		// the image that was signed, through a proxy that only reads.
+		if v := os.Getenv("CYGNET_DOCKER"); v != "" {
+			h.Watch(hub.Docker{URL: v, Client: &http.Client{Timeout: 3 * time.Second}, Project: "cygnet", Network: "fleet"})
+		}
 		_, verb, _ := link.Target(perms.MissingMethod)
 		h.Serve(verb, func(ctx context.Context, caller string, body json.RawMessage) (any, error) {
+			if len(keys) > 0 && !h.TrustOf(caller).AtLeast(link.Signed) {
+				return nil, link.Err(link.Denied, "grants go to attested birds")
+			}
 			if p := prov.Load(); p != nil {
 				return p.Missing(ctx, caller, body)
 			}
@@ -228,6 +243,16 @@ func run(log *slog.Logger) error {
 				return nil, link.Err(link.Busy, "cygnet is starting")
 			})
 		}
+		// Whether cygnet is in a server, from her cache: what a bird leans
+		// on before it trusts an attested bird further there.
+		h.Serve(hub.HereVerb, hub.Here(func(g string) bool {
+			id, err := snowflake.Parse(g)
+			if err != nil || client == nil {
+				return false
+			}
+			_, ok := client.Caches.Guild(id)
+			return ok
+		}))
 		fleet = h
 		st.WithFleet(h.Fleet)
 		srv := &http.Server{Addr: env("CYGNET_HUB_ADDR", ":7700"), Handler: h, ReadHeaderTimeout: 5 * time.Second}

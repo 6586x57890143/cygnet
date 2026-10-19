@@ -34,10 +34,10 @@ func choose(t *testing.T, customID, user string, values ...string) (*events.Comp
 	return e, &got
 }
 
-// options is the values of the leave select on a report.
-func options(card discord.ContainerComponent) []string {
+// options is the values of the leave select under a report.
+func options(rows []discord.LayoutComponent) []string {
 	var out []string
-	for _, c := range card.Components {
+	for _, c := range rows {
 		if row, ok := c.(discord.ActionRowComponent); ok {
 			if menu, ok := row.Components[0].(discord.StringSelectMenuComponent); ok && menu.CustomID == leaveID {
 				for _, o := range menu.Options {
@@ -57,8 +57,7 @@ func TestLeave(t *testing.T) {
 	// to leave alone from now on.
 	drift(g)
 	m.check(ctx, g, guild, self)
-	card := g.posts(reports)[0].Components[0].(discord.ContainerComponent)
-	opts := options(card)
+	opts := options(g.posts(reports)[0].Components)
 	if len(opts) != 2 || !strings.Contains(say(g.posts(reports)[0]), "make the change again") {
 		t.Fatalf("options %v\n%s", opts, say(g.posts(reports)[0]))
 	}
@@ -73,7 +72,7 @@ func TestLeave(t *testing.T) {
 		t.Fatal(err)
 	}
 	reply := got[0].(discord.MessageCreate)
-	if reply.Flags&discord.MessageFlagEphemeral == 0 || !strings.Contains(say(reply), "leaves 1 change alone") {
+	if reply.Flags != discord.MessageFlagEphemeral || !strings.Contains(say(reply), "changes left alone\nleft: "+opts[0]) {
 		t.Fatal(say(reply))
 	}
 	if last := (*saved)[len(*saved)-1]; !slices.Equal(last.Leave, opts[:1]) {
@@ -90,7 +89,7 @@ func TestLeave(t *testing.T) {
 	// The same drift again: only what wasn't left alone is put back.
 	drift(g)
 	m.check(ctx, g, guild, self)
-	if text := say(g.posts(reports)[1]); !strings.Contains(text, "put back 1 change") || strings.Contains(text, opts[0]) {
+	if text := say(g.posts(reports)[1]); !strings.Contains(text, "put back: 1 change") || strings.Contains(text, opts[0]) {
 		t.Fatal(text)
 	}
 
@@ -136,12 +135,35 @@ func TestLeave(t *testing.T) {
 	}
 }
 
+// A plan's facts group its changes by what they do, the blocked ones under
+// can't, and a list too long for a field says how many it left out.
+func TestPlanFacts(t *testing.T) {
+	p := planned{l: flock, short: discord.PermissionManageRoles, changes: []change{
+		{kind: roleCreate, role: Role{Name: "mod"}},
+		{kind: roleColor, role: Role{Name: "bird"}},
+		{kind: remove, role: Role{Name: "old"}},
+		{kind: roleUpdate, role: Role{Name: "admin"}, fields: []string{"perms"}, blocked: "it's above cygnet's role"},
+	}}
+	got := p.facts()
+	want := [][2]string{{"adds", "role mod"}, {"changes", "role bird: colour"}, {"removes", "role old"}, {"can't", "role admin: perms: it's above cygnet's role"}, {"needs", names(discord.PermissionManageRoles)}}
+	if !slices.Equal(got, want) {
+		t.Fatalf("facts %q", got)
+	}
+	long := make([]string, 100)
+	for i := range long {
+		long[i] = strings.Repeat("x", 20)
+	}
+	if s := upTo1024(long); len(s) > 1024 || !strings.HasSuffix(s, "\nand 52 more") {
+		t.Fatalf("%d long, ends %q", len(s), s[len(s)-20:])
+	}
+}
+
 // A report with nothing to leave alone, such as a fresh start's removals,
 // gets no select.
 func TestLeavableNothing(t *testing.T) {
 	p := planned{l: flock, changes: []change{{kind: remove, id: snowflake.ID(1), name: "old"}}}
-	card := p.leavable(p.card("", false), "why")
-	if len(options(card)) != 0 || strings.Contains(coretest.Text("", []discord.LayoutComponent{card}), "why") {
+	r := p.leavable(p.drifted(Watch), "why")
+	if len(options(r.rows)) != 0 || r.embed.Footer.Text != "provision" {
 		t.Fatal("a removal was offered")
 	}
 }

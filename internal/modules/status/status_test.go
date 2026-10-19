@@ -84,20 +84,29 @@ func TestStatus(t *testing.T) {
 		color int
 		want  string
 	}{
-		{"no database", Probe{Granted: gateway.IntentGuilds}, nil, brand.ColorOK, "\ndatabase    not configured\n"},
-		{"database up", Probe{}, pinger{}, brand.ColorOK, "\ndatabase    0."},
-		{"database down", Probe{}, pinger{errors.New("refused")}, brand.ColorError, "```\n-# database: refused"},
-		{"gateway not measured", Probe{}, nil, brand.ColorOK, "\ngateway     not measured yet\n"},
-		{"module skipped", Probe{Skipped: []string{"whisper"}}, nil, brand.ColorWarn, "\nskipped     whisper\n"},
+		{"no database", Probe{Granted: gateway.IntentGuilds}, nil, brand.ColorOK, "\ndatabase: not configured\n"},
+		{"database up", Probe{}, pinger{}, brand.ColorOK, "\ndatabase: 0."},
+		{"database down", Probe{}, pinger{errors.New("refused")}, brand.ColorError, "\ndatabase: unreachable\n"},
+		{"database down", Probe{}, pinger{errors.New("refused")}, brand.ColorError, "\nfooter: status · database: refused"},
+		{"gateway not measured", Probe{}, nil, brand.ColorOK, "\ngateway: not measured yet\n"},
+		{"module skipped", Probe{Skipped: []string{"whisper"}}, nil, brand.ColorWarn, "\nskipped: whisper\n"},
 	}
 	for _, c := range cases {
 		m := New(func() Probe { return c.probe }, c.db, func() time.Duration { return 0 })
 		r := command(t, m, "status")
-		if len(r.Embeds) != 1 || len(r.Files) != 1 {
-			t.Fatalf("%s: want one embed with its icon file, got %+v", c.name, r)
+		if len(r.Embeds) != 1 || len(r.Files) != 2 {
+			t.Fatalf("%s: want one embed with its rule and icon files, got %+v", c.name, r)
 		}
-		if r.Embeds[0].Color != c.color || !strings.Contains(r.Embeds[0].Description, c.want) {
-			t.Errorf("%s: color %x, description %q", c.name, r.Embeds[0].Color, r.Embeds[0].Description)
+		e := r.Embeds[0]
+		got := "\n"
+		for _, f := range e.Fields {
+			got += f.Name + ": " + f.Value + "\n"
+		}
+		if e.Footer != nil {
+			got += "footer: " + e.Footer.Text
+		}
+		if e.Color != c.color || e.Description != "" || !strings.Contains(got, c.want) {
+			t.Errorf("%s: color %x, description %q, fields%s", c.name, e.Color, e.Description, got)
 		}
 	}
 }

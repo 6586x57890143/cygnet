@@ -420,7 +420,7 @@ func TestTree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	has(t, text, "**invite** · the tree", "joined      4 since cygnet watched", "by a link   3", "untraced    1", "left since  1",
+	has(t, text, "**invite** · the tree", "**joined** 4 since cygnet watched", "**by a link** 3", "**untraced** 1", "**left since** 1",
 		"<@5> brought <@11> · ~~<@13>~~\n<@11> brought <@14>\n-# untraced: <@12>\n")
 	if _, got, _ := press(t, m, "invite:3", as("50", false)); !strings.Contains(got, "invite:tree:3 ") {
 		t.Fatal("no tree button for an admin")

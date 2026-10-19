@@ -87,13 +87,13 @@ func (m *Module) ping(_ context.Context, e *events.ApplicationCommandInteraction
 	})
 }
 
-// status is a two-column readout in a code block: a monospace grid lines up
-// the same on every client, where how embed fields wrap is up to each
-// client. Anything that is not a short fact goes in a line below the block.
+// status is a record (DESIGN.md): how she's doing, then what she runs as,
+// each a section of fields, and what explains them (an error, a hint) in
+// the footer.
 func (m *Module) status(ctx context.Context, e *events.ApplicationCommandInteractionCreate) error {
 	p := m.probe()
 	color := brand.ColorOK
-	var rows [][2]string
+	var rows, runs [][2]string
 	var notes []string
 
 	rows = append(rows, [2]string{"gateway", gatewayMs(m.latency())})
@@ -107,25 +107,32 @@ func (m *Module) status(ctx context.Context, e *events.ApplicationCommandInterac
 		if err != nil {
 			color = brand.ColorError
 			rows = append(rows, [2]string{"database", "unreachable"})
-			notes = append(notes, "-# database: "+truncate(err.Error(), 200))
+			notes = append(notes, "database: "+truncate(err.Error(), 200))
 		} else {
 			rows = append(rows, [2]string{"database", ms(time.Since(start))})
 		}
 	}
-	rows = append(rows, [2]string{"fleet", fleet(m.fleet)})
 	rows = append(rows,
 		[2]string{"uptime", core.Duration(time.Since(m.started))},
+		[2]string{"fleet", fleet(m.fleet)},
+	)
+	runs = append(runs,
+		[2]string{"runtime", runtime.Version()},
+		[2]string{"build", core.Revision()},
 		[2]string{"intents", names(p.Identified)},
 		[2]string{"privileged", names(p.Granted & gateway.IntentsPrivileged)},
 	)
 	if len(p.Skipped) > 0 {
 		color = brand.ColorWarn
-		rows = append(rows, [2]string{"skipped", strings.Join(p.Skipped, ", ")})
+		runs = append(runs, [2]string{"skipped", strings.Join(p.Skipped, ", ")})
 		notes = append(notes, "skipped modules need an intent that is off in the developer portal")
 	}
-	rows = append(rows, [2]string{"runtime", runtime.Version()}, [2]string{"build", core.Revision()})
 
-	embed, files := brand.Embed(color, "status", core.Readout(rows)+strings.Join(notes, "\n"))
+	embed, files := brand.Embed(color, "status", "status", "")
+	embed.Fields = brand.Fields(rows, runs)
+	for _, n := range notes {
+		brand.Note(&embed, n)
+	}
 	return e.CreateMessage(discord.MessageCreate{
 		Embeds:          []discord.Embed{embed},
 		Files:           files,

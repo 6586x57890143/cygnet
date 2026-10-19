@@ -106,7 +106,7 @@ func Role(id string) Ref    { return Ref{Kind: RefRole, ID: id} }
 // Message is a message in channel.
 func Message(channel, message string) Ref { return Ref{Kind: RefMessage, ID: channel + "/" + message} }
 
-// Fact is one line of the card's grid: a short label and a plain value.
+// Fact is one line of the card: a short label and a plain value.
 // Values sit in a code block, where a mention shows as its raw ID, so who
 // and where belong in Subjects, never here.
 type Fact struct {
@@ -114,7 +114,7 @@ type Fact struct {
 	Value string `json:"value"`
 }
 
-// Change is one setting moved, shown in the grid as from and to.
+// Change is one setting moved, shown on its line as from and to.
 type Change struct {
 	Field string `json:"field"`
 	From  string `json:"from"`

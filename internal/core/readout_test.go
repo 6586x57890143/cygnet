@@ -5,18 +5,12 @@ import (
 	"time"
 )
 
-func TestReadoutIsAGrid(t *testing.T) {
+func TestReadoutIsFacts(t *testing.T) {
 	got := Readout([][2]string{
 		{"gateway", "42 ms"},
-		{"intents", "guilds, members, presences, guild messages, direct messages, message content"},
+		{"intents", "guilds, members, message content"},
 	})
-	want := "```\n" +
-		"gateway  42 ms\n" +
-		"intents  guilds, members, presences,\n" +
-		"         guild messages,\n" +
-		"         direct messages,\n" +
-		"         message content\n" +
-		"```\n"
+	want := "**gateway** 42 ms\n**intents** guilds, members, message content\n"
 	if got != want {
 		t.Errorf("readout:\n%s\nwant:\n%s", got, want)
 	}

@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/events"
@@ -211,8 +210,8 @@ func (m *Module) page(name string, guild *snowflake.ID, admin bool) (discord.Mes
 		} else {
 			body = append(body, discord.NewTextDisplay("-# no commands: it works on its own"))
 		}
-		// What the module is doing in this server, for its admins: facts as
-		// a grid, anything longer below it.
+		// What the module is doing in this server, for its admins: facts,
+		// then anything longer below them.
 		if rep, ok := en.mod.(core.Reporter); ok && admin && guild != nil {
 			if r := rep.Report(*guild); len(r.Rows)+len(r.Notes) > 0 {
 				text := "### status\n"
@@ -292,11 +291,15 @@ func (f *files) add(file *discord.File, url string) string {
 	return url
 }
 
-// grid is a module's commands as a code block grid (UX.md): the invocation,
-// then its options, and who may run it when that isn't everyone. A command
-// with subcommands is its own line with each subcommand a branch below it.
+// grid is a module's commands as facts (DESIGN.md): the invocation in
+// bold, then its options, and who may run it when that isn't everyone. A
+// subcommand is a line of its own under its full invocation, which is what
+// somebody types.
 func grid(cmds []core.Command) string {
-	var rows [][2]string
+	var lines []string
+	add := func(name, rest string) {
+		lines = append(lines, strings.TrimSuffix("**"+name+"** "+rest, " "))
+	}
 	for _, c := range cmds {
 		who := ""
 		switch c.Tier {
@@ -307,43 +310,21 @@ func grid(cmds []core.Command) string {
 		}
 		cr, ok := c.Create.(discord.SlashCommandCreate)
 		if !ok {
-			rows = append(rows, [2]string{c.Create.CommandName(), join("apps menu", who)})
+			add(c.Create.CommandName(), join("apps menu", who))
 			continue
 		}
-		var subs []discord.ApplicationCommandOptionSubCommand
+		subs := 0
 		for _, o := range cr.Options {
 			if s, ok := o.(discord.ApplicationCommandOptionSubCommand); ok {
-				subs = append(subs, s)
+				add("/"+cr.Name+" "+s.Name, join(names(s.Options), who))
+				subs++
 			}
 		}
-		if len(subs) == 0 {
-			rows = append(rows, [2]string{"/" + cr.Name, join(names(cr.Options), who)})
-			continue
-		}
-		rows = append(rows, [2]string{"/" + cr.Name, who})
-		for i, s := range subs {
-			branch := "├ "
-			if i == len(subs)-1 {
-				branch = "└ "
-			}
-			rows = append(rows, [2]string{branch + s.Name, names(s.Options)})
+		if subs == 0 {
+			add("/"+cr.Name, join(names(cr.Options), who))
 		}
 	}
-	width := 0
-	for _, r := range rows {
-		width = max(width, utf8.RuneCountInString(r[0]))
-	}
-	var b strings.Builder
-	b.WriteString("```\n")
-	for _, r := range rows {
-		if r[1] == "" {
-			b.WriteString(r[0] + "\n")
-			continue
-		}
-		b.WriteString(r[0] + strings.Repeat(" ", width+2-utf8.RuneCountInString(r[0])) + r[1] + "\n")
-	}
-	b.WriteString("```")
-	return b.String()
+	return strings.Join(lines, "\n")
 }
 
 func names(opts []discord.ApplicationCommandOption) string {

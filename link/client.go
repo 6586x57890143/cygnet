@@ -33,12 +33,18 @@ type Config struct {
 	Build string
 	// Inflight caps the calls this bot takes at once. 0 means 64.
 	Inflight int
-	Log      *slog.Logger
+	// Attest is this build's attestation, from its CI (DecodeAttestation),
+	// or nil for a build that has none.
+	Attest *Attestation
+	Log    *slog.Logger
 }
 
-// Call is an incoming call as a handler sees it. From is verified by cygnet.
+// Call is an incoming call as a handler sees it. From and Trust are
+// stamped by cygnet: From from the caller's token, Trust from how far she
+// checked its build.
 type Call struct {
 	ID, From, Method string
+	Trust            Trust
 	Body             json.RawMessage
 }
 
@@ -54,9 +60,10 @@ func (c Call) Bind(v any) error {
 }
 
 // Event is an event as a subscriber sees it. Method is "<bot>.<event>" and
-// From is the bot that emitted it, both stamped by cygnet.
+// From is the bot that emitted it, both stamped by cygnet, as is Trust.
 type Event struct {
 	From, Method string
+	Trust        Trust
 	Body         json.RawMessage
 }
 
@@ -151,7 +158,7 @@ func (c *Client) session(ctx context.Context) error {
 	}
 	slices.Sort(serves)
 	slices.Sort(subs)
-	hello, _ := json.Marshal(Hello{Build: c.cfg.Build, Serves: serves, Subscribes: subs, Inflight: c.cfg.Inflight})
+	hello, _ := json.Marshal(Hello{Build: c.cfg.Build, Serves: serves, Subscribes: subs, Inflight: c.cfg.Inflight, Attest: c.cfg.Attest})
 	if err := write(ctx, conn, Frame{V: V, Kind: KindHello, Body: hello}); err != nil {
 		return err
 	}
@@ -166,7 +173,7 @@ func (c *Client) session(ctx context.Context) error {
 	c.mu.Lock()
 	c.conn, c.name = conn, w.Name
 	c.mu.Unlock()
-	c.cfg.Log.Info("link up", "as", w.Name)
+	c.cfg.Log.Info("link up", "as", w.Name, "trust", string(w.Trust))
 	defer c.drop(conn)
 
 	// Leaving: goaway first, then close once cygnet has seen it.
@@ -196,7 +203,7 @@ func (c *Client) session(ctx context.Context) error {
 			go c.answer(ctx, conn, f)
 		case KindEvent:
 			if fn := c.on[f.Method]; fn != nil {
-				go fn(Event{From: f.From, Method: f.Method, Body: f.Body})
+				go fn(Event{From: f.From, Trust: f.Trust, Method: f.Method, Body: f.Body})
 			}
 		case KindGoaway:
 			return errors.New("link: cygnet is going away")
@@ -227,7 +234,7 @@ func (c *Client) answer(ctx context.Context, conn *websocket.Conn, f Frame) {
 		reply.Err = Err(Invalid, "no such method")
 	} else {
 		hctx, cancel := context.WithDeadline(ctx, time.UnixMilli(f.Deadline))
-		out, err := h(hctx, Call{ID: f.ID, From: f.From, Method: f.Method, Body: f.Body})
+		out, err := h(hctx, Call{ID: f.ID, From: f.From, Trust: f.Trust, Method: f.Method, Body: f.Body})
 		cancel()
 		var le *Error
 		switch {

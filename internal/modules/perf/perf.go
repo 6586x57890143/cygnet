@@ -1,8 +1,7 @@
 // Package perf is /perf: where cygnet spends her time, module by module and
 // stage by stage, from the Go runtime up to Discord's API. It reads what
-// internal/obs records and lays it out as a code block grid, slowest first,
-// each row with a bar scaled to the slowest so the outlier shows at a
-// glance.
+// internal/obs records and lays it out as a record, slowest first, each
+// stage with a bar scaled to the slowest so the outlier shows at a glance.
 //
 // The numbers are the whole process's, every server cygnet is in, so they say
 // how busy other servers keep her. /perf is BreakGlass: a server's own
@@ -63,7 +62,9 @@ func (m *Module) Commands() []core.Command {
 }
 
 func (m *Module) perf(_ context.Context, e *events.ApplicationCommandInteractionCreate) error {
-	embed, files := brand.Embed(brand.ColorInfo, "perf", m.readout())
+	embed, files := brand.Embed(brand.ColorInfo, "perf", "perf", "")
+	embed.Fields = brand.Fields(m.readout())
+	brand.Note(&embed, "since boot · in: gateway to dispatch · run: handler · wait: rate limit · http: round trip · build "+core.Revision())
 	return e.CreateMessage(discord.MessageCreate{
 		Embeds:          []discord.Embed{embed},
 		Files:           files,
@@ -72,44 +73,42 @@ func (m *Module) perf(_ context.Context, e *events.ApplicationCommandInteraction
 	})
 }
 
-// The grid's columns: label, bar, p99, p50, count. 16+5+7+7+5 is 40, the
-// line limit UX.md sets.
-const labelW, barW = 16, 5
+// labelW keeps a stage's key short enough for a column.
+const labelW = 16
 
-func (m *Module) readout() string {
+// readout is a record's facts (DESIGN.md) in two sections. The stages,
+// slowest first, each a line at full width: its p99 with a bar scaled to
+// the slowest, its p50 and how many calls. Then the go runtime's own
+// overhead, in columns.
+func (m *Module) readout() (stages, runtime [][2]string) {
 	rows := m.rec.Rows()
-	var b strings.Builder
-	b.WriteString("```\n")
-	fmt.Fprintf(&b, "%-*s%7s%7s%5s\n", labelW+barW, "", "p99", "p50", "n")
 	if len(rows) == 0 {
-		b.WriteString("nothing measured yet\n")
+		stages = append(stages, [2]string{"stages", "nothing measured yet"})
 	}
 	var slowest time.Duration
 	if len(rows) > 0 {
 		slowest = rows[0].P99
 	}
 	for _, r := range rows[:min(top, len(rows))] {
-		label := clip(r.Who, labelW-2-len(r.Stage.String())) + " " + r.Stage.String()
-		fmt.Fprintf(&b, "%-*s%-*s%7s%7s%5s\n", labelW, label, barW, bar(r.P99, slowest, barW-1), dur(r.P99), dur(r.P50), count(r.N))
+		label := clip(r.Who, labelW-1-len(r.Stage.String())) + " " + r.Stage.String()
+		stages = append(stages, [2]string{label, bar(r.P99, slowest) + " " + dur(r.P99) + " · p50 " + dur(r.P50) + " · " + count(r.N)})
 	}
 	sched, gc := m.runtime()
-	fmt.Fprintf(&b, "%s\n%-*s%7s\n%-*s%7s\n```\n", strings.Repeat("·", 40), labelW+barW, "go sched", dur(sched), labelW+barW, "go gc pause", dur(gc))
-	b.WriteString("-# since boot · in: gateway to dispatch · run: handler · wait: rate limit · http: round trip · build " + core.Revision())
-	return b.String()
+	return stages, [][2]string{{"go sched", dur(sched)}, {"go gc pause", dur(gc)}}
 }
 
-// bar is d against max as up to width cells of eighths, so two stages a
-// few percent apart still look apart.
-func bar(d, max time.Duration, width int) string {
-	if max <= 0 {
-		return ""
+// bar is d against max in five cells (DESIGN.md's bar), at least one for
+// anything measured.
+func bar(d, max time.Duration) string {
+	const width = 5
+	n := 0
+	if max > 0 {
+		n = int(int64(d) * width / int64(max))
 	}
-	eighths := int(int64(d) * int64(width*8) / int64(max))
-	if eighths == 0 && d > 0 {
-		eighths = 1
+	if n == 0 && d > 0 {
+		n = 1
 	}
-	parts := []rune(" ▏▎▍▌▋▊▉")
-	return strings.Repeat("█", eighths/8) + strings.TrimSpace(string(parts[eighths%8]))
+	return strings.Repeat("▰", n) + strings.Repeat("▱", width-n)
 }
 
 // dur is a duration the way UX.md writes numbers, down to microseconds.
