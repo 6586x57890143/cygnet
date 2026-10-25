@@ -34,15 +34,12 @@ const (
 	spans = 5
 	// pages is the most pages of TRON transfers one read follows.
 	pages = 5
-	// solanaPages is the most pages of Solana signatures one read follows
-	// back to its cursor: listing is cheap, and stopping short would leave
-	// a gap the cursor then jumps over. A backlog past it is refused, not
-	// skipped.
-	solanaPages = 100
-	// solanaReads is the most transactions one Solana read fetches. The
-	// cursor moves to the last one fetched, so a flood of junk to the
-	// wallet costs a few reads, never all of them.
-	solanaReads = 200
+	// solanaListPages is the most pages of Solana signatures one read lists,
+	// and solanaReads the most transactions it fetches. Past either it
+	// stops and saves how far it got (see Solana), so a flood of junk to
+	// the wallet slows reading down and never stops it.
+	solanaListPages = 10
+	solanaReads     = 50
 )
 
 // Transfer is one payment into a watched wallet: the transaction, its
@@ -356,23 +353,34 @@ func (r *Reader) Accounts(ctx context.Context, rail Rail, owner string) ([]strin
 }
 
 // Solana lists what arrived for owner on rail in account's finalized
-// transactions after the signature until, oldest first, and the signature
-// the next read resumes from: the last one it got through, at most
-// solanaReads on. A first read (until "") takes only transactions from
-// since on: an account opened by a payment is read from its first
-// transaction, an old wallet's history never. A transaction that fails to
-// read ends the read there; it is an error only if nothing came before it.
-func (r *Reader) Solana(ctx context.Context, rail Rail, owner, account, until string, since time.Time) ([]Transfer, string, error) {
+// transactions after the cursor, oldest first, and the cursor the next read
+// resumes from. A cursor is the last signature read through, or that and
+// "|" and a frontier: the oldest signature a listing too long for one read
+// reached, which the next read lists back from instead of from the newest.
+// So a backlog of any size shrinks every read, solanaListPages pages of
+// listing or solanaReads transactions at a time, and the cursor only ever
+// moves past what was read. A first read (until "") takes only
+// transactions from since on: an account opened by a payment is read from
+// its first transaction, an old wallet's history never. A call that fails
+// ends the read there; it is an error only if nothing came before it.
+func (r *Reader) Solana(ctx context.Context, rail Rail, owner, account, cursor string, since time.Time) ([]Transfer, string, error) {
 	endpoint := r.endpoint(rail)
 	type sig struct {
 		Signature string `json:"signature"`
 		Err       any    `json:"err"`
 		BlockTime *int64 `json:"blockTime"`
 	}
+	until, frontier, _ := strings.Cut(cursor, "|")
+	with := func(at, front string) string {
+		if front == "" {
+			return at
+		}
+		return at + "|" + front
+	}
 	var sigs []sig
-	before := ""
+	before := frontier
 	reached := false
-	for range solanaPages {
+	for range solanaListPages {
 		cfg := map[string]any{"limit": 1000, "commitment": "finalized"}
 		if until != "" {
 			cfg["until"] = until
@@ -382,7 +390,10 @@ func (r *Reader) Solana(ctx context.Context, rail Rail, owner, account, until st
 		}
 		var page []sig
 		if err := r.rpc(ctx, endpoint, "getSignaturesForAddress", []any{account, cfg}, &page); err != nil {
-			return nil, until, err
+			if len(sigs) == 0 {
+				return nil, cursor, err
+			}
+			return nil, with(until, before), nil
 		}
 		sigs = append(sigs, page...)
 		last := len(page) - 1
@@ -394,14 +405,19 @@ func (r *Reader) Solana(ctx context.Context, rail Rail, owner, account, until st
 		before = page[last].Signature
 	}
 	if !reached {
-		return nil, until, fmt.Errorf("solana: more than %d signatures since the last read", solanaPages*1000)
+		// Listing alone filled this read: the next goes on from here.
+		return nil, with(until, before), nil
 	}
 	var out []Transfer
-	at, fetched := until, 0
+	at, fetched, done := until, 0, true
 	// Oldest first, so what arrived is recorded in the order it came and the
 	// cursor only ever moves past what was read.
-	for i := len(sigs) - 1; i >= 0 && fetched < solanaReads; i-- {
+	for i := len(sigs) - 1; i >= 0; i-- {
 		s := sigs[i]
+		if fetched == solanaReads {
+			done = false
+			break
+		}
 		if s.Err != nil || (until == "" && (s.BlockTime == nil || time.Unix(*s.BlockTime, 0).Before(since))) {
 			at = s.Signature
 			continue
@@ -409,8 +425,9 @@ func (r *Reader) Solana(ctx context.Context, rail Rail, owner, account, until st
 		t, err := r.received(ctx, endpoint, rail, owner, s.Signature)
 		if err != nil {
 			if at == until {
-				return nil, until, err
+				return nil, cursor, err
 			}
+			done = false
 			break
 		}
 		fetched++
@@ -422,7 +439,12 @@ func (r *Reader) Solana(ctx context.Context, rail Rail, owner, account, until st
 			out = append(out, *t)
 		}
 	}
-	return out, at, nil
+	// Everything listed up to the frontier was read: the next read lists
+	// from the newest again. Otherwise it keeps the frontier.
+	if done {
+		return out, at, nil
+	}
+	return out, with(at, frontier), nil
 }
 
 // received is what owner gained on rail in the transaction sig, or nil if

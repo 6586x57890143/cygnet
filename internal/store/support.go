@@ -160,6 +160,19 @@ type Amount func(price int) (*big.Int, string, error)
 // once, the second try already all but always lands.
 const amountTries = 8
 
+// reusableQuery is the open checkout a quote hands back instead of a new
+// one: the same thing, with at least half its life left.
+const reusableQuery = "select " + invoiceCols + ` from support_invoice i left join support_period p on p.invoice = i.id
+	where i.user_id = $1 and i.months = $2 and i.cents = $3 and i.rail = $4 and i.state = 'open' and i.expires > $5
+	order by i.made desc limit 1`
+
+// Reusable is the checkout Quote would hand back for a without making a
+// new one, or ErrNoInvoice: asked first, so a quote that needs a price
+// reads one only when it will use it.
+func (s *Support) Reusable(ctx context.Context, a Ask, now time.Time, life time.Duration) (Invoice, error) {
+	return scanInvoice(s.pool.QueryRow(ctx, reusableQuery, int64(a.User), a.Months, a.Cents, a.Rail, now.Add(life/2)))
+}
+
 // Quote opens a checkout for a, priced from what is on offer, with an
 // amount from amount, good until life from now. Someone who already has a
 // live one for the same thing, with at least half its life left, gets that
@@ -190,9 +203,7 @@ func (s *Support) Quote(ctx context.Context, a Ask, now time.Time, life time.Dur
 	}
 	price := Plan{a.Months, worth}.Price(a.Cents)
 
-	same, err := scanInvoice(tx.QueryRow(ctx, "select "+invoiceCols+` from support_invoice i left join support_period p on p.invoice = i.id
-		where i.user_id = $1 and i.months = $2 and i.cents = $3 and i.rail = $4 and i.state = 'open' and i.expires > $5
-		order by i.made desc limit 1`, int64(a.User), a.Months, a.Cents, a.Rail, now.Add(life/2)))
+	same, err := scanInvoice(tx.QueryRow(ctx, reusableQuery, int64(a.User), a.Months, a.Cents, a.Rail, now.Add(life/2)))
 	switch {
 	case err == nil:
 		return same, tx.Commit(ctx)
@@ -517,6 +528,12 @@ func (s *Support) Cursor(ctx context.Context, key string, now time.Time) (Cursor
 // error.
 func (s *Support) Advance(ctx context.Context, key, at string, now time.Time) error {
 	_, err := s.pool.Exec(ctx, "update support_cursor set at = $2, read = $3, err = '' where key = $1", key, at, now)
+	return err
+}
+
+// Restart starts key's cursor again from since, forgetting where it was.
+func (s *Support) Restart(ctx context.Context, key string, since time.Time) error {
+	_, err := s.pool.Exec(ctx, "update support_cursor set at = '', since = $2 where key = $1", key, since)
 	return err
 }
 

@@ -145,7 +145,8 @@ export default {
       if (first === "privacy" && !second) return await privacy(env);
       if (first === "privacy" && second === "forget" && req.method === "POST") return await human(req, env, privacyPage(env), () => oauth(env, url, "forget", launches.silcord));
       if (first === "bird" && second && !third && req.method === "GET") return await birdArt(env, second);
-      if (first === "support") return await support(req, env, url, second, third);
+      // A launch registered under the name before /support existed keeps it.
+      if (first === "support" && !l) return await support(req, env, url, second, third);
       if (!first && req.method === "GET") return await home(env);
       if (!l) return new Response("nothing here", { status: 404, headers: secure(text) });
       if (second === undefined && req.method === "GET") return await landing(req, env, l);
@@ -316,9 +317,6 @@ async function serverOAuth(env: Env, url: URL, how: "add" | "invite", hash: stri
 // the way back home, since only the link itself names the server.
 const serverBack: Launch = { name: "", title: "cygnet", icon: "", line: "", minAgeDays: 30, server: true };
 
-// serverCallback is Discord sending the person back to take a server's
-// link: cygnet spends it and lets them in. Their token goes to cygnet only
-// for an add, and is revoked once she's done with it.
 // discordToken trades an OAuth code for a token, at the redirect every
 // sign-in comes back to.
 function discordToken(env: Env, url: URL, code: string): Promise<Response> {
@@ -342,6 +340,9 @@ function giveBack(env: Env, ctx: ExecutionContext, token: string): void {
 
 const basicAuth = (env: Env) => `Basic ${btoa(`${env.DISCORD_CLIENT_ID}:${env.DISCORD_CLIENT_SECRET}`)}`;
 
+// serverCallback is Discord sending the person back to take a server's
+// link: cygnet spends it and lets them in. Their token goes to cygnet only
+// for an add, and is revoked once she's done with it.
 async function serverCallback(env: Env, ctx: ExecutionContext, url: URL, how: string, nonce: string, hash: string): Promise<Response> {
   const hub = hubOf(env);
   if (!hub) return new Response("nothing here", { status: 404, headers: secure(text) });
@@ -681,9 +682,11 @@ async function admin(req: Request, env: Env, launch?: string, action?: string): 
   // picture, who may see its list, its stage and when it first opened.
   if (launch && !action && req.method === "PUT") {
     const b = await req.json<{ guild?: string; title?: string; icon?: string; admins?: string[]; stage?: string; opens?: number }>();
+    // A reserved name is refused only to a new launch: one registered under
+    // it before the name was reserved still takes its refreshes.
     const ok =
       /^[a-z0-9-]{2,32}$/.test(launch) &&
-      !reserved.includes(launch) &&
+      (!reserved.includes(launch) || !!(await s.launch(launch))) &&
       /^\d{17,20}$/.test(b.guild ?? "") &&
       typeof b.title === "string" && b.title.length > 0 && b.title.length <= 100 &&
       typeof b.icon === "string" && (b.icon === "" || b.icon.startsWith("https://cdn.discordapp.com/icons/")) &&

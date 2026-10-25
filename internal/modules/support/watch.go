@@ -79,9 +79,18 @@ func (m *Module) scan(ctx context.Context, r chain.Rail) error {
 		// account found later starts from then, not from when it was
 		// found: a wallet that never held the token gets its account from
 		// the first payment, which lands before the account can be listed.
+		// The rail's cursor keeps the wallet it watches. A different one
+		// starts from now, so its history before cygnet watched it is
+		// never taken for payments.
 		rc, err := m.store.Cursor(ctx, r.Key, m.now())
 		if err != nil {
 			return err
+		}
+		if rc.At != "" && rc.At != to {
+			rc.Since = m.now()
+			if err := m.store.Restart(ctx, r.Key, rc.Since); err != nil {
+				return err
+			}
 		}
 		accounts, err := m.reader.Accounts(ctx, r, to)
 		if err != nil {
@@ -98,18 +107,17 @@ func (m *Module) scan(ctx context.Context, r chain.Rail) error {
 		if err := m.store.ClearErrors(w, r.Key+":", keys); err != nil {
 			return err
 		}
-		// Anyone can open a token account the wallet owns, so each account
-		// is read on its own clock and the order turns every round: one
-		// flooded account can't keep the others from being read.
+		// Anyone can open a token account the wallet owns, so the accounts
+		// share the rail's clock in an order that turns every round: a
+		// flooded one slows the round down, never stops the others for
+		// good, and never holds up the other rails.
 		var errs []error
 		turn := int(m.rounds.Add(1))
 		for n := range accounts {
 			i := (n + turn) % len(accounts)
-			actx, cancel := context.WithTimeout(context.WithoutCancel(ctx), railTime)
-			err := m.cursor(actx, keys[i], rc.Since, func(c store.Cursor) ([]chain.Transfer, string, error) {
-				return m.reader.Solana(actx, r, to, accounts[i], c.At, c.Since)
+			err := m.cursor(ctx, keys[i], rc.Since, func(c store.Cursor) ([]chain.Transfer, string, error) {
+				return m.reader.Solana(ctx, r, to, accounts[i], c.At, c.Since)
 			}, r)
-			cancel()
 			if err != nil {
 				errs = append(errs, err)
 			}
@@ -117,7 +125,7 @@ func (m *Module) scan(ctx context.Context, r chain.Rail) error {
 		if err := errors.Join(errs...); err != nil {
 			return err
 		}
-		return m.store.Advance(w, r.Key, "", m.now())
+		return m.store.Advance(w, r.Key, to, m.now())
 	}
 	return fmt.Errorf("no reader for %s", r.Family)
 }
@@ -130,8 +138,13 @@ func (m *Module) cursor(ctx context.Context, key string, since time.Time, next f
 	if err != nil {
 		return err
 	}
+	// A reader that fails part way may still return what it read and how
+	// far (the EVM reader does, span by span): that is kept, and only then
+	// is the error reported, or a rail behind on a slow node would restart
+	// from the same block every round. A first read (no cursor yet) moves
+	// nothing on an error: its "how far" can be the zero it started from.
 	got, at, err := next(c)
-	if err != nil {
+	if err != nil && (c.At == "" || at == c.At) && len(got) == 0 {
 		return m.failed(ctx, key, err)
 	}
 	w, cancel := writes(ctx)
@@ -147,6 +160,14 @@ func (m *Module) cursor(ctx context.Context, key string, since time.Time, next f
 		case rec.New:
 			m.log.Info("a payment matched no checkout", "rail", r.Key, "tx", t.Tx, "amount", r.Format(t.Amount))
 		}
+	}
+	if err != nil {
+		if c.At != "" && at != c.At {
+			if aerr := m.store.Advance(w, key, at, m.now()); aerr != nil {
+				return aerr
+			}
+		}
+		return m.failed(ctx, key, err)
 	}
 	return m.store.Advance(w, key, at, m.now())
 }

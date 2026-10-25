@@ -222,7 +222,15 @@ test("the quiet check says when to stop", () => {
   assert.equal(checkSays({ ...checkout, state: "lapsed" }), 204);
   assert.equal(checkSays({ ...checkout, state: "paid" }), 200);
   assert.equal(checkSays({ ...checkout, state: "void" }), 410);
+  assert.equal(checkSays({ ...checkout, state: "lapsed", stale: true }), 410);
   assert.equal(checkSays(null), 410);
+});
+
+test("a SOL checkout whose price ran out offers nothing to pay", () => {
+  const html = render({ kind: "checkout", c: { ...checkout, state: "lapsed", stale: true, pay: undefined }, now });
+  assert.match(html, /price ran out/);
+  assert.doesNotMatch(html, /still counts/);
+  assert.doesNotMatch(html, new RegExp(checkout.to));
 });
 
 test("prices, dates and lists in the owner's words", () => {

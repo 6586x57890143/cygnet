@@ -44,6 +44,8 @@ export interface Checkout {
   expires: number;
   paid?: number;
   until?: number;
+  // stale is a SOL checkout whose price has run out: nothing sent now pays it.
+  stale?: boolean;
 }
 
 // Status is cygnet.supporter's answer.
@@ -256,6 +258,10 @@ function checkoutBody(c: Checkout, now: number): string {
       <dl class="facts"><dt>for</dt><dd>${what}</dd></dl>
       <a class="again" href="/support">back to the start</a>`;
   }
+  if (c.stale) {
+    return `<p class="note">this checkout's price ran out, so nothing sent now pays it. start a new one for a fresh price.</p>
+      <a class="again" href="/support">start again</a>`;
+  }
   if (c.state === "void") {
     return `<p class="note">this checkout closed without a payment. start a new one whenever you like.</p>
       <a class="again" href="/support">start again</a>`;
@@ -282,7 +288,7 @@ function checkoutBody(c: Checkout, now: number): string {
 // checkSays is what the checkout's quiet check answers: 204 while it
 // waits, 200 once paid, 410 once it can't be.
 export function checkSays(c: Checkout | null): number {
-  if (!c || c.state === "void") return 410;
+  if (!c || c.state === "void" || c.stale) return 410;
   return c.state === "paid" ? 200 : 204;
 }
 

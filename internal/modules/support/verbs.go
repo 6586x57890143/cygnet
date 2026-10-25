@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"math/big"
 	"strings"
 	"time"
@@ -35,9 +34,6 @@ const (
 	NoCheckout = "no_checkout"
 	NotYours   = "not_yours"
 )
-
-// errNoPrice is a quote that needed a price and got none.
-var errNoPrice = errors.New("no price")
 
 // Life is how long a checkout's amount holds: an hour on a stablecoin, 20
 // minutes where the price moves.
@@ -108,6 +104,9 @@ type Checkout struct {
 	Expires int64  `json:"expires"`
 	Paid    int64  `json:"paid,omitempty"`
 	Until   int64  `json:"until,omitempty"`
+	// Stale is a quoted checkout past its time and VolatileSlack: still
+	// lapsed, but nothing sent now pays it.
+	Stale bool `json:"stale,omitempty"`
 }
 
 // Status is someone's backing, for their page and for the birds. Times are
@@ -201,28 +200,29 @@ func (m *Module) quote(ctx context.Context, caller string, body json.RawMessage)
 	if !rail.Stable {
 		life = volatileLife
 	}
-	// The price is read only for a new checkout, and once for all its
-	// tries: one already open comes back without it, price feed down or not.
+	ask := store.Ask{User: user, Months: a.Months, Cents: a.Cents, Rail: rail.Key}
+	// A price is read only for a new checkout, and before the store's
+	// transaction, never inside it: one already open comes back without
+	// one, price feed down or not, and a slow feed holds no connection.
 	var usd *big.Rat
-	i, err := m.store.Quote(ctx, store.Ask{User: user, Months: a.Months, Cents: a.Cents, Rail: rail.Key}, m.now(), life, func(price int) (*big.Int, string, error) {
-		quote := ""
-		if !rail.Stable {
-			if usd == nil {
-				p, err := m.reader.USD(ctx, rail.Asset())
-				if err != nil {
-					return nil, "", fmt.Errorf("%w: %w", errNoPrice, err)
-				}
-				usd = p
-			}
-			quote = usd.FloatString(2)
+	quote := ""
+	if !rail.Stable {
+		if same, err := m.store.Reusable(ctx, ask, m.now(), life); err == nil {
+			return m.view(same), nil
+		} else if !errors.Is(err, store.ErrNoInvoice) {
+			return nil, err
 		}
+		if usd, err = m.price(ctx, rail.Asset()); err != nil {
+			m.log.Warn("quoting a checkout: no price", "rail", rail.Key, "err", err)
+			return nil, link.Err(link.Busy, "no price for "+rail.Asset()+" right now")
+		}
+		quote = usd.FloatString(2)
+	}
+	i, err := m.store.Quote(ctx, ask, m.now(), life, func(price int) (*big.Int, string, error) {
 		amount, err := rail.Pick(price, usd)
 		return amount, quote, err
 	})
 	switch {
-	case errors.Is(err, errNoPrice):
-		m.log.Warn("quoting a checkout: no price", "rail", rail.Key, "err", err)
-		return nil, link.Err(link.Busy, "no price for "+rail.Asset()+" right now")
 	case errors.Is(err, store.ErrNotOffered):
 		return nil, link.Err(link.Denied, NotOffered)
 	case errors.Is(err, store.ErrTooMany):
@@ -272,7 +272,8 @@ func (m *Module) view(i store.Invoice) Checkout {
 	// ponytail: the wallet is read from the environment, not kept on the
 	// checkout, so change one only with none open on it (the panel lists
 	// them); a checkout whose wallet is unset offers nowhere to pay.
-	if to != "" && (i.State == store.InvoiceOpen || i.State == store.InvoiceLapsed) {
+	c.Stale = i.Quote != "" && i.State == store.InvoiceLapsed && !m.now().Before(i.Expires.Add(store.VolatileSlack))
+	if to != "" && !c.Stale && (i.State == store.InvoiceOpen || i.State == store.InvoiceLapsed) {
 		c.Pay = rail.Pay(to, i.Amount, "back the birds", months(i.Months)+" of backing")
 	}
 	if !i.Paid.IsZero() {
@@ -320,4 +321,38 @@ func (m *Module) supporters(ctx context.Context, caller string, body json.RawMes
 		out = append(out, Backer{User: s.User.String(), Gold: s.Gold, Until: s.Until.UnixMilli()})
 	}
 	return map[string][]Backer{"supporters": out}, nil
+}
+
+// priceFor is how long a coin's price is reused across quotes: every SOL
+// quote in it reads the feed once, so a busy page can't hammer Coinbase.
+const priceFor = 30 * time.Second
+
+// price is asset's spot price, read at most every priceFor.
+func (m *Module) price(ctx context.Context, asset string) (*big.Rat, error) {
+	m.prices.Lock()
+	defer m.prices.Unlock()
+	if p, ok := m.prices.got[asset]; ok && m.now().Sub(p.at) < p.life {
+		return p.usd, p.err
+	}
+	usd, err := m.reader.USD(ctx, asset)
+	if m.prices.got == nil {
+		m.prices.got = map[string]spot{}
+	}
+	// A failed read is remembered briefly too, so quotes queued behind it
+	// during an outage don't each wait out their own.
+	life := priceFor
+	if err != nil {
+		life = priceFor / 3
+	}
+	m.prices.got[asset] = spot{usd, err, m.now(), life}
+	return usd, err
+}
+
+// spot is a price (or why there was none), when it was read and how long
+// it is good for.
+type spot struct {
+	usd  *big.Rat
+	err  error
+	at   time.Time
+	life time.Duration
 }

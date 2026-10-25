@@ -89,7 +89,12 @@ type Module struct {
 	watching sync.Once
 	// rounds counts reads, to turn the order Solana accounts are read in.
 	rounds atomic.Int64
-	cache  struct {
+	// prices is the spot prices quotes share (verbs.go).
+	prices struct {
+		sync.Mutex
+		got map[string]spot
+	}
+	cache struct {
 		sync.Mutex
 		owner   Owner
 		at      time.Time

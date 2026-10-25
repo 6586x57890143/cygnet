@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -249,6 +250,13 @@ func TestSOLIsQuotedAtTodaysPriceForTwentyMinutes(t *testing.T) {
 		t.Fatalf("sol checkout %+v", c)
 	}
 	up = false
+	// The price is shared for priceFor, and an open checkout comes back
+	// without one at all.
+	m.now = func() time.Time { return t0.Add(priceFor + time.Second) }
+	again, err := ask(t, m.quote, edgeBird, Ask{User: user.String(), Months: 1, Cents: 500, Rail: "solana:SOL"})
+	if err != nil || again.(Checkout).ID != c.ID {
+		t.Fatalf("the open checkout with the feed down: %+v %v", again, err)
+	}
 	if _, err := ask(t, m.quote, edgeBird, Ask{User: someone().String(), Months: 1, Cents: 500, Rail: "solana:SOL"}); err == nil {
 		t.Fatal("quoted SOL with no price")
 	} else if le, ok := errors.AsType[*link.Error](err); !ok || le.Code != link.Busy {
@@ -672,5 +680,91 @@ func TestTheModuleIsWellFormed(t *testing.T) {
 	}
 	if len(New(nil, nil, Wallets{EVM: evmWallet}, 9, 0, "", nil, nil).Offered()) != 2 {
 		t.Fatal("offered")
+	}
+}
+
+func TestAStaleSOLCheckoutOffersNothingToPay(t *testing.T) {
+	up := true
+	p := prices(t, &up)
+	m := running(t, Wallets{Solana: solanaWallet}, p.URL)
+	user := someone()
+	out, err := ask(t, m.quote, edgeBird, Ask{User: user.String(), Months: 1, Cents: 500, Rail: "solana:SOL"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	at := func(d time.Duration) Checkout {
+		m.now = func() time.Time { return t0.Add(d) }
+		if err := m.store.Sweep(ctx, m.now(), grace); err != nil {
+			t.Fatal(err)
+		}
+		c, err := ask(t, m.checkout, edgeBird, Ask{User: user.String(), ID: out.(Checkout).ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c.(Checkout)
+	}
+	if c := at(25 * time.Minute); c.Stale || c.Pay == "" {
+		t.Fatalf("lapsed inside the slack: %+v", c)
+	}
+	if c := at(35 * time.Minute); !c.Stale || c.Pay != "" {
+		t.Fatalf("past the slack: %+v", c)
+	}
+}
+
+func TestANewSolanaWalletIsReadOnlyFromNow(t *testing.T) {
+	node := solanaNode(t, big.NewInt(1), fmt.Sprint("sig", rand.Uint64()))
+	m := running(t, Wallets{Solana: solanaWallet}, node.URL)
+	ctx := context.Background()
+	rail, _ := chain.Find("solana:SOL")
+	if err := m.scan(ctx, rail); err != nil {
+		t.Fatal(err)
+	}
+	m.wallets.Solana = usdcAccount
+	m.now = func() time.Time { return t0.Add(time.Hour) }
+	if err := m.scan(ctx, rail); err != nil {
+		t.Fatal(err)
+	}
+	c, err := m.store.Cursor(ctx, rail.Key, t0)
+	if err != nil || c.At != usdcAccount || !c.Since.Equal(t0.Add(time.Hour)) {
+		t.Fatalf("after the wallet changed: %+v %v", c, err)
+	}
+}
+
+func TestAnEVMReadThatFailsPartWayKeepsWhatItRead(t *testing.T) {
+	base, _ := chain.Find("base:USDC")
+	head, logs := uint64(5000), 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Method string `json:"method"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		switch req.Method {
+		case "eth_blockNumber":
+			_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": 1, "result": fmt.Sprintf("0x%x", head)})
+		default:
+			logs++
+			if logs > 1 {
+				w.WriteHeader(http.StatusTooManyRequests)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": 1, "result": []any{}})
+		}
+	}))
+	t.Cleanup(srv.Close)
+	m := running(t, Wallets{EVM: evmWallet}, srv.URL)
+	ctx := context.Background()
+	if err := m.scan(ctx, base); err != nil { // starts at the head
+		t.Fatal(err)
+	}
+	start, _ := m.store.Cursor(ctx, base.Key, t0)
+	head += 3000
+	if err := m.scan(ctx, base); err == nil {
+		t.Fatal("a read that failed part way reported nothing")
+	}
+	c, _ := m.store.Cursor(ctx, base.Key, t0)
+	from, _ := strconv.ParseUint(start.At, 10, 64)
+	if c.At != strconv.FormatUint(from+1000, 10) || c.Err == "" {
+		t.Fatalf("cursor %+v, want one span on from %d and the error kept", c, from)
 	}
 }

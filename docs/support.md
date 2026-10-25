@@ -44,8 +44,14 @@ that amount pays exactly that checkout.
 - One person holds at most three live checkouts, lapsed ones included; asking again
   for the same thing returns the one they have.
 - Each rail is read on its own 30 second clock, so a slow or flooded one never holds
-  up the rest. A Solana read follows signatures all the way back to its cursor and
-  fetches at most 200 transactions, moving the cursor only past what it read.
+  up the rest; a rail's Solana accounts share it, in an order that turns every round.
+  A Solana read lists at most 10 pages of signatures and fetches at most 50
+  transactions, and saves how far it got either way, so a flood of junk slows reading
+  down and never stops it. What a read got before an error is kept.
+- A SOL checkout past its 10 minutes of slack stops showing where to pay and says to
+  start a new one, since nothing sent then pays it.
+- The Solana rail remembers which wallet it watches. A different wallet is read from
+  the moment it is set, never back through its history.
 - Anything that arrives and matches nothing (a wrong amount, a gift) is recorded all
   the same and listed on the keeper's `/support` panel with its transaction, for the
   keeper to sort out by hand with **give backing**.

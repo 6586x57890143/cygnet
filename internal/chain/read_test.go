@@ -385,3 +385,43 @@ func TestSolanaMovesItsCursorOnlyPastWhatItRead(t *testing.T) {
 		t.Fatalf("read %v, cursor %s, %v; want the cursor on n1, before the one that failed", got, at, err)
 	}
 }
+
+func TestASolanaBacklogTooLongToListIsListedOverSeveralReads(t *testing.T) {
+	usdc := rail(t, "solana:USDC")
+	// Twelve full pages of junk, then a short one: more than one read lists.
+	srv, _ := node(t, map[string]func([]json.RawMessage) any{
+		"getSignaturesForAddress": func(p []json.RawMessage) any {
+			var cfg map[string]any
+			_ = json.Unmarshal(p[1], &cfg)
+			k := 0
+			if b, _ := cfg["before"].(string); b != "" {
+				_, _ = fmt.Sscanf(b, "p%d-999", &k)
+				k++
+			}
+			n := 1000
+			if k == 12 {
+				n = 3
+			}
+			page := make([]any, n)
+			for i := range page {
+				page[i] = map[string]any{"signature": fmt.Sprintf("p%d-%d", k, i), "err": nil, "blockTime": 2000}
+			}
+			return page
+		},
+		"getTransaction": func([]json.RawMessage) any {
+			return map[string]any{"meta": map[string]any{"err": nil, "preBalances": []int{1}, "postBalances": []int{1}}, "transaction": map[string]any{"message": map[string]any{"accountKeys": []any{}}}}
+		},
+	})
+	r := &Reader{RPC: map[string]string{"solana": srv.URL}}
+	ctx := context.Background()
+	_, at, err := r.Solana(ctx, usdc, owner, account, "u", time.Unix(1000, 0))
+	if err != nil || at != "u|p9-999" {
+		t.Fatalf("first read: cursor %q, %v; want the frontier saved", at, err)
+	}
+	_, at, err = r.Solana(ctx, usdc, owner, account, at, time.Unix(1000, 0))
+	// Oldest first: the short page's 3, then page 11 from its oldest, 50 in
+	// all, keeping the frontier since the listing isn't read through yet.
+	if err != nil || at != "p11-953|p9-999" {
+		t.Fatalf("second read: cursor %q, %v", at, err)
+	}
+}
