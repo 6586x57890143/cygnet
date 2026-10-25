@@ -79,7 +79,7 @@ func newRouter(t *testing.T, sw Toggles, mods ...core.Module) *core.Router {
 	t.Helper()
 	var r *core.Router
 	h := New(func() []core.Module { return mods }, func(i discord.Interaction) bool { return r.Admin(i) }, sw)
-	r = core.NewRouter(0, func(snowflake.ID) (snowflake.ID, bool) { return 0, false }, slog.New(slog.DiscardHandler))
+	r = core.NewRouter(nil, func(snowflake.ID) (snowflake.ID, bool) { return 0, false }, slog.New(slog.DiscardHandler))
 	if err := r.Add(h); err != nil {
 		t.Fatal(err)
 	}
