@@ -23,6 +23,12 @@ what is cygnet's own. A lesson about how a surface reads goes in DESIGN.md's log
   run of one action into one live card. Shared code, not a service: each bird stores its
   own entries (`ledger.Store`, held to `ledgertest.Run`) and posts its own cards, so
   logging never waits on the hub. Not imported by anything in `link`.
+- `support/`: the supporter cards every bird posts, a module of its own on disgo alone
+  (`github.com/6586x57890143/cygnet/support`, tagged `support/vX.Y.Z`): the advert that
+  sends people to cygnet.lol/support and the welcome for a new supporter. It returns a
+  `Page` (head, body parts, footer, whether to lead with a banner) and the bird lays it
+  out in its own panel with its own art; icons and the owner's mention come in through
+  a `Brand`. It names no bird, so any of them can import it.
 - `internal/modules/*`: `status` (the reference), `perf`, `help`, `provision`, `launch`
   (the campaign, the Worker's verbs, sealed sign ins, the valve), `invite` (codes: the
   panel, redemption for cygnet.lol, attribution, the tree), `support` (backing the birds:
@@ -53,6 +59,7 @@ scripts/coverage.sh                    # race tests + 85% floor per internal/ pa
 scripts/prose.sh                       # no em dashes, ellipses or curly quotes
 go -C link vet ./... && go -C link test -race ./...   # the client module
 go -C ledger vet ./... && go -C ledger test -race ./...   # the log module
+go -C support vet ./... && go -C support test -race ./... # the supporter cards module
 go -C ledger test ./... -update -run TestRenderedCards     # rewrite the golden cards after a deliberate change
 go test ./internal/hub -run x -bench Call             # a call's round trip through the hub
 go run ./tools/hubbench                               # live: cygnet.ping through the running hub, as bird `bench`
