@@ -4,7 +4,11 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
   "workers_dev": false,
-  "routes": [{ "pattern": "cygnet.lol", "custom_domain": true }],
+  "routes": [
+    { "pattern": "cygnet.lol", "custom_domain": true },
+    // Backing the birds (src/index.ts, supportHost).
+    { "pattern": "support.cygnet.lol", "custom_domain": true }
+  ],
   "assets": { "directory": "./public" },
   // A sign up makes several D1 round trips: the Worker runs beside the
   // database, while the art is still served from the edge nearest the

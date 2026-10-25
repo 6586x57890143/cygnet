@@ -24,7 +24,7 @@ and picture, who may see its list, its stage and when it first opened).
 | `cygnet.admit` | someone a wave let in, added or given an invite only they can take |
 | `cygnet.leave`, `cygnet.mine`, `cygnet.forget` | off a list; everything kept about them; forgotten everywhere |
 | `cygnet.list`, `cygnet.lift` | the list and its holds, for the server's owner and the breakglass admin |
-| `cygnet.offer`, `cygnet.quote`, `cygnet.checkout` | backing the birds at `/support`: what's on offer, a checkout, and whether it's paid (docs/support.md) |
+| `cygnet.offer`, `cygnet.quote`, `cygnet.checkout` | backing the birds at `support.cygnet.lol`: what's on offer, a checkout, and whether it's paid (docs/support.md) |
 
 Each refusal is `denied` with a reason the Worker says in its own words. A join goes to
 cygnet first and the hashes are kept after; someone signed up here she doesn't know is
@@ -260,7 +260,7 @@ On the Cloudflare account that holds `cygnet.lol` (the free plan is enough):
    `npx wrangler secret put SCW_SECRET_KEY` again; until it's replaced, link emails fail
    and the page says it couldn't send.
 4. In the Discord developer portal, cygnet's app, OAuth2: add the redirect
-   `https://cygnet.lol/auth/discord`. Its application ID goes in `wrangler.jsonc` as
+   `https://cygnet.lol/auth/discord` and `https://support.cygnet.lol/auth/discord`. Its application ID goes in `wrangler.jsonc` as
    `DISCORD_CLIENT_ID`.
 5. The secrets, each typed in, never in a file: `npx wrangler secret put` for
    `DISCORD_CLIENT_SECRET`, `TURNSTILE_SECRET`, `SCW_SECRET_KEY`, `HMAC_KEY` and `ADMIN_TOKEN` (the last two

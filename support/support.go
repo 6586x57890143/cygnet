@@ -1,5 +1,5 @@
 // Package support is what every bird says about backing the birds: the
-// card that sends people to cygnet.lol/support, and the one that thanks a
+// card that sends people to support.cygnet.lol, and the one that thanks a
 // new supporter. It holds the words and the controls, never the layout: a
 // bird lays a Page out in its own panel (its head, its art, its rule), so
 // the cards look like the rest of that bird. Nothing here names a bird,
@@ -13,7 +13,7 @@ import (
 )
 
 // URL is where somebody backs the birds.
-const URL = "https://cygnet.lol/support"
+const URL = "https://support.cygnet.lol"
 
 // The icons a card asks its bird for, by key: one per perk and one per coin.
 const (
@@ -71,7 +71,7 @@ type Page struct {
 // Perk is one thing backing buys, as the advert lists it.
 type Perk struct{ Icon, Name, Line string }
 
-// Perks is what a supporter gets, the same four cygnet.lol/support lists.
+// Perks is what a supporter gets, the same four support.cygnet.lol lists.
 // None of them is a bot feature: nothing a bird does is ever locked behind
 // paying.
 var Perks = []Perk{
@@ -117,7 +117,7 @@ func Advert(b Brand) Page {
 			}, "\n")),
 			discord.ActionRowComponent{Components: []discord.InteractiveComponent{link("back the birds", b.button(IconBadge))}},
 		},
-		Footer: "cygnet.lol/support",
+		Footer: "support.cygnet.lol",
 	}
 }
 
@@ -137,7 +137,7 @@ func Welcome(b Brand, thanks string) Page {
 			}, "\n")),
 			discord.ActionRowComponent{Components: []discord.InteractiveComponent{link("back the birds too", b.button(IconBadge))}},
 		},
-		Footer: "cygnet.lol/support",
+		Footer: "support.cygnet.lol",
 	}
 }
 
