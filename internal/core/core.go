@@ -40,10 +40,18 @@ const (
 	tierUnset Tier = iota
 	Public
 	Admin
-	// BreakGlass is the bootstrap admin alone, in any server, for what
+	// BreakGlass is the bootstrap admins alone, in any server, for what
 	// spans every server cygnet is in. With no bootstrap set, nobody.
 	BreakGlass
 )
+
+// Admins is the bootstrap admins, CYGNET_BOOTSTRAP_ADMIN_USER_ID comma
+// separated: each holds the break glass. The first is the one a surface
+// names when it names one.
+type Admins []snowflake.ID
+
+// Has is whether id is one of them.
+func (a Admins) Has(id snowflake.ID) bool { return id != 0 && slices.Contains(a, id) }
 
 // Command is one top-level application command: a slash command, or a
 // message command (right-click, Apps). Run's ctx ends when Discord would
@@ -125,14 +133,14 @@ type Router struct {
 	// global is whether each create is user installed, so in the global list.
 	global    []bool
 	toggles   *Toggles
-	bootstrap snowflake.ID
+	bootstrap Admins
 	owner     func(guild snowflake.ID) (snowflake.ID, bool)
 	log       *slog.Logger
 }
 
-// NewRouter takes the bootstrap admin (0 for none) and a guild-owner lookup,
-// which in production is the guild cache.
-func NewRouter(bootstrap snowflake.ID, owner func(snowflake.ID) (snowflake.ID, bool), log *slog.Logger) *Router {
+// NewRouter takes the bootstrap admins (nil for none) and a guild-owner
+// lookup, which in production is the guild cache.
+func NewRouter(bootstrap Admins, owner func(snowflake.ID) (snowflake.ID, bool), log *slog.Logger) *Router {
 	return &Router{cmds: map[cmdKey]Command{}, modals: map[string]Modal{}, comps: map[string]Component{}, owners: map[any]string{}, bootstrap: bootstrap, owner: owner, log: log}
 }
 
@@ -430,9 +438,9 @@ func (r *Router) allowed(e discord.Interaction, t Tier) bool {
 	case Public:
 		return true
 	case BreakGlass:
-		return r.bootstrap != 0 && user == r.bootstrap
+		return r.bootstrap.Has(user)
 	}
-	if r.bootstrap != 0 && user == r.bootstrap {
+	if r.bootstrap.Has(user) {
 		return true
 	}
 	if m := e.Member(); m != nil && m.Permissions.Has(discord.PermissionAdministrator) {

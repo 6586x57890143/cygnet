@@ -91,7 +91,7 @@ func TestUserInstallFollowsTheCommands(t *testing.T) {
 		t.Fatal("UserInstalled reads the wrong types")
 	}
 
-	r := NewRouter(0, nil, nil)
+	r := NewRouter(nil, nil, nil)
 	r.Gate(NewToggles(nil, nil))
 	if err := r.Add(mod{[]Command{slash, guildOnly, message}}); err != nil {
 		t.Fatal(err)

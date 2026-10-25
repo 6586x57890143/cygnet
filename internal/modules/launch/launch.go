@@ -41,9 +41,9 @@ import (
 type Edge struct {
 	URL, Token string
 	Client     *http.Client
-	// Breakglass is cygnet's breakglass admin, who may see every launch's
+	// Breakglass is cygnet's breakglass admins, who may see every launch's
 	// list beside the server's owner.
-	Breakglass snowflake.ID
+	Breakglass []snowflake.ID
 }
 
 // The panel's custom IDs: "launch" redraws it, "launch:stage:<stage>" and
@@ -481,11 +481,11 @@ func ledger(v store.Verified) string {
 func (e *Edge) page(name string) string { return strings.TrimRight(e.URL, "/") + "/" + name }
 
 // admins is who may see a launch's list on the web: the server's owner,
-// and the breakglass admin.
+// and the breakglass admins.
 func (e *Edge) admins(g discord.Guild) []snowflake.ID {
 	var out []snowflake.ID
-	for _, id := range []snowflake.ID{g.OwnerID, e.Breakglass} {
-		if id != 0 {
+	for _, id := range append([]snowflake.ID{g.OwnerID}, e.Breakglass...) {
+		if id != 0 && !slices.Contains(out, id) {
 			out = append(out, id)
 		}
 	}

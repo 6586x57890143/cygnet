@@ -78,9 +78,9 @@ type Module struct {
 	// picture for the Worker's page.
 	owner   snowflake.ID
 	profile func(context.Context, snowflake.ID) (Owner, error)
-	// keeper is cygnet's bootstrap admin: who sees the takings and can
+	// keepers is cygnet's bootstrap admins: who see the takings and can
 	// give months.
-	keeper snowflake.ID
+	keepers []snowflake.ID
 	// page is the checkout at cygnet.lol, "" when there is none.
 	page string
 	log  *slog.Logger
@@ -104,11 +104,11 @@ type Module struct {
 
 // New is the module. s is nil without a database; wallets have been
 // Checked.
-func New(s *store.Support, r *chain.Reader, wallets Wallets, owner, keeper snowflake.ID, page string, profile func(context.Context, snowflake.ID) (Owner, error), log *slog.Logger) *Module {
+func New(s *store.Support, r *chain.Reader, wallets Wallets, owner snowflake.ID, keepers []snowflake.ID, page string, profile func(context.Context, snowflake.ID) (Owner, error), log *slog.Logger) *Module {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	return &Module{store: s, reader: r, wallets: wallets, owner: owner, keeper: keeper, page: page, profile: profile, log: log, now: time.Now}
+	return &Module{store: s, reader: r, wallets: wallets, owner: owner, keepers: keepers, page: page, profile: profile, log: log, now: time.Now}
 }
 
 func (*Module) Name() string { return "support" }
@@ -248,7 +248,7 @@ func (m *Module) click(ctx context.Context, e *events.ComponentInteractionCreate
 	return e.UpdateMessage(discord.NewMessageUpdateV2(card).WithAllowedMentions(core.NoPings()))
 }
 
-func (m *Module) isKeeper(user snowflake.ID) bool { return m.keeper != 0 && user == m.keeper }
+func (m *Module) isKeeper(user snowflake.ID) bool { return user != 0 && slices.Contains(m.keepers, user) }
 
 // giftForm asks whom to give backing and for how long.
 func giftForm(gold bool) discord.ModalCreate {

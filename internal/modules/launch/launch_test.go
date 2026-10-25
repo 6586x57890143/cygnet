@@ -115,7 +115,7 @@ func launches(t *testing.T) *store.Launches {
 func running(t *testing.T) (*Module, *worker) {
 	w := &worker{}
 	s := w.serve(t)
-	m := New(&Edge{URL: s.URL + "/", Token: "secret", Breakglass: 9}, launches(t), known, admin, nil)
+	m := New(&Edge{URL: s.URL + "/", Token: "secret", Breakglass: []snowflake.ID{9}}, launches(t), known, admin, nil)
 	m.now = func() time.Time { return t0 }
 	return m, w
 }

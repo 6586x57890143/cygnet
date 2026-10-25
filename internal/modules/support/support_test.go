@@ -69,7 +69,7 @@ func someone() snowflake.ID { return snowflake.ID(rand.Int64N(1<<62) + 1<<60) }
 func running(t *testing.T, w Wallets, node string) *Module {
 	t.Helper()
 	r := &chain.Reader{RPC: map[string]string{"base": node, "polygon": node, "solana": node, "tron": node}, Prices: node}
-	m := New(supports(t), r, w, 9, keeper, "https://support.cygnet.lol", func(context.Context, snowflake.ID) (Owner, error) {
+	m := New(supports(t), r, w, 9, []snowflake.ID{keeper}, "https://support.cygnet.lol", func(context.Context, snowflake.ID) (Owner, error) {
 		return Owner{Name: "steve", Avatar: "https://cdn.discordapp.com/embed/avatars/0.png"}, nil
 	}, nil)
 	m.now = func() time.Time { return t0 }
@@ -125,7 +125,7 @@ func TestOfferIsWhatCanBePaidAndWhoItGoesTo(t *testing.T) {
 	if _, err := ask(t, none.offer, edgeBird, nil); !denied(err, NoRails) {
 		t.Fatalf("no wallets: %v", err)
 	}
-	if _, err := ask(t, New(nil, nil, Wallets{EVM: evmWallet}, 9, 0, "", nil, nil).offer, edgeBird, nil); err == nil {
+	if _, err := ask(t, New(nil, nil, Wallets{EVM: evmWallet}, 9, nil, "", nil, nil).offer, edgeBird, nil); err == nil {
 		t.Fatal("an offer without a database")
 	}
 }
@@ -133,7 +133,7 @@ func TestOfferIsWhatCanBePaidAndWhoItGoesTo(t *testing.T) {
 func TestTheOwnersProfileIsReadHourlyAndSurvivesFailing(t *testing.T) {
 	calls := 0
 	fail := false
-	m := New(nil, nil, Wallets{}, 9, 0, "", func(context.Context, snowflake.ID) (Owner, error) {
+	m := New(nil, nil, Wallets{}, 9, nil, "", func(context.Context, snowflake.ID) (Owner, error) {
 		calls++
 		if fail {
 			return Owner{}, errors.New("discord is down")
@@ -652,7 +652,7 @@ func TestOnlyTheKeeperGivesBacking(t *testing.T) {
 }
 
 func TestWithoutADatabaseTheCommandSaysSo(t *testing.T) {
-	m := New(nil, nil, Wallets{}, 9, keeper, "", nil, nil)
+	m := New(nil, nil, Wallets{}, 9, []snowflake.ID{keeper}, "", nil, nil)
 	e, _ := coretest.Event(t, "support", nil)
 	if err := m.open(context.Background(), e); !errors.Is(err, errNoStore) {
 		t.Fatalf("open: %v", err)
@@ -667,8 +667,8 @@ func TestWithoutADatabaseTheCommandSaysSo(t *testing.T) {
 }
 
 func TestTheModuleIsWellFormed(t *testing.T) {
-	m := New(nil, nil, Wallets{}, 9, keeper, "", nil, nil)
-	r := core.NewRouter(keeper, func(snowflake.ID) (snowflake.ID, bool) { return 0, false }, nil)
+	m := New(nil, nil, Wallets{}, 9, []snowflake.ID{keeper}, "", nil, nil)
+	r := core.NewRouter(core.Admins{keeper}, func(snowflake.ID) (snowflake.ID, bool) { return 0, false }, nil)
 	if err := r.Add(m); err != nil {
 		t.Fatal(err)
 	}
@@ -678,7 +678,7 @@ func TestTheModuleIsWellFormed(t *testing.T) {
 	if months(1) != "1 month" || months(12) != "12 months" || day(t0) != "25 oct 2026" || clip("abcdef", 5) != "ab..." || clip("abc", 5) != "abc" {
 		t.Fatal("words")
 	}
-	if len(New(nil, nil, Wallets{EVM: evmWallet}, 9, 0, "", nil, nil).Offered()) != 2 {
+	if len(New(nil, nil, Wallets{EVM: evmWallet}, 9, nil, "", nil, nil).Offered()) != 2 {
 		t.Fatal("offered")
 	}
 }

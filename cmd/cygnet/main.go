@@ -84,13 +84,19 @@ func run(log *slog.Logger) error {
 	if token == "" {
 		return errors.New("DISCORD_BOT_TOKEN is not set")
 	}
-	var bootstrap snowflake.ID
-	if v := os.Getenv("CYGNET_BOOTSTRAP_ADMIN_USER_ID"); v != "" {
+	// The break glass: one ID or several, comma separated.
+	var bootstrap core.Admins
+	for _, v := range strings.Split(os.Getenv("CYGNET_BOOTSTRAP_ADMIN_USER_ID"), ",") {
+		if v = strings.TrimSpace(v); v == "" {
+			continue
+		}
 		id, err := snowflake.Parse(v)
 		if err != nil {
 			return fmt.Errorf("CYGNET_BOOTSTRAP_ADMIN_USER_ID: %w", err)
 		}
-		bootstrap = id
+		if !bootstrap.Has(id) {
+			bootstrap = append(bootstrap, id)
+		}
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -304,7 +310,7 @@ func run(log *slog.Logger) error {
 		defer func() { h.Close(); _ = srv.Shutdown(context.Background()) }()
 	}
 	prov.Store(provision.New(fleet, func() discord.Permissions { return core.Install(running).Permissions }, func(i discord.Interaction) bool { return router.Admin(i) }, g).Keep(kept, saveKept, log).Live(func() bool { return probe.Identified.Has(gateway.IntentGuildMembers) }))
-	lau.Store(launch.New(edge(), launches, func(id snowflake.ID) (discord.Guild, bool) {
+	lau.Store(launch.New(edge(bootstrap), launches, func(id snowflake.ID) (discord.Guild, bool) {
 		if client == nil {
 			return discord.Guild{}, false
 		}
@@ -553,15 +559,18 @@ func links() string {
 
 // supporters is the support module from the environment: the wallets
 // (CYGNET_SUPPORT_EVM, _TRON and _SOLANA, each optional), whose they are
-// (CYGNET_SUPPORT_OWNER, else the bootstrap admin), the nodes it reads
+// (CYGNET_SUPPORT_OWNER, else the first bootstrap admin), the nodes it reads
 // (CYGNET_RPC_<CHAIN> in place of a rail's public one, CYGNET_TRONGRID_KEY)
 // and the checkout at support.cygnet.lol, once the Worker can reach the hub.
-func supporters(s *store.Support, bootstrap snowflake.ID, profile func(context.Context, snowflake.ID) (support.Owner, error), log *slog.Logger) (*support.Module, error) {
+func supporters(s *store.Support, bootstrap core.Admins, profile func(context.Context, snowflake.ID) (support.Owner, error), log *slog.Logger) (*support.Module, error) {
 	w := support.Wallets{EVM: os.Getenv("CYGNET_SUPPORT_EVM"), Tron: os.Getenv("CYGNET_SUPPORT_TRON"), Solana: os.Getenv("CYGNET_SUPPORT_SOLANA")}
 	if err := w.Check(); err != nil {
 		return nil, fmt.Errorf("CYGNET_SUPPORT_*: %w", err)
 	}
-	owner := bootstrap
+	var owner snowflake.ID
+	if len(bootstrap) > 0 {
+		owner = bootstrap[0]
+	}
 	if v := os.Getenv("CYGNET_SUPPORT_OWNER"); v != "" {
 		id, err := snowflake.Parse(v)
 		if err != nil {
@@ -602,14 +611,10 @@ func (m members) Quiet() rest.Client      { return m.quiet }
 
 // edge is the Worker at cygnet.lol that /launch registers with,
 // if CYGNET_EDGE_URL and CYGNET_EDGE_TOKEN (the Worker's ADMIN_TOKEN) are set.
-func edge() *launch.Edge {
+func edge(bootstrap core.Admins) *launch.Edge {
 	u, t := os.Getenv("CYGNET_EDGE_URL"), os.Getenv("CYGNET_EDGE_TOKEN")
 	if u == "" || t == "" {
 		return nil
 	}
-	e := &launch.Edge{URL: u, Token: t}
-	if id, err := snowflake.Parse(os.Getenv("CYGNET_BOOTSTRAP_ADMIN_USER_ID")); err == nil {
-		e.Breakglass = id
-	}
-	return e
+	return &launch.Edge{URL: u, Token: t, Breakglass: bootstrap}
 }

@@ -147,7 +147,7 @@ Nothing is offered until a wallet is set: `/support` says backing opens soon.
    (one `0x` address takes Base and Polygon), `CYGNET_SUPPORT_SOLANA`,
    `CYGNET_SUPPORT_TRON`. A malformed one stops cygnet at boot rather than publishing
    somewhere nobody can spend from. They are whose `CYGNET_SUPPORT_OWNER` names (the
-   bootstrap admin when unset), whose name and picture the page shows.
+   first bootstrap admin when unset), whose name and picture the page shows.
 2. Public nodes rate limit: Base's own refuses log reads outright, so the defaults are
    publicnode's. For steady reads set a keyed endpoint per chain, `CYGNET_RPC_BASE`,
    `_POLYGON`, `_SOLANA`, and a TronGrid key, `CYGNET_TRONGRID_KEY`.
