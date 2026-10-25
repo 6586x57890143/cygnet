@@ -24,6 +24,7 @@ and picture, who may see its list, its stage and when it first opened).
 | `cygnet.admit` | someone a wave let in, added or given an invite only they can take |
 | `cygnet.leave`, `cygnet.mine`, `cygnet.forget` | off a list; everything kept about them; forgotten everywhere |
 | `cygnet.list`, `cygnet.lift` | the list and its holds, for the server's owner and the breakglass admin |
+| `cygnet.offer`, `cygnet.quote`, `cygnet.checkout` | backing the birds at `/support`: what's on offer, a checkout, and whether it's paid (docs/support.md) |
 
 Each refusal is `denied` with a reason the Worker says in its own words. A join goes to
 cygnet first and the hashes are kept after; someone signed up here she doesn't know is

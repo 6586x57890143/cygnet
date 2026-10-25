@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -28,6 +29,7 @@ import (
 	"github.com/disgoorg/snowflake/v2"
 
 	"github.com/6586x57890143/cygnet/internal/brand"
+	"github.com/6586x57890143/cygnet/internal/chain"
 	"github.com/6586x57890143/cygnet/internal/core"
 	"github.com/6586x57890143/cygnet/internal/guard"
 	"github.com/6586x57890143/cygnet/internal/hub"
@@ -38,6 +40,7 @@ import (
 	"github.com/6586x57890143/cygnet/internal/modules/perf"
 	"github.com/6586x57890143/cygnet/internal/modules/provision"
 	"github.com/6586x57890143/cygnet/internal/modules/status"
+	"github.com/6586x57890143/cygnet/internal/modules/support"
 	"github.com/6586x57890143/cygnet/internal/obs"
 	"github.com/6586x57890143/cygnet/internal/ratelimit"
 	"github.com/6586x57890143/cygnet/internal/store"
@@ -110,6 +113,8 @@ func run(log *slog.Logger) error {
 	var codes *store.Codes
 	// A launch's line and its ledger, too, keyed by CYGNET_LEDGER_KEY.
 	var launches *store.Launches
+	// Who backs the birds, and the checkouts and payments behind it.
+	var supports *store.Support
 	if dsn := os.Getenv("CYGNET_DATABASE_URL"); dsn != "" {
 		pool, err := store.Open(ctx, dsn)
 		if err != nil {
@@ -121,6 +126,7 @@ func run(log *slog.Logger) error {
 		}
 		db = pool
 		codes = store.NewCodes(pool)
+		supports = store.NewSupport(pool)
 		if key := os.Getenv("CYGNET_LEDGER_KEY"); len(key) >= 32 {
 			launches = store.NewLaunches(pool, []byte(key))
 		} else {
@@ -193,6 +199,22 @@ func run(log *slog.Logger) error {
 			}
 		}()
 	})}
+	// Backing the birds (docs/support.md): the wallets payments go to,
+	// checked so a typo fails here rather than publishing an address nobody
+	// can spend from, and who they belong to.
+	sup, err := supporters(supports, bootstrap, func(ctx context.Context, id snowflake.ID) (support.Owner, error) {
+		if client == nil {
+			return support.Owner{}, errors.New("not connected yet")
+		}
+		u, err := client.Rest.GetUser(id, rest.WithCtx(ctx))
+		if err != nil {
+			return support.Owner{}, err
+		}
+		return support.Owner{Name: u.EffectiveName(), Avatar: u.EffectiveAvatarURL()}, nil
+	}, log)
+	if err != nil {
+		return err
+	}
 	if v := os.Getenv("CYGNET_BOTS"); v != "" {
 		bots, err := hub.Parse(v)
 		if err != nil {
@@ -243,6 +265,22 @@ func run(log *slog.Logger) error {
 				return nil, link.Err(link.Busy, "cygnet is starting")
 			})
 		}
+		// cygnet.offer, cygnet.quote and cygnet.checkout for cygnet.lol's
+		// checkout; cygnet.supporter and cygnet.supporters for any bird.
+		for verb, fn := range sup.Verbs() {
+			if verb != "supporter" && verb != "supporters" {
+				h.Serve(verb, fn)
+				continue
+			}
+			// Who paid is payment-linked: only attested birds, and
+			// cygnet.lol, are told.
+			h.Serve(verb, func(ctx context.Context, caller string, body json.RawMessage) (any, error) {
+				if len(keys) > 0 && caller != "edge" && !h.TrustOf(caller).AtLeast(link.Signed) {
+					return nil, link.Err(link.Denied, "supporters are told only to attested birds")
+				}
+				return fn(ctx, caller, body)
+			})
+		}
 		// Whether cygnet is in a server, from her cache: what a bird leans
 		// on before it trusts an attested bird further there.
 		h.Serve(hub.HereVerb, hub.Here(func(g string) bool {
@@ -286,6 +324,7 @@ func run(log *slog.Logger) error {
 		perf.New(obs.Default),
 		prov.Load(),
 		lau.Load(),
+		sup,
 	}
 	if codes != nil {
 		// The member add carries a member's own token, so it goes through
@@ -510,6 +549,44 @@ func links() string {
 		return ""
 	}
 	return os.Getenv("CYGNET_EDGE_URL")
+}
+
+// supporters is the support module from the environment: the wallets
+// (CYGNET_SUPPORT_EVM, _TRON and _SOLANA, each optional), whose they are
+// (CYGNET_SUPPORT_OWNER, else the bootstrap admin), the nodes it reads
+// (CYGNET_RPC_<CHAIN> in place of a rail's public one, CYGNET_TRONGRID_KEY)
+// and the checkout at cygnet.lol, once the Worker can reach the hub.
+func supporters(s *store.Support, bootstrap snowflake.ID, profile func(context.Context, snowflake.ID) (support.Owner, error), log *slog.Logger) (*support.Module, error) {
+	w := support.Wallets{EVM: os.Getenv("CYGNET_SUPPORT_EVM"), Tron: os.Getenv("CYGNET_SUPPORT_TRON"), Solana: os.Getenv("CYGNET_SUPPORT_SOLANA")}
+	if err := w.Check(); err != nil {
+		return nil, fmt.Errorf("CYGNET_SUPPORT_*: %w", err)
+	}
+	owner := bootstrap
+	if v := os.Getenv("CYGNET_SUPPORT_OWNER"); v != "" {
+		id, err := snowflake.Parse(v)
+		if err != nil {
+			return nil, fmt.Errorf("CYGNET_SUPPORT_OWNER: %w", err)
+		}
+		owner = id
+	}
+	if owner == 0 && w != (support.Wallets{}) {
+		return nil, errors.New("CYGNET_SUPPORT_* is set but not whose it is: set CYGNET_SUPPORT_OWNER or CYGNET_BOOTSTRAP_ADMIN_USER_ID")
+	}
+	r := &chain.Reader{RPC: map[string]string{}, TronKey: os.Getenv("CYGNET_TRONGRID_KEY")}
+	for _, rail := range chain.Rails {
+		if v := os.Getenv("CYGNET_RPC_" + strings.ToUpper(rail.Chain)); v != "" {
+			r.RPC[rail.Chain] = v
+		}
+	}
+	page := ""
+	if u := links(); u != "" {
+		page = strings.TrimRight(u, "/") + "/support"
+	}
+	m := support.New(s, r, w, owner, bootstrap, page, profile, log)
+	if rails := m.Offered(); len(rails) > 0 {
+		log.Info("supporters can pay", "rails", rails, "checkout", page)
+	}
+	return m, nil
 }
 
 // members is Discord as /invite reaches it: the guild cache, the bot's

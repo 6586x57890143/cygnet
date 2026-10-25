@@ -195,6 +195,11 @@ func TestName(t *testing.T) {
 		t.Fatalf("a stage before a page: %s", text)
 	}
 
+	for _, own := range Reserved {
+		if _, err := submit(t, m, own, &g); err == nil || !strings.Contains(err.Error(), "the site's own pages") {
+			t.Fatalf("naming a launch %s: %v", own, err)
+		}
+	}
 	text, err = submit(t, m, " Silcord ", &g)
 	if err != nil || !strings.Contains(text, "**silcord** has its page") || !strings.Contains(text, "/silcord") || !strings.Contains(text, "ledger    ✓ 0 entries") {
 		t.Fatalf("%v: %s", err, text)

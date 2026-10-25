@@ -31,11 +31,13 @@ import {
   type Launch,
   type Stage,
   isPNG,
+  reserved,
 } from "./signup.ts";
 import { Store, type DB, type Hashes } from "./store.ts";
 import { call, hubOf, type CodeInfo, type ListRow, type Place, type Redeemed, type Reply } from "./hub.ts";
 import { sealed } from "./seal.ts";
 import { automatic, proof, type Letter } from "./mail.ts";
+import { checkSays, supportDocument, supportPage, type Checkout, type Offer, type Status, type SupportView } from "./support.ts";
 
 interface Env {
   DB: D1Database;
@@ -65,7 +67,7 @@ interface Env {
   CYGNET_SEAL_PUBLIC?: string;
 }
 
-type Purpose = "join" | "issue" | "redeem" | "list" | "server" | "admit" | "forget";
+type Purpose = "join" | "issue" | "redeem" | "list" | "server" | "admit" | "forget" | "support";
 
 const api = "https://discord.com/api/v10";
 // stay is how long the page remembers who you are.
@@ -114,6 +116,10 @@ const say = {
   full: "youre in as many servers as discord allows\nleave one and try again",
   unready: "this server isnt ready for new people yet\nwe told its admins so try again a bit later",
   notYet: "your turn hasnt come yet\nyour page says when it does",
+  noCheckout: "that checkout isnt yours or its gone\nstart again from the support page",
+  tooManyCheckouts: "you have several checkouts waiting already\nfinish one or wait for them to close",
+  notOnOffer: "thats not something on offer\npick again",
+  noPrice: "the price or the chain didnt answer\ntry again in a minute",
 };
 
 // denied is what a server's link refused for, in a person's words: the
@@ -139,6 +145,7 @@ export default {
       if (first === "privacy" && !second) return await privacy(env);
       if (first === "privacy" && second === "forget" && req.method === "POST") return await human(req, env, privacyPage(env), () => oauth(env, url, "forget", launches.silcord));
       if (first === "bird" && second && !third && req.method === "GET") return await birdArt(env, second);
+      if (first === "support") return await support(req, env, url, second, third);
       if (!first && req.method === "GET") return await home(env);
       if (!l) return new Response("nothing here", { status: 404, headers: secure(text) });
       if (second === undefined && req.method === "GET") return await landing(req, env, l);
@@ -216,7 +223,7 @@ async function oauth(env: Env, url: URL, purpose: Purpose, l: Launch, invite = "
     response_type: "code",
     redirect_uri: `https://${url.host}/auth/discord`,
     // The list needs only who you are; everything else needs your email.
-    scope: purpose === "list" || purpose === "forget" ? "identify" : purpose === "admit" ? (invite === "add" ? "identify guilds.join" : "identify") : invite === "seal" ? "identify email guilds.join" : "identify email",
+    scope: purpose === "list" || purpose === "forget" || purpose === "support" ? "identify" : purpose === "admit" ? (invite === "add" ? "identify guilds.join" : "identify") : invite === "seal" ? "identify email guilds.join" : "identify email",
     state: nonce,
     prompt: "none",
   }).toString();
@@ -312,18 +319,36 @@ const serverBack: Launch = { name: "", title: "cygnet", icon: "", line: "", minA
 // serverCallback is Discord sending the person back to take a server's
 // link: cygnet spends it and lets them in. Their token goes to cygnet only
 // for an add, and is revoked once she's done with it.
+// discordToken trades an OAuth code for a token, at the redirect every
+// sign-in comes back to.
+function discordToken(env: Env, url: URL, code: string): Promise<Response> {
+  return fetch(`${api}/oauth2/token`, {
+    method: "POST",
+    headers: { authorization: basicAuth(env), "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "authorization_code", code, redirect_uri: `https://${url.host}/auth/discord` }),
+  });
+}
+
+// giveBack revokes a token once the response is on its way.
+function giveBack(env: Env, ctx: ExecutionContext, token: string): void {
+  ctx.waitUntil(
+    fetch(`${api}/oauth2/token/revoke`, {
+      method: "POST",
+      headers: { authorization: basicAuth(env), "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ token, token_type_hint: "access_token" }),
+    }),
+  );
+}
+
+const basicAuth = (env: Env) => `Basic ${btoa(`${env.DISCORD_CLIENT_ID}:${env.DISCORD_CLIENT_SECRET}`)}`;
+
 async function serverCallback(env: Env, ctx: ExecutionContext, url: URL, how: string, nonce: string, hash: string): Promise<Response> {
   const hub = hubOf(env);
   if (!hub) return new Response("nothing here", { status: 404, headers: secure(text) });
   if (!nonce || !same(nonce, url.searchParams.get("state") ?? "")) return html(env, serverBack, { kind: "error", why: say.elsewhere }, 400);
   const code = url.searchParams.get("code");
   if (!code) return new Response(null, { status: 303, headers: secure({ location: "/" }) });
-  const basic = `Basic ${btoa(`${env.DISCORD_CLIENT_ID}:${env.DISCORD_CLIENT_SECRET}`)}`;
-  const grant = await fetch(`${api}/oauth2/token`, {
-    method: "POST",
-    headers: { authorization: basic, "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ grant_type: "authorization_code", code, redirect_uri: `https://${url.host}/auth/discord` }),
-  });
+  const grant = await discordToken(env, url, code);
   if (!grant.ok) return html(env, serverBack, { kind: "error", why: say.discordNo }, 502);
   const { access_token } = await grant.json<{ access_token: string }>();
   try {
@@ -335,13 +360,7 @@ async function serverCallback(env: Env, ctx: ExecutionContext, url: URL, how: st
     const to = r.body.invite ? `https://discord.gg/${encodeURIComponent(r.body.invite)}` : `https://discord.com/channels/${encodeURIComponent(r.body.guild)}`;
     return new Response(null, { status: 303, headers: secure({ location: to, "set-cookie": cookie("cy_state", "", 0) }) });
   } finally {
-    ctx.waitUntil(
-      fetch(`${api}/oauth2/token/revoke`, {
-        method: "POST",
-        headers: { authorization: basic, "content-type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ token: access_token, token_type_hint: "access_token" }),
-      }),
-    );
+    giveBack(env, ctx, access_token);
   }
 }
 
@@ -349,18 +368,14 @@ async function callback(req: Request, env: Env, ctx: ExecutionContext, url: URL)
   const state = (await unsign(env, read(req, "cy_state")))?.split(".") ?? [];
   const [purpose, launch, nonce, invite] = state as [Purpose, string, string, string];
   if (purpose === "server") return serverCallback(env, ctx, url, launch, nonce, invite);
+  if (purpose === "support") return supportCallback(env, ctx, url, nonce);
   const l = launch ? await store(env).launch(launch) : undefined;
   if (!l) return new Response("nothing here", { status: 404, headers: secure(text) });
   if (!nonce || !same(nonce, url.searchParams.get("state") ?? "")) return html(env, l, { kind: "error", why: say.elsewhere }, 400);
   const code = url.searchParams.get("code");
   if (!code) return back(l);
 
-  const basic = `Basic ${btoa(`${env.DISCORD_CLIENT_ID}:${env.DISCORD_CLIENT_SECRET}`)}`;
-  const grant = await fetch(`${api}/oauth2/token`, {
-    method: "POST",
-    headers: { authorization: basic, "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ grant_type: "authorization_code", code, redirect_uri: `https://${url.host}/auth/discord` }),
-  });
+  const grant = await discordToken(env, url, code);
   if (!grant.ok) return html(env, l, { kind: "error", why: say.discordNo }, 502);
   const { access_token, refresh_token, scope } = await grant.json<{ access_token: string; refresh_token?: string; scope?: string }>();
   const me = await fetch(`${api}/users/@me`, { headers: { authorization: `Bearer ${access_token}` } });
@@ -368,14 +383,7 @@ async function callback(req: Request, env: Env, ctx: ExecutionContext, url: URL)
   // except one sealed to her for someone who asked to be added when it
   // opens. Revoking either token ends the whole grant, so that one isn't.
   const sealing = purpose === "join" && invite === "seal" && !!refresh_token && !!env.CYGNET_SEAL_PUBLIC && (scope ?? "").split(" ").includes("guilds.join");
-  const revoke = () =>
-    ctx.waitUntil(
-      fetch(`${api}/oauth2/token/revoke`, {
-        method: "POST",
-        headers: { authorization: basic, "content-type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ token: access_token, token_type_hint: "access_token" }),
-      }),
-    );
+  const revoke = () => giveBack(env, ctx, access_token);
   // A way in's token goes to cygnet first, and is given back after.
   if (!sealing && purpose !== "admit") revoke();
   if (!me.ok) {
@@ -675,6 +683,7 @@ async function admin(req: Request, env: Env, launch?: string, action?: string): 
     const b = await req.json<{ guild?: string; title?: string; icon?: string; admins?: string[]; stage?: string; opens?: number }>();
     const ok =
       /^[a-z0-9-]{2,32}$/.test(launch) &&
+      !reserved.includes(launch) &&
       /^\d{17,20}$/.test(b.guild ?? "") &&
       typeof b.title === "string" && b.title.length > 0 && b.title.length <= 100 &&
       typeof b.icon === "string" && (b.icon === "" || b.icon.startsWith("https://cdn.discordapp.com/icons/")) &&
@@ -686,6 +695,102 @@ async function admin(req: Request, env: Env, launch?: string, action?: string): 
     return kept ? json({ launch, page: `/${launch}` }) : new Response("that name is another server's", { status: 409, headers: secure(text) });
   }
   return new Response("not allowed", { status: 405, headers: secure(text) });
+}
+
+// support is backing the birds (src/support.ts): the owner's letter and
+// its sign in at /support, a checkout's choices once signed in, and the
+// checkout at /support/<id>, which checks itself until it's paid. cygnet
+// keeps all of it; this only asks her.
+async function support(req: Request, env: Env, url: URL, second?: string, third?: string): Promise<Response> {
+  if (!hubOf(env) || third !== undefined) return new Response("nothing here", { status: 404, headers: secure(text) });
+  if (second === undefined && req.method === "GET") return supportHome(req, env);
+  if (req.method === "POST") {
+    if (second === "in") return human(req, env, supportPage, () => oauth(env, url, "support", supportPage));
+    if (second === "quote") return supportQuote(req, env);
+    if (second === "out") return new Response(null, { status: 303, headers: secure({ location: "/support", "set-cookie": cookie("cy_support", "", 0) }) });
+  }
+  if (second && /^[a-z2-7]{26}$/.test(second) && req.method === "GET") return checkoutPage(req, env, url, second);
+  return new Response("not allowed", { status: 405, headers: secure(text) });
+}
+
+async function supportHome(req: Request, env: Env): Promise<Response> {
+  const user = await backer(req, env);
+  const o = await ask<Offer>(env, "cygnet.offer", {});
+  // Nothing on offer (no wallet set yet) is a page that says so, not an
+  // error.
+  if (!o.ok && !refused(o, "no_rails")) return html(env, supportPage, { kind: "error", why: say.broke }, 502);
+  let status: Status | null = null;
+  if (o.ok && user) {
+    const s = await ask<Status>(env, "cygnet.supporter", { user });
+    if (s.ok) status = s.body;
+  }
+  return supportHtml(env, { kind: "support", offer: o.ok ? o.body : null, status, signedIn: o.ok && !!user });
+}
+
+// supportQuote opens a checkout for whoever is signed in. Their cookie is
+// SameSite=Lax, so another site's form can't open one for them.
+async function supportQuote(req: Request, env: Env): Promise<Response> {
+  const user = await backer(req, env);
+  if (!user) return new Response(null, { status: 303, headers: secure({ location: "/support" }) });
+  const form = await req.formData();
+  const months = Number(form.get("months"));
+  const cents = Number(form.get("cents"));
+  const rail = String(form.get("rail") ?? "");
+  if (!Number.isInteger(months) || !Number.isInteger(cents) || !/^[a-z]{2,16}:[A-Z]{2,8}$/.test(rail)) return html(env, supportPage, { kind: "error", why: say.notOnOffer }, 400);
+  const r = await ask<Checkout>(env, "cygnet.quote", { user, months, cents, rail });
+  if (refused(r, "too_many")) return html(env, supportPage, { kind: "error", why: say.tooManyCheckouts }, 429);
+  if (refused(r, "not_offered")) return html(env, supportPage, { kind: "error", why: say.notOnOffer }, 400);
+  if (!r.ok) return html(env, supportPage, { kind: "error", why: r.code === "busy" ? say.noPrice : say.broke }, r.code === "busy" ? 503 : 502);
+  return new Response(null, { status: 303, headers: secure({ location: `/support/${r.body.id}` }) });
+}
+
+// checkoutPage is a checkout, for the person who opened it. ?check is
+// app.js asking quietly whether it's paid yet (support.ts, checkSays).
+async function checkoutPage(req: Request, env: Env, url: URL, id: string): Promise<Response> {
+  const user = await backer(req, env);
+  const check = url.searchParams.has("check");
+  const quiet = (status: number) => new Response(null, { status, headers: secure({ "cache-control": "no-store" }) });
+  if (!user) return check ? quiet(410) : new Response(null, { status: 303, headers: secure({ location: "/support" }) });
+  const r = await ask<Checkout>(env, "cygnet.checkout", { user, id });
+  const gone = refused(r, "no_checkout", "not_yours");
+  if (check) return quiet(r.ok ? checkSays(r.body) : gone ? 410 : 503);
+  if (gone) return html(env, supportPage, { kind: "error", why: say.noCheckout }, 404);
+  if (!r.ok) return html(env, supportPage, { kind: "error", why: say.broke }, 502);
+  return supportHtml(env, { kind: "checkout", c: r.body, now: Date.now() });
+}
+
+// supportCallback is Discord sending someone back from signing in to back
+// the birds: who they are is read, their token given back at once, and a
+// cookie remembers them for a week.
+async function supportCallback(env: Env, ctx: ExecutionContext, url: URL, nonce: string): Promise<Response> {
+  if (!nonce || !same(nonce, url.searchParams.get("state") ?? "")) return html(env, supportPage, { kind: "error", why: say.elsewhere }, 400);
+  const code = url.searchParams.get("code");
+  if (!code) return new Response(null, { status: 303, headers: secure({ location: "/support" }) });
+  const grant = await discordToken(env, url, code);
+  if (!grant.ok) return html(env, supportPage, { kind: "error", why: say.discordNo }, 502);
+  const { access_token } = await grant.json<{ access_token: string }>();
+  try {
+    const me = await fetch(`${api}/users/@me`, { headers: { authorization: `Bearer ${access_token}` } });
+    if (!me.ok) return html(env, supportPage, { kind: "error", why: say.discordWho }, 502);
+    const user = await me.json<{ id: string }>();
+    if (!/^\d{17,20}$/.test(user.id)) return html(env, supportPage, { kind: "error", why: say.discordWho }, 502);
+    const headers = secure({ location: "/support" });
+    headers.append("set-cookie", cookie("cy_support", await sign(env, `support.${user.id}.${Date.now() + backerStay}`), backerStay / 1000));
+    headers.append("set-cookie", cookie("cy_state", "", 0));
+    return new Response(null, { status: 303, headers });
+  } finally {
+    giveBack(env, ctx, access_token);
+  }
+}
+
+// backerStay is how long /support remembers who signed in.
+const backerStay = 7 * day;
+
+// backer is who signed in to back the birds, if this browser's cookie is
+// ours and still good.
+async function backer(req: Request, env: Env): Promise<string | null> {
+  const [what, user, until] = (await unsign(env, read(req, "cy_support")))?.split(".") ?? [];
+  return what === "support" && /^\d{17,20}$/.test(user ?? "") && Number(until) > Date.now() ? user : null;
 }
 
 const back = (l: Launch) => new Response(null, { status: 303, headers: secure({ location: `/${l.name}` }) });
@@ -701,8 +806,18 @@ function withCookie(res: Response, c: string): Response {
 }
 
 async function html(env: Env, l: Launch, view: View, status = 200): Promise<Response> {
+  // /support is drawn in its own art, its refusals included.
+  if (l === supportPage && view.kind === "error") return supportHtml(env, view, status);
   const s = store(env);
   return new Response(page(l, await s.total(l), view, env.TURNSTILE_SITEKEY, l.icon ?? "", await s.flock(Date.now())), {
+    status,
+    headers: secure({ "content-type": "text/html; charset=utf-8", "cache-control": "no-store" }),
+  });
+}
+
+// supportHtml is a /support page (src/support.ts).
+async function supportHtml(env: Env, view: SupportView, status = 200): Promise<Response> {
+  return new Response(supportDocument(view, env.TURNSTILE_SITEKEY, await store(env).flock(Date.now())), {
     status,
     headers: secure({ "content-type": "text/html; charset=utf-8", "cache-control": "no-store" }),
   });

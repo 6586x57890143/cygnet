@@ -56,6 +56,11 @@ const (
 
 var slug = regexp.MustCompile(`^[a-z0-9-]{2,32}$`)
 
+// Reserved is the names cygnet.lol keeps for its own pages, which a
+// launch's page would otherwise be routed past or take over. The Worker
+// refuses them too (edge/src/signup.ts, reserved).
+var Reserved = []string{"admin", "auth", "bird", "privacy", "support"}
+
 type Module struct {
 	// edge is nil when cygnet isn't connected to cygnet.lol.
 	edge *Edge
@@ -290,6 +295,9 @@ func (m *Module) named(ctx context.Context, e *events.ModalSubmitInteractionCrea
 	name := strings.ToLower(strings.TrimSpace(e.Data.Text("name")))
 	if !slug.MatchString(name) {
 		return core.Tell("a launch name is 2 to 32 lowercase letters, digits or dashes")
+	}
+	if slices.Contains(Reserved, name) {
+		return core.Tell("cygnet.lol/" + name + " is one of the site's own pages; pick another name")
 	}
 	g, ok := e.Client().Caches.Guild(*e.GuildID())
 	if !ok {
