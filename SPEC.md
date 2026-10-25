@@ -246,7 +246,7 @@ about activity.
 | 3 | Codes: `/invite` (in the server and user-installed), the Worker's redemption page, direct add with the one-use invite fallback, attribution, the tree | done and live: `/invite` (in the server and from a DM) and its allowance, `cygnet.lol/i/<code>` through the tunnel past Access, the direct add and the targeted invite both used for real, attribution with a sweep, the tree on the admin's panel, and cygnet's own refusals fixed or reported |
 | 4 | Launches: interest pages, places in line, sealed tokens, the valve and its waves | done and live: silcord opened, wave 1 let its line in and added a sealed sign in; the line, its invites, waves and chained ledger in Postgres, the Worker asking cygnet over the hub; sealed sign ins (HPKE); the valve's waves, a sealed person added by cygnet and anyone else's way in on their page; forget me everywhere |
 | 5 | Earning: rules in the layout, `skua.check` for activity, progress on `/invite`, sponsor standing | open |
-| 6 | Supporters: backing the birds in crypto at `cygnet.lol/support`, checkouts matched by exact amount, the chains watched, `cygnet.supporters` for the birds' roles (docs/support.md) | built; not live until a wallet is set, and the birds' roles are their own PRs |
+| 6 | Supporters: backing the birds in crypto at `support.cygnet.lol`, checkouts matched by exact amount, the chains watched, `cygnet.supporters` for the birds' roles (docs/support.md) | built; not live until a wallet is set, and the birds' roles are their own PRs |
 
 Not planned: leases, failover between birds and sharding. The birds do different jobs
 as different apps, so none can take over another's duty, and each runs as one

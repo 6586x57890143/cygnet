@@ -94,7 +94,7 @@ test("the owner's pages are in the owner's voice", () => {
     // The page draws its own scene, nothing of the swan's.
     assert.doesNotMatch(html, /app\.js|app\.css|class="swan"|class="ascii"|class="field"/, `${name} borrows the swan's page`);
     assert.match(html, /<link rel="stylesheet" href="\/support\.css">/);
-    assert.match(html, /href="\/privacy">privacy<\/a>/, `${name} has no privacy link`);
+    assert.match(html, /href="https:\/\/cygnet\.lol\/privacy">privacy<\/a>/, `${name} has no privacy link`);
   }
 });
 
@@ -126,17 +126,17 @@ test("the letter says who, what it costs, what it buys and how", () => {
   assert.match(html, /<pre class="still" aria-hidden="true">[^<]*@[^<]*<\/pre>/);
   assert.match(html, /<img class="dark" src="\/art\/support\/badge_dusk\.png"[^>]*><img class="light" src="\/art\/support\/badge_paper\.png"/);
   assert.match(html, /<img class="rule" src="\/art\/support\/rule\.png"/);
-  assert.match(html, /<form class="act" method="post" action="\/support\/in"><div class="cf-turnstile" data-sitekey="key"[\s\S]*sign in with discord to start/);
+  assert.match(html, /<form class="act" method="post" action="\/in"><div class="cf-turnstile" data-sitekey="key"[\s\S]*sign in with discord to start/);
   assert.match(html, /turnstile\/v0\/api\.js/);
   assert.doesNotMatch(html, /175928847299117063/, "the owner's id isn't printed");
   const none = render({ kind: "support", offer: null, status: null, signedIn: false });
   assert.match(none, /backing opens soon/);
-  assert.doesNotMatch(none, /cf-turnstile|\/support\/in|turnstile\/v0/, "nothing to sign in for");
+  assert.doesNotMatch(none, /cf-turnstile|\/in"|turnstile\/v0/, "nothing to sign in for");
 });
 
 test("signed in, the choices are every plan, rate and rail on offer", () => {
   const html = text(render({ kind: "support", offer, status: null, signedIn: true }));
-  assert.match(html, /<form class="checkout" method="post" action="\/support\/quote" data-prices="/);
+  assert.match(html, /<form class="checkout" method="post" action="\/quote" data-prices="/);
   // The prices the summary reads are the plans' own, by length and amount.
   const prices = JSON.parse(html.match(/data-prices="([^"]*)"/)![1].replace(/&#34;/g, '"'));
   assert.deepEqual(prices, Object.fromEntries(offer.plans.map((p) => [p.months, p.prices])));
@@ -161,7 +161,7 @@ test("signed in, the choices are every plan, rate and rail on offer", () => {
   assert.match(html, /<p class="summary" aria-live="polite" hidden><\/p>/);
   // Signed in, how it works is folded away.
   assert.match(html, /<details class="works">\s*<summary><h2>how it works<\/h2><\/summary>/);
-  assert.match(html, /action="\/support\/out"/);
+  assert.match(html, /action="\/out"/);
   assert.doesNotMatch(html, /cf-turnstile|turnstile\/v0/, "signed in, no check");
   const backing = text(render({ kind: "support", offer, status: { active: true, gold: true, since: now, until: Date.UTC(2027, 0, 25) }, signedIn: true }));
   assert.match(backing, /you're backing the birds with the gold badge until 25 jan 2027\. thank you\./);
@@ -182,7 +182,7 @@ test("a checkout shows exactly what to send, where, and checks itself", () => {
   assert.match(html, /<a class="pay" href="solana:mvines9iiHiQTysrwkJjGf2gb9Ex9jXJX8ns3qwf2kN\?amount=28\.004217&#38;spl-token=EPjF/);
   assert.match(html, /<dt>for<\/dt><dd>3 months, gold badge<\/dd>/);
   assert.match(html, /<dt>price<\/dt><dd>\$28<\/dd>/);
-  assert.match(html, /<body data-wait="\/support\/abcdefghijklmnopqrstuvwxyz\?check">/);
+  assert.match(html, /<body data-wait="\/abcdefghijklmnopqrstuvwxyz\?check">/);
   assert.match(html, /<noscript><meta http-equiv="refresh"/);
   assert.match(html, /badge_gold_dusk\.png/, "a gold checkout wears the gold badge");
   const base = render({ kind: "checkout", c: { ...checkout, rail: "base:USDC", label: "usdc on base", to: "0x1111111111111111111111111111111111111111", pay: undefined }, now });
@@ -199,7 +199,7 @@ test("a checkout shows exactly what to send, where, and checks itself", () => {
   assert.match(gone, /closed without a payment/);
   assert.doesNotMatch(gone, /data-wait|<code>/);
   const err = render({ kind: "error", why: "that checkout isnt yours or its gone\nstart again" });
-  assert.match(err, /<p class="note err">that checkout isnt yours or its gone<br>start again<\/p><a class="again" href="\/support">go back<\/a>/);
+  assert.match(err, /<p class="note err">that checkout isnt yours or its gone<br>start again<\/p><a class="again" href="\/">go back<\/a>/);
   assert.match(render({ kind: "checkout", c: { ...checkout, to: "<script>" }, now }), /&#60;script&#62;/, "what cygnet sends is escaped");
 });
 

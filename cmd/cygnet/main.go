@@ -555,7 +555,7 @@ func links() string {
 // (CYGNET_SUPPORT_EVM, _TRON and _SOLANA, each optional), whose they are
 // (CYGNET_SUPPORT_OWNER, else the bootstrap admin), the nodes it reads
 // (CYGNET_RPC_<CHAIN> in place of a rail's public one, CYGNET_TRONGRID_KEY)
-// and the checkout at cygnet.lol, once the Worker can reach the hub.
+// and the checkout at support.cygnet.lol, once the Worker can reach the hub.
 func supporters(s *store.Support, bootstrap snowflake.ID, profile func(context.Context, snowflake.ID) (support.Owner, error), log *slog.Logger) (*support.Module, error) {
 	w := support.Wallets{EVM: os.Getenv("CYGNET_SUPPORT_EVM"), Tron: os.Getenv("CYGNET_SUPPORT_TRON"), Solana: os.Getenv("CYGNET_SUPPORT_SOLANA")}
 	if err := w.Check(); err != nil {
@@ -579,8 +579,8 @@ func supporters(s *store.Support, bootstrap snowflake.ID, profile func(context.C
 		}
 	}
 	page := ""
-	if u := links(); u != "" {
-		page = strings.TrimRight(u, "/") + "/support"
+	if links() != "" {
+		page = "https://support.cygnet.lol"
 	}
 	m := support.New(s, r, w, owner, bootstrap, page, profile, log)
 	if rails := m.Offered(); len(rails) > 0 {

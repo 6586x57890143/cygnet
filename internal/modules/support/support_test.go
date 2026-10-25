@@ -69,7 +69,7 @@ func someone() snowflake.ID { return snowflake.ID(rand.Int64N(1<<62) + 1<<60) }
 func running(t *testing.T, w Wallets, node string) *Module {
 	t.Helper()
 	r := &chain.Reader{RPC: map[string]string{"base": node, "polygon": node, "solana": node, "tron": node}, Prices: node}
-	m := New(supports(t), r, w, 9, keeper, "https://cygnet.lol/support", func(context.Context, snowflake.ID) (Owner, error) {
+	m := New(supports(t), r, w, 9, keeper, "https://support.cygnet.lol", func(context.Context, snowflake.ID) (Owner, error) {
 		return Owner{Name: "steve", Avatar: "https://cdn.discordapp.com/embed/avatars/0.png"}, nil
 	}, nil)
 	m.now = func() time.Time { return t0 }

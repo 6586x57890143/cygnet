@@ -1,4 +1,4 @@
-// cygnet.lol/support's moving parts. The scene is the swan page's sky
+// support.cygnet.lol's moving parts. The scene is the swan page's sky
 // (app.js) without its water: the day going round from night to morning
 // to day to evening, the sun and the moon on their arcs, the stars, the
 // clouds, a shooting star now and then, and other birds crossing far off,

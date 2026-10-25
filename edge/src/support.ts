@@ -1,4 +1,4 @@
-// Backing the birds (docs/support.md): cygnet.lol/support. cygnet keeps the
+// Backing the birds (docs/support.md): support.cygnet.lol. cygnet keeps the
 // checkouts and the payments and watches the chains; the Worker asks her
 // what is on offer, opens a checkout for whoever signed in, and shows it
 // until it is paid. It keeps nothing of its own about anyone.
@@ -198,7 +198,7 @@ function supportBody(o: Offer | null, status: Status | null, signedIn: boolean, 
   const body = letter(o, birds, signedIn);
   if (!o) return body + `<p class="note">backing opens soon. come back in a bit.</p>`;
   if (!signedIn) {
-    return body + `<form class="act" method="post" action="/support/in">${widget(sitekey)}<button type="submit">sign in with discord to start</button></form>`;
+    return body + `<form class="act" method="post" action="/in">${widget(sitekey)}<button type="submit">sign in with discord to start</button></form>`;
   }
   let you = "";
   if (status?.active && status.until) {
@@ -237,7 +237,7 @@ function supportBody(o: Offer | null, status: Status | null, signedIn: boolean, 
   const prices = Object.fromEntries(o.plans.map((p) => [p.months, p.prices]));
   return (
     body +
-    `${you}<form class="checkout" method="post" action="/support/quote" data-prices="${esc(JSON.stringify(prices))}">
+    `${you}<form class="checkout" method="post" action="/quote" data-prices="${esc(JSON.stringify(prices))}">
       <fieldset class="seg"><legend>${status?.active ? "add on" : "how long"}</legend><div class="row">${plans}</div></fieldset>
       <fieldset class="cards"><legend>how much a month</legend><div class="row">${rates}</div></fieldset>
       <fieldset class="methods"><legend>pay with</legend><div class="row">${rails}</div></fieldset>
@@ -245,7 +245,7 @@ function supportBody(o: Offer | null, status: Status | null, signedIn: boolean, 
       <button type="submit">go to checkout</button>
     </form>
     <p class="fine">the next page shows the exact amount and where to send it. an amount holds for an hour. in sol it holds for 20 minutes.</p>
-    <form method="post" action="/support/out" class="out"><button class="quiet" type="submit">not you? sign out</button></form>`
+    <form method="post" action="/out" class="out"><button class="quiet" type="submit">not you? sign out</button></form>`
   );
 }
 
@@ -256,15 +256,15 @@ function checkoutBody(c: Checkout, now: number): string {
   if (c.state === "paid") {
     return `<p class="note ok">it's in, thank you.${c.until ? ` you're backing the birds until ${date(c.until)}.` : ""}</p>
       <dl class="facts"><dt>for</dt><dd>${what}</dd></dl>
-      <a class="again" href="/support">back to the start</a>`;
+      <a class="again" href="/">back to the start</a>`;
   }
   if (c.stale) {
     return `<p class="note">this checkout's price ran out, so nothing sent now pays it. start a new one for a fresh price.</p>
-      <a class="again" href="/support">start again</a>`;
+      <a class="again" href="/">start again</a>`;
   }
   if (c.state === "void") {
     return `<p class="note">this checkout closed without a payment. start a new one whenever you like.</p>
-      <a class="again" href="/support">start again</a>`;
+      <a class="again" href="/">start again</a>`;
   }
   const asset = c.rail.split(":")[1]?.toLowerCase() ?? "";
   const head =
@@ -282,7 +282,7 @@ function checkoutBody(c: Checkout, now: number): string {
       ${c.pay ? `<a class="pay" href="${esc(c.pay)}">open it in your wallet</a>` : ""}
       <p class="fine"><span class="pulse"></span>this page checks for it by itself. it can take a few minutes after you send.</p>
       <p class="fine">the amount is how i know it's you, so send exactly this, with the fee on top. from an exchange, check that what arrives is this amount.</p>
-      <a class="again" href="/support">start over</a>`;
+      <a class="again" href="/">start over</a>`;
 }
 
 // checkSays is what the checkout's quiet check answers: 204 while it
@@ -324,10 +324,10 @@ export function supportDocument(view: SupportView, sitekey: string, birds: Bird[
     case "checkout":
       body = checkoutBody(view.c, view.now);
       gold = view.c.gold;
-      if (view.c.state === "open" || view.c.state === "lapsed") watching = ` data-wait="/support/${esc(view.c.id)}?check"`;
+      if (view.c.state === "open" || view.c.state === "lapsed") watching = ` data-wait="/${esc(view.c.id)}?check"`;
       break;
     case "error":
-      body = `<p class="note err">${lines(view.why)}</p><a class="again" href="/support">go back</a>`;
+      body = `<p class="note err">${lines(view.why)}</p><a class="again" href="/">go back</a>`;
       break;
   }
   const badge = gold ? "badge_gold" : "badge";
@@ -379,7 +379,7 @@ ${watching ? `<noscript><meta http-equiv="refresh" content="15"></noscript>\n` :
     ${body}
     <img class="rule" src="/art/support/rule.png" alt="" width="1040" height="32">
   </article>
-  <footer><span class="by">${flock}kept by cygnet</span><a href="/privacy">privacy</a></footer>
+  <footer><span class="by">${flock}kept by cygnet</span><a href="https://cygnet.lol/privacy">privacy</a></footer>
   </div>
 </main>
 <script type="module" src="/support.js"></script>${turnstile ? `\n<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>` : ""}

@@ -25,7 +25,7 @@ what is cygnet's own. A lesson about how a surface reads goes in DESIGN.md's log
   logging never waits on the hub. Not imported by anything in `link`.
 - `support/`: the supporter cards every bird posts, a module of its own on disgo alone
   (`github.com/6586x57890143/cygnet/support`, tagged `support/vX.Y.Z`): the advert that
-  sends people to cygnet.lol/support and the welcome for a new supporter. It returns a
+  sends people to support.cygnet.lol and the welcome for a new supporter. It returns a
   `Page` (head, body parts, footer, whether to lead with a banner) and the bird lays it
   out in its own panel with its own art; icons and the owner's mention come in through
   a `Brand`. It names no bird, so any of them can import it.

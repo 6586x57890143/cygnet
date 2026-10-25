@@ -1,7 +1,7 @@
 # Backing the birds
 
 A monthly supporter for the birds, paid in crypto into wallets only their owner holds,
-for a length bought up front. cygnet.lol sells it at `/support`; cygnet quotes each
+for a length bought up front. `support.cygnet.lol` sells it (the old `cygnet.lol/support` redirects there); cygnet quotes each
 checkout, watches the chains for its payment and records what it bought; the birds ask
 her who backs them and give their supporter role.
 
@@ -109,7 +109,7 @@ says so. The Worker keeps nothing about a supporter.
 
 ## The page
 
-`edge/src/support.ts` draws every `/support` page; `edge/public/support.css` and
+`edge/src/support.ts` draws every page on `support.cygnet.lol`; `edge/public/support.css` and
 `support.js` are its look and its moving parts. It is the birds' and the owner's page,
 not cygnet's: the swan page's sky in glyphs across the whole page, with a branch in it
 instead of water and a merlin on the branch.
@@ -151,10 +151,13 @@ Nothing is offered until a wallet is set: `/support` says backing opens soon.
 2. Public nodes rate limit: Base's own refuses log reads outright, so the defaults are
    publicnode's. For steady reads set a keyed endpoint per chain, `CYGNET_RPC_BASE`,
    `_POLYGON`, `_SOLANA`, and a TronGrid key, `CYGNET_TRONGRID_KEY`.
-3. Restart cygnet. Its log says which rails it takes; `/support` in a server shows the
+3. In the Discord Developer Portal, cygnet's application, OAuth2: add the redirect
+   `https://support.cygnet.lol/auth/discord`. `npm -C edge run deploy` adds the
+   `support.cygnet.lol` custom domain itself.
+4. Restart cygnet. Its log says which rails it takes; `/support` in a server shows the
    keeper each rail's last read.
-4. Send a small real payment on each rail you offer and watch the panel see it. A
+5. Send a small real payment on each rail you offer and watch the panel see it. A
    wallet that never held USDT or USDC on Solana has no account for it until the first
    payment, which is fine: it is found on the next read.
-5. Before announcing it, the birds that give the supporter role read
+6. Before announcing it, the birds that give the supporter role read
    `cygnet.supporters` (merlin's side, its own PR).

@@ -136,6 +136,7 @@ export default {
   async fetch(req, env, ctx): Promise<Response> {
     const url = new URL(req.url);
     const [, first, second, third] = url.pathname.split("/");
+    if (url.hostname === supportHost) return await supportSite(req, env, ctx, url, first, second, third);
     const l = first ? await store(env).launch(first) : undefined;
     try {
       if (first === "auth" && second === "discord" && req.method === "GET") return await callback(req, env, ctx, url);
@@ -145,8 +146,9 @@ export default {
       if (first === "privacy" && !second) return await privacy(env);
       if (first === "privacy" && second === "forget" && req.method === "POST") return await human(req, env, privacyPage(env), () => oauth(env, url, "forget", launches.silcord));
       if (first === "bird" && second && !third && req.method === "GET") return await birdArt(env, second);
-      // A launch registered under the name before /support existed keeps it.
-      if (first === "support" && !l) return await support(req, env, url, second, third);
+      // A launch registered under the name before /support existed keeps it;
+      // otherwise the old address sends people to the new one.
+      if (first === "support" && !l) return new Response(null, { status: 308, headers: secure({ location: `https://${supportHost}${url.pathname.slice("/support".length) || "/"}${url.search}` }) });
       if (!first && req.method === "GET") return await home(env);
       if (!l) return new Response("nothing here", { status: 404, headers: secure(text) });
       if (second === undefined && req.method === "GET") return await landing(req, env, l);
@@ -700,17 +702,35 @@ async function admin(req: Request, env: Env, launch?: string, action?: string): 
   return new Response("not allowed", { status: 405, headers: secure(text) });
 }
 
+// supportHost is backing the birds' own address. cygnet.lol/support, where
+// it began, redirects here.
+const supportHost = "support.cygnet.lol";
+
+// supportSite is everything supportHost answers: Discord sending someone
+// back, the footer's birds, and the support pages at its root.
+async function supportSite(req: Request, env: Env, ctx: ExecutionContext, url: URL, first: string, second?: string, third?: string): Promise<Response> {
+  try {
+    if (first === "auth" && second === "discord" && third === undefined && req.method === "GET") return await callback(req, env, ctx, url);
+    if (first === "bird" && second && third === undefined && req.method === "GET") return await birdArt(env, second);
+    if (third !== undefined) return new Response("nothing here", { status: 404, headers: secure(text) });
+    return await support(req, env, url, first || undefined, second);
+  } catch (err) {
+    console.error("edge", err instanceof Error ? err.message : "unknown");
+    return html(env, supportPage, { kind: "error", why: say.broke }, 500);
+  }
+}
+
 // support is backing the birds (src/support.ts): the owner's letter and
-// its sign in at /support, a checkout's choices once signed in, and the
-// checkout at /support/<id>, which checks itself until it's paid. cygnet
-// keeps all of it; this only asks her.
+// its sign in at /, a checkout's choices once signed in, and the checkout
+// at /<id>, which checks itself until it's paid. cygnet keeps all of it;
+// this only asks her.
 async function support(req: Request, env: Env, url: URL, second?: string, third?: string): Promise<Response> {
   if (!hubOf(env) || third !== undefined) return new Response("nothing here", { status: 404, headers: secure(text) });
   if (second === undefined && req.method === "GET") return supportHome(req, env);
   if (req.method === "POST") {
     if (second === "in") return human(req, env, supportPage, () => oauth(env, url, "support", supportPage));
     if (second === "quote") return supportQuote(req, env);
-    if (second === "out") return new Response(null, { status: 303, headers: secure({ location: "/support", "set-cookie": cookie("cy_support", "", 0) }) });
+    if (second === "out") return new Response(null, { status: 303, headers: secure({ location: "/", "set-cookie": cookie("cy_support", "", 0) }) });
   }
   if (second && /^[a-z2-7]{26}$/.test(second) && req.method === "GET") return checkoutPage(req, env, url, second);
   return new Response("not allowed", { status: 405, headers: secure(text) });
@@ -734,7 +754,7 @@ async function supportHome(req: Request, env: Env): Promise<Response> {
 // SameSite=Lax, so another site's form can't open one for them.
 async function supportQuote(req: Request, env: Env): Promise<Response> {
   const user = await backer(req, env);
-  if (!user) return new Response(null, { status: 303, headers: secure({ location: "/support" }) });
+  if (!user) return new Response(null, { status: 303, headers: secure({ location: "/" }) });
   const form = await req.formData();
   const months = Number(form.get("months"));
   const cents = Number(form.get("cents"));
@@ -744,7 +764,7 @@ async function supportQuote(req: Request, env: Env): Promise<Response> {
   if (refused(r, "too_many")) return html(env, supportPage, { kind: "error", why: say.tooManyCheckouts }, 429);
   if (refused(r, "not_offered")) return html(env, supportPage, { kind: "error", why: say.notOnOffer }, 400);
   if (!r.ok) return html(env, supportPage, { kind: "error", why: r.code === "busy" ? say.noPrice : say.broke }, r.code === "busy" ? 503 : 502);
-  return new Response(null, { status: 303, headers: secure({ location: `/support/${r.body.id}` }) });
+  return new Response(null, { status: 303, headers: secure({ location: `/${r.body.id}` }) });
 }
 
 // checkoutPage is a checkout, for the person who opened it. ?check is
@@ -753,7 +773,7 @@ async function checkoutPage(req: Request, env: Env, url: URL, id: string): Promi
   const user = await backer(req, env);
   const check = url.searchParams.has("check");
   const quiet = (status: number) => new Response(null, { status, headers: secure({ "cache-control": "no-store" }) });
-  if (!user) return check ? quiet(410) : new Response(null, { status: 303, headers: secure({ location: "/support" }) });
+  if (!user) return check ? quiet(410) : new Response(null, { status: 303, headers: secure({ location: "/" }) });
   const r = await ask<Checkout>(env, "cygnet.checkout", { user, id });
   const gone = refused(r, "no_checkout", "not_yours");
   if (check) return quiet(r.ok ? checkSays(r.body) : gone ? 410 : 503);
@@ -768,7 +788,7 @@ async function checkoutPage(req: Request, env: Env, url: URL, id: string): Promi
 async function supportCallback(env: Env, ctx: ExecutionContext, url: URL, nonce: string): Promise<Response> {
   if (!nonce || !same(nonce, url.searchParams.get("state") ?? "")) return html(env, supportPage, { kind: "error", why: say.elsewhere }, 400);
   const code = url.searchParams.get("code");
-  if (!code) return new Response(null, { status: 303, headers: secure({ location: "/support" }) });
+  if (!code) return new Response(null, { status: 303, headers: secure({ location: "/" }) });
   const grant = await discordToken(env, url, code);
   if (!grant.ok) return html(env, supportPage, { kind: "error", why: say.discordNo }, 502);
   const { access_token } = await grant.json<{ access_token: string }>();
@@ -777,7 +797,7 @@ async function supportCallback(env: Env, ctx: ExecutionContext, url: URL, nonce:
     if (!me.ok) return html(env, supportPage, { kind: "error", why: say.discordWho }, 502);
     const user = await me.json<{ id: string }>();
     if (!/^\d{17,20}$/.test(user.id)) return html(env, supportPage, { kind: "error", why: say.discordWho }, 502);
-    const headers = secure({ location: "/support" });
+    const headers = secure({ location: "/" });
     headers.append("set-cookie", cookie("cy_support", await sign(env, `support.${user.id}.${Date.now() + backerStay}`), backerStay / 1000));
     headers.append("set-cookie", cookie("cy_state", "", 0));
     return new Response(null, { status: 303, headers });
@@ -786,7 +806,7 @@ async function supportCallback(env: Env, ctx: ExecutionContext, url: URL, nonce:
   }
 }
 
-// backerStay is how long /support remembers who signed in.
+// backerStay is how long the support pages remember who signed in.
 const backerStay = 7 * day;
 
 // backer is who signed in to back the birds, if this browser's cookie is
