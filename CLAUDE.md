@@ -25,8 +25,12 @@ what is cygnet's own. A lesson about how a surface reads goes in DESIGN.md's log
   logging never waits on the hub. Not imported by anything in `link`.
 - `internal/modules/*`: `status` (the reference), `perf`, `help`, `provision`, `launch`
   (the campaign, the Worker's verbs, sealed sign ins, the valve), `invite` (codes: the
-  panel, redemption for cygnet.lol, attribution, the tree). `launch` lets a wave in
+  panel, redemption for cygnet.lol, attribution, the tree), `support` (backing the birds:
+  checkouts for cygnet.lol, the chains read for their payments, who backs the birds;
+  docs/support.md). `launch` lets a wave in
   through `invite.Let`, wired in `main.go`: modules still never import each other.
+- `internal/chain`: the public chain reads `support` watches, and its rails' amounts.
+- `tools/supportart`: the supporter's badge and marks, written to `edge/public/art/support`.
 - `tools/sprites`: the art. `art/source/cygnet_avatar_source.png` is the drawing; the
   generator keeps its disc, quantises it to its own palette and computes the banner.
 

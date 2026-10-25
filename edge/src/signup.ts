@@ -28,6 +28,11 @@ export interface Launch {
 }
 
 export type Stage = "gathering" | "closed" | "open";
+
+// reserved is the names of the site's own pages, which no launch may take:
+// its page would be routed past them, or take one over. cygnet refuses
+// them too (internal/modules/launch, Reserved).
+export const reserved = ["admin", "auth", "bird", "privacy", "support"];
 export const stages: Stage[] = ["gathering", "closed", "open"];
 
 // line is a launch's line on its page: the list, invites to the front of

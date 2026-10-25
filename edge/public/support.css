@@ -1,0 +1,316 @@
+/* cygnet.lol/support: backing the birds. The sky is a canvas over the
+   whole page (support.js): the swan page's day going round, a branch
+   across it and a merlin on the branch. On it, the sheet in merlin's
+   colours (merlin's internal/core/embeds.go): umber and cream, bronze
+   for its frame, and her gold, the yellow of a merlin's cere, for the
+   one thing to press. The sheet stands still; the sky is what moves.
+   Without script the page is the sky's gradient and merlin as one frame
+   of text. */
+
+@font-face {
+  font-family: "Cygnet Mono";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 200 700;
+  src: url(/fonts/cascadia-mono.woff2) format("woff2");
+}
+
+:root {
+  /* merlin's own */
+  --primary: #4b4c73;
+  --info: #7a7db8;
+  --bronze: #8b5e34;
+  --cream: #ecd9ae;
+  --umber: #3d2817;
+  --black: #201812;
+  --olive: #7c8b5a;
+  --gold: #d9a62e;
+  --rust: #a85234;
+
+  /* light: a clear day */
+  --sky-top: #7a7db8;
+  --sky-low: #cfd2ec;
+  /* what is written on the sky itself */
+  --on-sky: #201812;
+  --on-sky-shadow: rgba(236, 217, 174, 0.6);
+  --sheet: #f5ead0;
+  --ink: #201812;
+  --muted: #6b5038;
+  --lit: #b0814e;
+  --shade: #3d2817;
+  --line: rgba(61, 40, 23, 0.18);
+  --well: rgba(61, 40, 23, 0.07);
+  --press: #3d2817;
+  --on-press: #ecd9ae;
+  --ok: #56653a;
+  --warn: #8d6512;
+  --err: #a85234;
+  --mono: "Cygnet Mono", ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color-scheme: light;
+}
+/* dark: the same sky after sundown */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --sky-top: #201812;
+    --sky-low: #4b4c73;
+    --on-sky: #ecd9ae;
+    --on-sky-shadow: #201812;
+    --sheet: #3d2817;
+    --ink: #ecd9ae;
+    --muted: #c9ad85;
+    --lit: #b0814e;
+    --shade: #201812;
+    --line: rgba(236, 217, 174, 0.16);
+    --well: rgba(32, 24, 18, 0.45);
+    --press: #d9a62e;
+    --on-press: #201812;
+    --ok: #a9b884;
+    --warn: #e8bb52;
+    --err: #e08a68;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --sky-top: #201812;
+  --sky-low: #4b4c73;
+  --on-sky: #ecd9ae;
+  --on-sky-shadow: #201812;
+  --sheet: #3d2817;
+  --ink: #ecd9ae;
+  --muted: #c9ad85;
+  --lit: #b0814e;
+  --shade: #201812;
+  --line: rgba(236, 217, 174, 0.16);
+  --well: rgba(32, 24, 18, 0.45);
+  --press: #d9a62e;
+  --on-press: #201812;
+  --ok: #a9b884;
+  --warn: #e8bb52;
+  --err: #e08a68;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { background: var(--sky-low); }
+body {
+  margin: 0; min-height: 100svh; color: var(--ink);
+  background: linear-gradient(180deg, var(--sky-top) 0%, var(--sky-low) 70%) fixed;
+  font: 16px/1.6 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+img { image-rendering: pixelated; }
+
+/* The sky, behind everything and the size of the window. */
+canvas.sky { position: fixed; inset: 0; width: 100vw; height: 100lvh; z-index: 0; display: none; }
+body.live canvas.sky { display: block; }
+
+/* A phone: merlin on her branch above, the sheet below, all one column. */
+main {
+  position: relative; z-index: 1;
+  max-width: 680px; margin: 0 auto;
+  padding: 0 max(16px, env(safe-area-inset-right)) 40px max(16px, env(safe-area-inset-left));
+}
+.hero { margin: 0; height: clamp(300px, 56svh, 460px); display: grid; place-items: end center; }
+.page { display: grid; gap: 18px; align-content: start; }
+/* merlin as text, for a page without script; the canvas draws her once
+   the script runs. */
+.still { margin: 0; font: 5px/5px var(--mono); color: var(--on-sky); opacity: .85; white-space: pre; overflow: hidden; max-width: 100%; }
+body.live .still { visibility: hidden; }
+
+/* A wide screen: merlin keeps her branch on the left while the sheet
+   scrolls past her on the right. */
+@media (min-width: 1040px) {
+  main { max-width: none; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 640px); gap: clamp(24px, 4vw, 72px); padding-right: max(5vw, env(safe-area-inset-right)); }
+  .hero { position: sticky; top: 0; height: 100svh; place-items: center; }
+  .page { padding-top: max(56px, env(safe-area-inset-top)); }
+  .still { font-size: 7px; line-height: 7px; }
+}
+
+/* Every mark comes in the dusk drawing and the paper one; the page shows
+   whichever fits the theme, the same rule for the title's badge, the
+   perks, the amounts and the coins. */
+.duo { display: inline-flex; flex: none; }
+.duo .light { display: none; }
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .duo .dark { display: none; }
+  :root:not([data-theme="dark"]) .duo .light { display: inline; }
+}
+:root[data-theme="light"] .duo .dark { display: none; }
+:root[data-theme="light"] .duo .light { display: inline; }
+
+/* The title, on the sky: every scene of the day has to read it, bright
+   noon and dark night alike, so it is drawn with its own outline all the
+   way round and a drop under that, rather than trusting the sky. */
+/* The badge stands in the title's own line as tall as its "b": the
+   font's ascender height, its foot on the baseline, so it tracks the title
+   at every size the title takes. */
+header { display: grid; gap: 4px; }
+h1 .badge { margin-right: .26em; vertical-align: baseline; }
+.badge img { width: .72em; height: .72em; }
+.kicker { margin: 0; color: #fff8e6; font: 700 12px var(--mono); letter-spacing: .22em;
+  text-shadow: -1px -1px 0 var(--umber), 1px -1px 0 var(--umber), -1px 1px 0 var(--umber), 1px 1px 0 var(--umber), 2px 2px 0 var(--umber); }
+h1 { margin: 2px 0 0; color: #fff8e6; font: 700 clamp(36px, 7vw, 52px)/1 var(--mono); letter-spacing: -.03em;
+  text-shadow: -2px -2px 0 var(--umber), 2px -2px 0 var(--umber), -2px 2px 0 var(--umber), 2px 2px 0 var(--umber), 0 -2px 0 var(--umber), 0 2px 0 var(--umber), -2px 0 0 var(--umber), 2px 0 0 var(--umber), 4px 4px 0 var(--umber); }
+
+/* The sheet: a tile's frame, its corners cut, lit from the top left and
+   shaded at the bottom right, a cream page inside. */
+.sheet {
+  --cut: 10px;
+  position: relative; padding: 26px clamp(18px, 5vw, 34px) 18px;
+  background: var(--sheet);
+  border: 4px solid var(--bronze);
+  box-shadow: inset 4px 4px 0 var(--lit), inset -4px -4px 0 var(--shade);
+  clip-path: polygon(var(--cut) 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, var(--cut) 100%, 0 calc(100% - var(--cut)), 0 var(--cut));
+}
+.sheet > * + * { margin-top: 16px; }
+.from { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 17px; }
+.from img { width: 28px; height: 28px; border-radius: 50%; image-rendering: auto; }
+.letter p { margin: 0 0 12px; }
+h2 { margin: 6px 0 8px; color: var(--bronze); font: 700 12px var(--mono); letter-spacing: .2em; }
+:root[data-theme="dark"] h2 { color: var(--gold); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) h2 { color: var(--gold); } }
+ul { list-style: none; margin: 0; padding: 0; }
+li { padding: 8px 0; border-bottom: 1px dashed var(--line); }
+li:last-child { border-bottom: 0; }
+.perks li { display: flex; align-items: center; gap: 12px; }
+.tile { width: 32px; height: 32px; flex: none; display: block; }
+.how li { position: relative; padding-left: 18px; }
+.how li::before { content: "▸"; position: absolute; left: 0; color: var(--bronze); }
+
+.note { margin: 0; padding: 12px 14px; background: var(--well); border-left: 4px solid var(--bronze); }
+.note.ok { border-color: var(--olive); color: var(--ok); }
+.note.warn { border-color: var(--gold); color: var(--warn); }
+.note.err { border-color: var(--rust); color: var(--err); }
+.fine { margin: 10px 0 0; color: var(--muted); font-size: 13.5px; }
+.dim { color: var(--muted); }
+a { color: inherit; text-decoration: underline 1px dotted; text-underline-offset: 3px; }
+/* Links and the quiet button are padded to a finger's size (24 px and
+   more) without looking any bigger. */
+a.again { display: inline-block; margin-top: 8px; padding: 6px 0; color: var(--bronze); font: 600 14px var(--mono); }
+:root[data-theme="dark"] a.again { color: var(--gold); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) a.again { color: var(--gold); } }
+footer a { padding: 6px 2px; }
+
+/* What can be pressed: merlin's umber by day, her gold by night. */
+button, a.pay {
+  display: block; width: 100%; padding: 14px 16px; border: 0; cursor: pointer;
+  background: var(--press); color: var(--on-press); font: 700 15px var(--mono); text-align: center; text-decoration: none;
+  box-shadow: inset 0 -4px 0 rgba(0, 0, 0, .25);
+}
+button:hover, a.pay:hover { filter: brightness(1.08); }
+button:active, a.pay:active { box-shadow: none; transform: translateY(2px); }
+button:focus-visible, a:focus-visible, input:focus-visible + span, select:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
+button.quiet { display: inline-block; width: auto; min-height: 28px; padding: 6px 2px; background: none; color: var(--muted); font: 13px var(--mono); text-decoration: underline 1px dotted; text-underline-offset: 3px; box-shadow: none; }
+.act .cf-turnstile { margin-bottom: 10px; }
+.out { text-align: right; }
+
+/* The choices. */
+/* The choices, laid out as the good checkouts do: the length a segmented
+   row, the amounts cards side by side, the ways to pay a grid of tiles.
+   Each radio stays in its label, there for the keyboard and a screen
+   reader but not seen; its option shows the choice. */
+.checkout { display: grid; gap: 16px; }
+fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
+legend { margin-bottom: 6px; color: var(--muted); font: 600 12px var(--mono); letter-spacing: .14em; }
+.row { display: grid; gap: 6px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.seg .row { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; border: 2px solid var(--bronze); }
+.opt { position: relative; display: grid; justify-items: center; align-content: center; gap: 2px; padding: 10px 6px; background: var(--well); border: 2px solid transparent; cursor: pointer; text-align: center; }
+.opt input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.opt:has(input:checked) { border-color: var(--bronze); background: var(--sheet); box-shadow: inset 0 -3px 0 var(--bronze); }
+.opt:has(input:focus-visible) { outline: 3px solid var(--gold); outline-offset: 2px; z-index: 1; }
+.opt .name { font: 700 15px/1.3 var(--mono); }
+.opt .sub { color: var(--muted); font-size: 12px; line-height: 1.3; }
+.opt .tile { margin-bottom: 4px; }
+.seg .opt { border: 0; }
+.seg .opt + .opt { box-shadow: inset 1px 0 0 var(--line); }
+.seg .opt:has(input:checked) { background: var(--press); color: var(--on-press); box-shadow: none; }
+.seg .opt:has(input:checked) .sub { color: inherit; opacity: .85; }
+.summary { margin: 0; padding: 10px 12px; background: var(--well); border-left: 4px solid var(--gold); font-size: 14px; }
+.summary b { white-space: nowrap; }
+/* Once signed in, how it works is a click away: they read it before. */
+details.works summary { cursor: pointer; list-style: none; }
+details.works summary::-webkit-details-marker { display: none; }
+details.works summary h2 { display: inline; }
+details.works summary h2::after { content: " +"; }
+details.works[open] summary h2::after { content: " -"; }
+@media (max-width: 440px) {
+  .seg .row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .seg .opt:nth-child(3) { box-shadow: inset 0 1px 0 var(--line); }
+  .seg .opt:nth-child(4) { box-shadow: inset 1px 0 0 var(--line), inset 0 1px 0 var(--line); }
+  .methods .row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+/* A coin's, a chain's or a bird's name with its mark in front: the mark
+   at 16 px, an eighth of its tile so every pixel lands on one of the
+   screen's, sat on the text's baseline and kept with its word. */
+.marked { white-space: nowrap; }
+.mark { display: inline-block; width: 16px; height: 16px; margin-right: 5px; vertical-align: -3px; }
+.mark.bird { border-radius: 3px; image-rendering: auto; }
+
+/* The checkout: what to send and where, each copied as it is. */
+.copy { display: flex; align-items: center; gap: 10px; padding: 12px; background: var(--well); border: 2px solid var(--bronze); }
+.copy .what { color: var(--muted); font: 600 12px var(--mono); min-width: 34px; }
+.copy code { flex: 1; min-width: 0; font: 600 15px/1.35 var(--mono); word-break: break-all; user-select: all; }
+.copy .unit { color: var(--muted); font: 13px var(--mono); }
+.copy button { width: auto; padding: 8px 12px; font-size: 13px; }
+.facts { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin: 0; font-size: 15px; }
+.facts dt { color: var(--muted); font: 600 12px/1.9 var(--mono); letter-spacing: .14em; }
+.facts dd { margin: 0; }
+.pulse { display: inline-block; width: 8px; height: 8px; margin-right: 8px; background: var(--gold); animation: pulse 1.6s steps(2) infinite; }
+@keyframes pulse { 50% { opacity: .2; } }
+
+.rule { display: block; width: 100%; height: auto; margin-top: 22px; opacity: .9; }
+
+footer { justify-self: center; display: flex; justify-content: center; align-items: center; gap: 14px; padding: 6px 12px; background: var(--sheet); color: var(--muted); font: 12px var(--mono); clip-path: polygon(6px 0, calc(100% - 6px) 0, 100% 6px, 100% calc(100% - 6px), calc(100% - 6px) 100%, 6px 100%, 0 calc(100% - 6px), 0 6px); }
+footer .by { display: inline-flex; align-items: center; gap: 6px; }
+footer .by img { border-radius: 3px; }
+
+.theme {
+  position: fixed; z-index: 3; top: max(14px, env(safe-area-inset-top)); left: max(14px, env(safe-area-inset-left));
+  width: 38px; height: 38px; padding: 0; display: grid; place-items: center;
+  background: var(--sheet); color: var(--ink); border: 2px solid var(--bronze); font: 18px/1 "Segoe UI Symbol", "Apple Symbols", "Noto Sans Symbols 2", "DejaVu Sans", sans-serif; box-shadow: none;
+}
+
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse { animation: none; }
+  button:active, a.pay:active { transform: none; }
+}
+
+/* Motion, for whoever hasn't asked for less. The choices ease between
+   states and give under a press; the summary settles in each time it
+   changes and the button's total pulses once, so a new amount is noticed;
+   how it works opens rather than jumps; a copy ticks; a payment arriving
+   pops its note; and moving between the support pages the sheet morphs
+   into the next one instead of the screen flashing. Each of the newer
+   ones (the details opening, the page to page morph) is simply absent
+   where a browser doesn't have it. */
+@media (prefers-reduced-motion: no-preference) {
+  @view-transition { navigation: auto; }
+  .sheet { view-transition-name: sheet; }
+  header { view-transition-name: title; }
+  ::view-transition-old(sheet), ::view-transition-new(sheet) { animation-duration: .32s; animation-timing-function: cubic-bezier(.2, .7, .2, 1); }
+
+  .opt { transition: background-color .16s ease, color .16s ease, border-color .16s ease, box-shadow .16s ease, transform .12s ease; }
+  .opt:active { transform: scale(.97); }
+  .opt .tile, .opt .mark { transition: transform .2s cubic-bezier(.3, 1.6, .5, 1); }
+  .opt:has(input:checked) .tile, .opt:has(input:checked) .mark { transform: translateY(-2px); }
+  button, a.pay { transition: filter .15s ease, transform .1s ease, box-shadow .1s ease; }
+
+  .summary.fresh { animation: settle .28s cubic-bezier(.2, .7, .2, 1); }
+  button.fresh { animation: pulse-once .45s ease; }
+  @keyframes settle { from { opacity: 0; transform: translateY(4px); } }
+  @keyframes pulse-once { 40% { transform: scale(1.025); filter: brightness(1.12); } }
+
+  @supports (interpolate-size: allow-keywords) {
+    :root { interpolate-size: allow-keywords; }
+    details.works::details-content { height: 0; overflow: clip; transition: height .28s cubic-bezier(.2, .7, .2, 1), content-visibility .28s allow-discrete; }
+    details.works[open]::details-content { height: auto; }
+  }
+
+  button[data-copy].done { animation: tick .3s cubic-bezier(.3, 1.6, .5, 1); }
+  @keyframes tick { 50% { transform: scale(1.08); } }
+
+  .note.ok { animation: pop .5s cubic-bezier(.3, 1.6, .5, 1) both; }
+  @keyframes pop { from { opacity: 0; transform: scale(.94); } }
+}

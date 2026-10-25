@@ -7,8 +7,40 @@ Written 2026-10-13. Read this with `CLAUDE.md` and `SPEC.md`.
 | Branch | State |
 |---|---|
 | `main` | M0 to M4. M4 is #41 to #47, merged 2026-10-13; cygnet deploys from CI, the Worker by hand |
+| `feat/support` | M6, supporters: backing the birds in crypto (docs/support.md). Open as a PR |
 
-No branch is open. Worktrees under `cygnet.worktrees/` are from merged work and can go.
+Other worktrees under `cygnet.worktrees/` are from merged work and can go.
+
+## M6: supporters (feat/support)
+
+What it adds: `/support` at cygnet.lol (the owner's letter, a Discord sign in, the
+choices, a checkout that checks itself), the `support` module (the hub verbs, the
+chains read every minute, `/support` with the keeper's takings and **give backing**),
+`internal/chain` (the rails and their readers), `store.Support` (migration 006) and
+`tools/supportart` (the badge and marks). Launch names that are the site's own pages
+(`support`, `privacy`, `admin`, `auth`, `bird`) are refused on both sides now.
+
+Decisions worth keeping:
+
+- **Matched by exact amount**, not by a reference: most rails carry none, and one typed
+  into a wallet is a step people skip. A unique index over live checkouts makes the
+  amount name its checkout. A late payment still counts for 48 hours.
+- **Read from now, never from history**: each watched account's cursor starts at the
+  present, and a Solana token account found later starts from when its rail did.
+- **Base's own public node refuses log reads** (429), so the default is publicnode's;
+  docs/support.md says to set keyed nodes for real use. Checked live with
+  `CYGNET_LIVE_CHAINS=1`.
+- **The page is the owner's voice**, punctuation and all, held by its own test; the
+  rest of the site stays cygnet's.
+
+Not done yet, deliberately:
+
+- **The birds' side.** merlin gives the supporter role from `cygnet.supporters` and
+  shows the card, with the reminder before it runs out; peregrine mirrors the card.
+  The page promises the role, so it isn't announced before merlin's PR lands.
+- **The Melting Pot's tip jar** pointing at `/support`: merlin's PR too.
+- **Going live**: wallets, keyed nodes and a small real payment per rail
+  (docs/support.md, Going live).
 
 ## Next: M4's last checks
 

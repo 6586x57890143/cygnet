@@ -1,0 +1,17 @@
+# gitleaks' default rules, plus the public token contracts the support
+# rails read (internal/chain/chain.go): high-entropy strings that the
+# generic-api-key rule takes for keys. Each is a mainnet contract or mint
+# anyone can look up on its explorer; nothing else is allowed through.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "public token contracts and mints"
+regexTarget = "secret"
+regexes = [
+  '''^EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v$''', # USDC mint, Solana
+  '''^Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB$''', # USDT mint, Solana
+  '''^0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913$''',   # USDC, Base
+  '''^0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359$''',   # USDC, Polygon
+  '''^TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t$''',           # USDT, TRON
+]
