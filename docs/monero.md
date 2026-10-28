@@ -65,6 +65,18 @@ TLS and password files without starting a listener or modifying the active bot
 environment. Non-secret rollout settings are saved in root-only `activation.env`
 under the runtime metadata directory for the separate activation step.
 
+Before activation, build `cmd/monero-check` for the host architecture and install
+it as root-owned mode 0555 at `/var/lib/cygnet-monero-runtime/monero-check` after
+verifying its transfer checksum. The reviewed `scripts/monero-preflight.py`, run
+with sudo, verifies the prepared file permissions and pinned image, starts the
+guarded wallet in temporary private networks and runs Cygnet's own client with
+only the RPC password and pinned certificate mounted. It checks identity,
+authentication and a successful node refresh, then stops and removes its temporary
+containers and networks. It leaves the checkout and running bots unchanged.
+Initial wallet refresh can take longer than the bounded preflight window; retry
+after inspecting the sanitized status if it has not completed. This check does
+not replace funded settlement and role-grant validation.
+
 On Windows with Docker Desktop, `pwsh -File scripts/monero-smoke.ps1` rebuilds the
 images and exercises disposable offline stagenet fixtures. It checks rejection of
 a full wallet, startup of a view-only wallet, real TLS/Digest authentication,

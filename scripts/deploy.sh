@@ -41,9 +41,12 @@ export CYGNET_IMAGE_TAG="$1"
 compose config --quiet
 if [ -f .xmr-enabled ]; then
   wallet_image=$(compose config --images xmr-wallet)
-  printf '%s\n' "$wallet_image" | grep -Eq '^[^[:space:]]+@sha256:[[:xdigit:]]{64}$' || {
+  printf '%s\n' "$wallet_image" | grep -Eq '^([^[:space:]@]+@)?sha256:[0-9a-f]{64}$' || {
     echo "wallet image must be pinned by sha256 digest" >&2; exit 1;
   }
+  case "$wallet_image" in
+    sha256:*) docker image inspect "$wallet_image" >/dev/null ;;
+  esac
 fi
 compose up -d --remove-orphans
 # Rolled back if it does not stay up for 30s, as in CI.
