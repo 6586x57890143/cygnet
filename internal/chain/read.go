@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -64,6 +65,8 @@ type Reader struct {
 	// Native is an Alchemy Transfers API endpoint per chain. Credentials
 	// stay on cygnet; an unset endpoint disables the native rail.
 	Native map[string]string
+	Monero *Monero
+	Kraken string
 	// RPC is an endpoint by chain ("base"), in place of the rail's own: a
 	// paid node, or a test server.
 	RPC map[string]string
@@ -544,6 +547,9 @@ var decimal = regexp.MustCompile(`^[0-9]+(\.[0-9]+)?$`)
 // USD is what one coin of asset ("SOL") is worth in US dollars now:
 // Coinbase's public spot price, which takes no key.
 func (r *Reader) USD(ctx context.Context, asset string) (*big.Rat, error) {
+	if asset == "XMR" {
+		return r.moneroUSD(ctx, time.Now())
+	}
 	base := r.Prices
 	if base == "" {
 		base = "https://api.coinbase.com"
@@ -562,6 +568,9 @@ func (r *Reader) USD(ctx context.Context, asset string) (*big.Rat, error) {
 		return nil, fmt.Errorf("price: %w", err)
 	}
 	band, known := priceBand[asset]
+	if len(res.Data.Amount) > 48 {
+		return nil, errors.New("price: oversized quote")
+	}
 	p, ok := new(big.Rat).SetString(res.Data.Amount)
 	if !known || !decimal.MatchString(res.Data.Amount) || !ok || res.Data.Currency != "USD" ||
 		p.Cmp(new(big.Rat).SetInt64(band[0])) < 0 || p.Cmp(new(big.Rat).SetInt64(band[1])) > 0 {

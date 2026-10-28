@@ -5,7 +5,8 @@ for a length bought up front. `support.cygnet.lol` sells it (the old `cygnet.lol
 checkout, watches the chains for its payment and records what it bought; the birds ask
 her who backs them and give their supporter role.
 
-cygnet holds **no key and moves no money**. Every chain call is a public read. What a
+cygnet holds **no wallet key and moves no money**. Monero runs in a separate private
+view-only wallet service; other chain calls are public reads. What a
 payment buys is the role, preview builds, early access and a say: never a feature of a
 bot, since Discord's monetization terms ask an app that sells its own features to sell
 them through Discord too.
@@ -29,18 +30,23 @@ already has.
 
 ## How a payment finds its checkout
 
-A checkout asks for its price **plus change no other live checkout on its rail has**:
-up to 9999 units of a 6 decimal stablecoin (under a cent), or up to 0.0001 SOL. A unique
+On shared-address rails, a checkout asks for its price **plus change no other live checkout on its rail has**:
+up to 9999 units of a 6 decimal stablecoin (under a cent), or up to 0.0001 SOL or ETH. A unique
 index on `(rail, amount)` over live checkouts makes that a database fact, not a hope, and
 a quote that draws a taken amount draws again. The transfer that arrives with exactly
 that amount pays exactly that checkout.
 
-- A checkout's amount holds for an hour, 20 minutes on SOL, whose price is read from
-  Coinbase's public spot price when the checkout is made and believed only between $1
-  and $10,000. Past that it is *lapsed*: a stablecoin checkout still takes a late
-  payment and keeps its amount from anyone else for 48 hours, a SOL one for 10 minutes
+Monero instead assigns a permanent, never-reused subaddress to each checkout, with
+no amount change. Eligible partial receipts accumulate until the quoted amount is
+reached, granting the purchased period once. See [Monero setup](monero.md) for the
+wallet service, secrets, recovery and validation steps.
+
+- A checkout's amount holds for an hour, 20 minutes for SOL, ETH and XMR. SOL and ETH
+  use Coinbase's public spot price; XMR uses a recent Kraken trade. Bounds are $1 to
+  $10,000 for SOL and XMR, $10 to $100,000 for ETH. Past expiry it is *lapsed*: a stablecoin checkout still takes a late
+  payment and keeps its amount from anyone else for 48 hours, a volatile one for 10 minutes
   (long enough to finalize, too short to be a bet on the price), then it is *void* and
-  the amount is free again. A SOL payment after that matches nothing (below).
+  shared amounts are free again. A volatile payment sent after that matches nothing (below).
 - One person holds at most three live checkouts, lapsed ones included; asking again
   for the same thing returns the one they have.
 - Each rail is read on its own 30 second clock, so a slow or flooded one never holds
@@ -48,7 +54,7 @@ that amount pays exactly that checkout.
   A Solana read lists at most 10 pages of signatures and fetches at most 50
   transactions, and saves how far it got either way, so a flood of junk slows reading
   down and never stops it. What a read got before an error is kept.
-- A SOL checkout past its 10 minutes of slack stops showing where to pay and says to
+- A volatile checkout past its 10 minutes of slack stops showing where to pay and says to
   start a new one, since nothing sent then pays it.
 - The Solana rail remembers which wallet it watches. A different wallet is read from
   the moment it is set, never back through its history.
@@ -56,7 +62,7 @@ that amount pays exactly that checkout.
   the same and listed on the keeper's `/support` panel with its transaction, for the
   keeper to sort out by hand with **give backing**.
 - A payment is never changed or deleted once written (a trigger refuses it), and is
-  recorded at most once: `(rail, transaction, index)` is its key.
+  recorded at most once: `(rail, transaction, index, event)` is its key.
 
 ## The rails
 
@@ -69,6 +75,7 @@ against its own `symbol()` and `decimals()`.
 | USDC on Base, Polygon | `eth_getLogs` for ERC-20 `Transfer` to the wallet, 1000 blocks a request | 30 blocks deep on Base, 128 on Polygon |
 | USDT on TRON | TronGrid's `/v1/accounts/<wallet>/transactions/trc20` | `only_confirmed` |
 | ETH on Base, Ethereum | Alchemy Transfers API, ordinary and contract sends; standard RPC verifies successful receipts and canonical blocks | RPC `finalized` |
+| XMR on Monero | Private view-only wallet RPC, dedicated subaddresses | 10 confirmations, unlocked, no extra unlock time or observed double-spend |
 
 Native ETH needs `CYGNET_NATIVE_BASE` or `CYGNET_NATIVE_ETHEREUM`, each an Alchemy
 Transfers API URL, and uses the existing EVM receiving wallet. Set an independent
@@ -97,9 +104,10 @@ these through `support.IconPNG` and register them in their application emoji lib
 Ethereum, Solana and Monero network names reuse the native asset's mark. New marks
 alone do not advertise or enable an unsupported payment rail.
 
-Each watched account has a cursor (`support_cursor`): a block, a time or a signature.
+Each watched account has a cursor (`support_cursor`): a block, a time, a signature or a subaddress index.
 The first read starts at the present and reads nothing older, so a wallet's history is
-never taken for payments; a Solana token account found later (the first payment opens
+never taken for payments. Monero revisits assigned subaddresses and matches receipts
+only within their invoice's time window. A Solana token account found later (the first payment opens
 it) is read from when its rail was first watched. The chains are read every minute;
 what arrived is recorded first and the cursor moved after, so a crash between the two
 reads the same transfers again, which are already seen. A failed read leaves its cursor

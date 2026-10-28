@@ -36,6 +36,7 @@ import (
 // every EVM rail. A family left empty offers none of its rails.
 type Wallets struct {
 	EVM, Tron, Solana string
+	Monero            string
 }
 
 func (w Wallets) of(f chain.Family) string {
@@ -46,6 +47,8 @@ func (w Wallets) of(f chain.Family) string {
 		return w.Tron
 	case chain.Solana:
 		return w.Solana
+	case chain.MoneroFamily:
+		return w.Monero
 	}
 	return ""
 }
@@ -53,7 +56,7 @@ func (w Wallets) of(f chain.Family) string {
 // Check refuses a wallet that isn't an address of its family, so a typo
 // fails boot instead of publishing somewhere nobody can spend from.
 func (w Wallets) Check() error {
-	for _, f := range []chain.Family{chain.EVM, chain.Tron, chain.Solana} {
+	for _, f := range []chain.Family{chain.EVM, chain.Tron, chain.Solana, chain.MoneroFamily} {
 		if a := w.of(f); a != "" && !chain.Valid(f, a) {
 			return fmt.Errorf("the %s wallet %q is not a %s address", f, a, f)
 		}
@@ -122,7 +125,7 @@ func (*Module) Help() core.Help {
 	return core.Help{
 		Color: brand.ColorPrimary,
 		Line:  "backing the birds, paid in crypto",
-		About: "/support shows whether you back the birds and until when, and the way to start or add to it at cygnet.lol. backing is bought up front for a month or more and paid in usdc, usdt or sol into a wallet only its owner holds. cygnet asks for an exact amount, sees it arrive on the chain and counts it, and the birds give their supporter role to whoever backs them. nothing renews by itself",
+		About: "/support shows whether you back the birds and until when, and the way to start or add to it at support.cygnet.lol. backing is bought up front for a month or more, on the checkout's available payment networks, into a wallet only its owner holds. cygnet sees the payment and counts it, and the birds give their supporter role to whoever backs them. nothing renews by itself",
 	}
 }
 
@@ -148,7 +151,7 @@ func (m *Module) Modals() []core.Modal {
 
 // OnEvent starts reading the chains once cygnet is connected.
 func (m *Module) OnEvent(ev bot.Event) {
-	if _, ok := ev.(*events.Ready); ok && m.store != nil && len(m.rails()) > 0 {
+	if _, ok := ev.(*events.Ready); ok && m.store != nil && (len(m.rails()) > 0 || (m.reader != nil && m.reader.Monero != nil)) {
 		m.watching.Do(func() { go m.watch(context.Background()) })
 	}
 }
@@ -156,16 +159,36 @@ func (m *Module) OnEvent(ev bot.Event) {
 // rails is what a checkout can be paid in: every rail whose wallet is set.
 func (m *Module) rails() []chain.Rail {
 	var out []chain.Rail
-	for _, r := range chain.Rails {
-		if m.wallets.of(r.Family) != "" && (!r.Native || (m.reader != nil && m.reader.Native[r.Chain] != "")) {
-			out = append(out, r)
+	for _, r := range m.configuredRails() {
+		if r.Family == chain.MoneroFamily && (m.reader == nil || m.reader.Monero == nil || !m.reader.Monero.Ready(m.now())) {
+			continue
 		}
+		out = append(out, r)
+	}
+	return out
+}
+
+// Configured rails remain visible to the keeper during an outage, even
+// when readiness temporarily removes them from the public offer.
+func (m *Module) configuredRails() []chain.Rail {
+	var out []chain.Rail
+	for _, r := range chain.Rails {
+		if m.wallets.of(r.Family) == "" || (r.Native && (m.reader == nil || m.reader.Native[r.Chain] == "")) {
+			continue
+		}
+		if r.Family == chain.MoneroFamily && (m.reader == nil || m.reader.Monero == nil) {
+			continue
+		}
+		out = append(out, r)
 	}
 	return out
 }
 
 func (m *Module) rail(key string) (chain.Rail, bool) {
 	r, ok := chain.Find(key)
+	if r.Family == chain.MoneroFamily && (m.reader == nil || m.reader.Monero == nil || !m.reader.Monero.Ready(m.now())) {
+		return r, false
+	}
 	return r, ok && m.wallets.of(r.Family) != "" && (!r.Native || (m.reader != nil && m.reader.Native[r.Chain] != ""))
 }
 
@@ -391,7 +414,7 @@ func (m *Module) keeperView(ctx context.Context, now time.Time) (string, error) 
 	}
 	rows = append(rows, [2]string{"30 days", strings.Join(in, " · ")})
 	var reads []string
-	for _, r := range m.rails() {
+	for _, r := range m.configuredRails() {
 		reads = append(reads, r.Label+" "+health(cursors, r.Key, now))
 	}
 	if len(reads) == 0 {

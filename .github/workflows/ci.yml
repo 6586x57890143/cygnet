@@ -185,7 +185,7 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ env.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          source: "docker-compose.prod.yml"
+          source: "docker-compose.prod.yml,docker-compose.xmr.yml"
           target: ${{ env.VPS_DIR }}
       - name: Pull and restart on foundry
         if: steps.vps.outputs.configured == 'true'
@@ -199,23 +199,37 @@ jobs:
             set -e
             cd "$VPS_DIR"
             test -f .env || { echo "$VPS_DIR/.env is missing; run tools/setup against this host"; exit 1; }
+            compose() {
+              if [ -f .xmr-enabled ]; then
+                docker compose -f docker-compose.prod.yml -f docker-compose.xmr.yml "$@"
+              else
+                docker compose -f docker-compose.prod.yml "$@"
+              fi
+            }
             docker network inspect fleet >/dev/null 2>&1 || docker network create fleet >/dev/null
             export CYGNET_IMAGE_TAG="$IMAGE_TAG"
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
-            docker compose -f docker-compose.prod.yml pull bot
-            docker compose -f docker-compose.prod.yml up -d --remove-orphans
+            compose config --quiet
+            if [ -f .xmr-enabled ]; then
+              wallet_image=$(compose config --images xmr-wallet)
+              printf '%s\n' "$wallet_image" | grep -Eq '^[^[:space:]]+@sha256:[[:xdigit:]]{64}$' || {
+                echo "wallet image must be pinned by sha256 digest"; exit 1;
+              }
+            fi
+            compose pull bot
+            compose up -d --remove-orphans
             docker logout ghcr.io
             # A bot that dies in its first 30s (a bad token, a failed
             # migration) goes back to the tag that was running, and the
             # deploy fails. Its logs stay on the host: this repository's
             # Actions logs are public.
             sleep 30
-            state=$(docker inspect -f '{{.State.Status}} {{.RestartCount}}' "$(docker compose -f docker-compose.prod.yml ps -aq bot)")
+            state=$(docker inspect -f '{{.State.Status}} {{.RestartCount}}' "$(compose ps -aq bot)")
             if [ "$state" != "running 0" ]; then
               echo "cygnet $IMAGE_TAG did not stay up ($state); see docker compose logs bot on the host"
               if [ -f deployed-tag.env ]; then
                 set -a; . ./deployed-tag.env; set +a
-                docker compose -f docker-compose.prod.yml up -d bot
+                compose up -d bot
                 echo "rolled back to $CYGNET_IMAGE_TAG"
               fi
               exit 1
@@ -231,7 +245,7 @@ jobs:
             # `lease does not exist`.
             docker image prune -f --filter "until=168h" \
               --filter "label=org.opencontainers.image.source=https://github.com/6586x57890143/cygnet"
-            docker compose -f docker-compose.prod.yml ps
+            compose ps
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GHCR_USER: ${{ github.actor }}

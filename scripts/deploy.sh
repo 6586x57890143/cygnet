@@ -24,23 +24,37 @@ echo "building $image on $host"
 git archive --format=tar HEAD | ssh "$host" "docker build -q --build-arg REVISION=$sha -t $image -"
 
 ssh "$host" "mkdir -p cygnet"
-scp -q docker-compose.prod.yml "$host:cygnet/docker-compose.prod.yml"
+scp -q docker-compose.prod.yml docker-compose.xmr.yml "$host:cygnet/"
 ssh "$host" bash -s -- "$sha" <<'REMOTE'
 set -euo pipefail
 cd ~/cygnet
 test -f .env || { echo "~/cygnet/.env is missing; run go run ./tools/setup -host <alias> -no-deploy first" >&2; exit 1; }
+compose() {
+  if [ -f .xmr-enabled ]; then
+    docker compose -f docker-compose.prod.yml -f docker-compose.xmr.yml "$@"
+  else
+    docker compose -f docker-compose.prod.yml "$@"
+  fi
+}
 docker network inspect fleet >/dev/null 2>&1 || docker network create fleet >/dev/null
 export CYGNET_IMAGE_TAG="$1"
-docker compose -f docker-compose.prod.yml up -d --remove-orphans
+compose config --quiet
+if [ -f .xmr-enabled ]; then
+  wallet_image=$(compose config --images xmr-wallet)
+  printf '%s\n' "$wallet_image" | grep -Eq '^[^[:space:]]+@sha256:[[:xdigit:]]{64}$' || {
+    echo "wallet image must be pinned by sha256 digest" >&2; exit 1;
+  }
+fi
+compose up -d --remove-orphans
 # Rolled back if it does not stay up for 30s, as in CI.
 sleep 30
-state=$(docker inspect -f '{{.State.Status}} {{.RestartCount}}' "$(docker compose -f docker-compose.prod.yml ps -aq bot)")
+state=$(docker inspect -f '{{.State.Status}} {{.RestartCount}}' "$(compose ps -aq bot)")
 if [ "$state" != "running 0" ]; then
   echo "cygnet $1 did not stay up ($state)" >&2
-  docker compose -f docker-compose.prod.yml logs --tail 30 bot >&2
+  compose logs --tail 30 bot >&2
   if [ -f deployed-tag.env ]; then
     set -a; . ./deployed-tag.env; set +a
-    docker compose -f docker-compose.prod.yml up -d bot
+    compose up -d bot
     echo "rolled back to $CYGNET_IMAGE_TAG" >&2
   fi
   exit 1
@@ -48,5 +62,5 @@ fi
 # Only after it is running, as in CI.
 [ -f deployed-tag.env ] && cp deployed-tag.env previous-tag.env
 echo "CYGNET_IMAGE_TAG=$1" > deployed-tag.env
-docker compose -f docker-compose.prod.yml ps
+compose ps
 REMOTE

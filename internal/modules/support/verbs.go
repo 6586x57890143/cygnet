@@ -216,6 +216,10 @@ func (m *Module) quote(ctx context.Context, caller string, body json.RawMessage)
 	}
 	ask := store.Ask{User: user, Months: a.Months, Cents: a.Cents, Rail: rail.Key}
 	ask.Destination = m.wallets.of(rail.Family)
+	if rail.Family == chain.MoneroFamily {
+		ask.Wallet = ask.Destination
+		ask.Destination = ""
+	}
 	if rail.Family == chain.EVM {
 		ask.Destination = strings.ToLower(ask.Destination)
 	}
@@ -246,7 +250,7 @@ func (m *Module) quote(ctx context.Context, caller string, body json.RawMessage)
 	case errors.Is(err, store.ErrTooMany):
 		return nil, link.Err(link.Denied, TooMany)
 	case errors.Is(err, store.ErrNoAmount):
-		return nil, link.Err(link.Busy, "every amount on that rail is taken right now")
+		return nil, link.Err(link.Busy, "payments on that network are busy; try again shortly")
 	case err != nil:
 		return nil, err
 	}
@@ -290,9 +294,9 @@ func (m *Module) view(i store.Invoice) Checkout {
 		Rail: i.Rail, Label: rail.Label, Amount: rail.Format(i.Amount), Units: i.Amount.String(),
 		To: to, Quote: i.Quote, Expires: i.Expires.UnixMilli(),
 	}
-	// ponytail: the wallet is read from the environment, not kept on the
-	// checkout, so change one only with none open on it (the panel lists
-	// them); a checkout whose wallet is unset offers nowhere to pay.
+	// Legacy invoices still use the configured wallet; new invoices keep
+	// their original destination. Watchers follow the configured wallet,
+	// so rotate it only with none open or lapsed on it.
 	c.Stale = i.Quote != "" && i.State == store.InvoiceLapsed && !m.now().Before(i.Expires.Add(store.VolatileSlack))
 	if to != "" && !c.Stale && (i.State == store.InvoiceOpen || i.State == store.InvoiceLapsed) {
 		c.Pay = rail.Pay(to, i.Amount, "back the birds", months(i.Months)+" of backing")

@@ -563,7 +563,7 @@ func links() string {
 // (CYGNET_RPC_<CHAIN> in place of a rail's public one, CYGNET_TRONGRID_KEY)
 // and the checkout at support.cygnet.lol, once the Worker can reach the hub.
 func supporters(s *store.Support, bootstrap core.Admins, profile func(context.Context, snowflake.ID) (support.Owner, error), log *slog.Logger) (*support.Module, error) {
-	w := support.Wallets{EVM: os.Getenv("CYGNET_SUPPORT_EVM"), Tron: os.Getenv("CYGNET_SUPPORT_TRON"), Solana: os.Getenv("CYGNET_SUPPORT_SOLANA")}
+	w := support.Wallets{EVM: os.Getenv("CYGNET_SUPPORT_EVM"), Tron: os.Getenv("CYGNET_SUPPORT_TRON"), Solana: os.Getenv("CYGNET_SUPPORT_SOLANA"), Monero: os.Getenv("CYGNET_SUPPORT_MONERO")}
 	if err := w.Check(); err != nil {
 		return nil, fmt.Errorf("CYGNET_SUPPORT_*: %w", err)
 	}
@@ -582,6 +582,16 @@ func supporters(s *store.Support, bootstrap core.Admins, profile func(context.Co
 		return nil, errors.New("CYGNET_SUPPORT_* is set but not whose it is: set CYGNET_SUPPORT_OWNER or CYGNET_BOOTSTRAP_ADMIN_USER_ID")
 	}
 	r := &chain.Reader{RPC: map[string]string{}, Native: map[string]string{}, TronKey: os.Getenv("CYGNET_TRONGRID_KEY")}
+	if endpoint := os.Getenv("CYGNET_XMR_RPC"); endpoint != "" || w.Monero != "" {
+		password, err := os.ReadFile(os.Getenv("CYGNET_XMR_RPC_PASSWORD_FILE"))
+		if err != nil || len(password) == 0 || len(password) > 4096 {
+			return nil, errors.New("read CYGNET_XMR_RPC_PASSWORD_FILE: missing or invalid secret file")
+		}
+		r.Monero, err = chain.NewMonero(endpoint, w.Monero, os.Getenv("CYGNET_XMR_NETWORK"), os.Getenv("CYGNET_XMR_RPC_USER"), strings.TrimRight(string(password), "\r\n"))
+		if err != nil {
+			return nil, err
+		}
+	}
 	for _, rail := range chain.Rails {
 		if v := os.Getenv("CYGNET_RPC_" + strings.ToUpper(rail.Chain)); v != "" {
 			r.RPC[rail.Chain] = v
