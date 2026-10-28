@@ -86,6 +86,19 @@ rail until both endpoints work. Scans fetch at most 50 transfers per round, carr
 pagination across rounds and replay safely after an expired pagination token.
 All prices and amounts use integers or exact rational numbers, never floating point.
 
+Prepare Alchemy credentials privately with `scripts/provision-alchemy.py`, installed
+on Foundry as root-owned `/usr/local/sbin/cygnet-alchemy-setup`. Run it from your own
+terminal with `ssh -t foundry 'sudo /usr/local/sbin/cygnet-alchemy-setup'` and paste
+the Ethereum Mainnet and Base Mainnet HTTPS RPC URLs at its hidden prompts. Their
+API keys stay out of command arguments, history, environment variables and output.
+Only the exact Alchemy HTTPS hosts and `/v2/KEY` paths are accepted; redirects and
+environment proxies are refused. The initializer validates chain IDs, recent
+finalized blocks and a bounded external/internal transfer query. Both URLs are
+saved atomically in root-only `/var/lib/cygnet-payment-runtime/alchemy.json` only
+after both networks pass. Existing files are never overwritten. This is preparation
+for a separate rollout; it changes no active environment or service and enables
+no payment method. Keep the URLs and their API key in Bitwarden for recovery.
+
 New checkouts keep their receiving address. Changing an environment variable never
 changes an address already shown to a payer. Do not rotate the receiving wallet with
 checkouts still open or lapsed: the watchers follow the configured wallet. Payment

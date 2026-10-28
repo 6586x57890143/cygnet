@@ -86,6 +86,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: scripts/prose.sh
+      - run: python3 -m unittest discover -s scripts -p 'test_provision_*.py' -v
 
   docker-build:
     runs-on: ubuntu-latest
