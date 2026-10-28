@@ -24,17 +24,19 @@ echo "building $image on $host"
 git archive --format=tar HEAD | ssh "$host" "docker build -q --build-arg REVISION=$sha -t $image -"
 
 ssh "$host" "mkdir -p cygnet"
-scp -q docker-compose.prod.yml docker-compose.xmr.yml "$host:cygnet/"
+scp -q docker-compose.prod.yml docker-compose.xmr.yml docker-compose.eth.yml "$host:cygnet/"
 ssh "$host" bash -s -- "$sha" <<'REMOTE'
 set -euo pipefail
 cd ~/cygnet
 test -f .env || { echo "~/cygnet/.env is missing; run go run ./tools/setup -host <alias> -no-deploy first" >&2; exit 1; }
 compose() {
-  if [ -f .xmr-enabled ]; then
-    docker compose -f docker-compose.prod.yml -f docker-compose.xmr.yml "$@"
-  else
-    docker compose -f docker-compose.prod.yml "$@"
+  if [ -f .eth-enabled ]; then
+    set -- -f docker-compose.eth.yml "$@"
   fi
+  if [ -f .xmr-enabled ]; then
+    set -- -f docker-compose.xmr.yml "$@"
+  fi
+  docker compose -f docker-compose.prod.yml "$@"
 }
 docker network inspect fleet >/dev/null 2>&1 || docker network create fleet >/dev/null
 export CYGNET_IMAGE_TAG="$1"

@@ -99,6 +99,26 @@ after both networks pass. Existing files are never overwritten. This is preparat
 for a separate rollout; it changes no active environment or service and enables
 no payment method. Keep the URLs and their API key in Bitwarden for recovery.
 
+The rollout uses `docker-compose.eth.yml`: only the bot mounts
+`secrets/alchemy.json` read-only, owned by UID/GID 65532 with mode 0400. Its
+`CYGNET_NATIVE_FILE` variable contains only `/run/secrets/alchemy.json`. The bot
+rejects unknown networks, duplicate JSON fields, oversized files and endpoints
+outside the expected Alchemy mainnet hosts. Inline `CYGNET_NATIVE_BASE` and
+`CYGNET_NATIVE_ETHEREUM` must be unset when using the file. Neither the wallet
+service, Merlin nor the Worker receives this file. The ignored `.eth-enabled`
+marker retains this override on manual and CI deployments independently of the
+Monero marker. Create it only during the reviewed activation step; do not put
+the API key or keyed URLs in the deployment environment.
+
+`cmd/native-check` validates the saved file through Cygnet's reader, including
+chain IDs, independent finalized RPC reads and a bounded native-transfer query
+to a public burn address. Build it for the host architecture, verify its transfer
+checksum, and run with `CYGNET_NATIVE_FILE` pointing at the private JSON file.
+Only the file path enters its environment. This preflight does not create invoices,
+record payments, query the owner's transfer history or replace funded settlement
+and Merlin role-grant checks. Shared node requests refuse redirects and environment
+proxies, cap response bodies and omit provider-supplied RPC messages from errors.
+
 New checkouts keep their receiving address. Changing an environment variable never
 changes an address already shown to a payer. Do not rotate the receiving wallet with
 checkouts still open or lapsed: the watchers follow the configured wallet. Payment

@@ -3,6 +3,7 @@ package chain
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -118,7 +119,8 @@ func TestEVMFailuresKeepTheCursor(t *testing.T) {
 	base := rail(t, "base:USDC")
 	srv, _ := node(t, map[string]func([]json.RawMessage) any{"eth_blockNumber": func([]json.RawMessage) any { return "0x64" }})
 	r := &Reader{RPC: map[string]string{"base": srv.URL}}
-	if _, next, err := r.EVM(context.Background(), base, wallet, 50); err == nil || next != 50 || !strings.Contains(err.Error(), "no eth_getLogs") {
+	var refused *rpcError
+	if _, next, err := r.EVM(context.Background(), base, wallet, 50); err == nil || next != 50 || !errors.As(err, &refused) || refused.Code != -32601 {
 		t.Fatalf("a refused getLogs: %d %v", next, err)
 	}
 	young, _ := node(t, map[string]func([]json.RawMessage) any{"eth_blockNumber": func([]json.RawMessage) any { return "0x5" }})

@@ -582,6 +582,17 @@ func supporters(s *store.Support, bootstrap core.Admins, profile func(context.Co
 		return nil, errors.New("CYGNET_SUPPORT_* is set but not whose it is: set CYGNET_SUPPORT_OWNER or CYGNET_BOOTSTRAP_ADMIN_USER_ID")
 	}
 	r := &chain.Reader{RPC: map[string]string{}, Native: map[string]string{}, TronKey: os.Getenv("CYGNET_TRONGRID_KEY")}
+	nativeFile := os.Getenv("CYGNET_NATIVE_FILE")
+	if nativeFile != "" {
+		if os.Getenv("CYGNET_NATIVE_BASE") != "" || os.Getenv("CYGNET_NATIVE_ETHEREUM") != "" {
+			return nil, errors.New("use CYGNET_NATIVE_FILE or inline native endpoints, not both")
+		}
+		var err error
+		r.Native, err = chain.LoadNativeEndpoints(nativeFile)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if endpoint := os.Getenv("CYGNET_XMR_RPC"); endpoint != "" || w.Monero != "" {
 		password, err := os.ReadFile(os.Getenv("CYGNET_XMR_RPC_PASSWORD_FILE"))
 		if err != nil || len(password) == 0 || len(password) > 4096 {
@@ -604,7 +615,7 @@ func supporters(s *store.Support, bootstrap core.Admins, profile func(context.Co
 		if v := os.Getenv("CYGNET_RPC_" + strings.ToUpper(rail.Chain)); v != "" {
 			r.RPC[rail.Chain] = v
 		}
-		if rail.Native {
+		if rail.Native && nativeFile == "" {
 			r.Native[rail.Chain] = os.Getenv("CYGNET_NATIVE_" + strings.ToUpper(rail.Chain))
 		}
 	}

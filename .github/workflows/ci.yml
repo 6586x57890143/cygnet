@@ -201,7 +201,7 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ env.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          source: "docker-compose.prod.yml,docker-compose.xmr.yml"
+          source: "docker-compose.prod.yml,docker-compose.xmr.yml,docker-compose.eth.yml"
           target: ${{ env.VPS_DIR }}
       - name: Pull and restart on foundry
         if: steps.vps.outputs.configured == 'true'
@@ -216,11 +216,13 @@ jobs:
             cd "$VPS_DIR"
             test -f .env || { echo "$VPS_DIR/.env is missing; run tools/setup against this host"; exit 1; }
             compose() {
-              if [ -f .xmr-enabled ]; then
-                docker compose -f docker-compose.prod.yml -f docker-compose.xmr.yml "$@"
-              else
-                docker compose -f docker-compose.prod.yml "$@"
+              if [ -f .eth-enabled ]; then
+                set -- -f docker-compose.eth.yml "$@"
               fi
+              if [ -f .xmr-enabled ]; then
+                set -- -f docker-compose.xmr.yml "$@"
+              fi
+              docker compose -f docker-compose.prod.yml "$@"
             }
             docker network inspect fleet >/dev/null 2>&1 || docker network create fleet >/dev/null
             export CYGNET_IMAGE_TAG="$IMAGE_TAG"

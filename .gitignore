@@ -2,6 +2,7 @@
 /secrets/
 /xmr-wallet/
 /.xmr-enabled
+/.eth-enabled
 /cygnet
 /cygnet.exe
 deployed-tag.env

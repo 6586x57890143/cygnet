@@ -89,8 +89,18 @@ func (r *Reader) client() *http.Client {
 	if r.HTTP != nil {
 		return r.HTTP
 	}
-	return &http.Client{Timeout: timeout}
+	return nodeClient
 }
+
+// Keep the connection pool while refusing redirects and environment proxies:
+// configured node URLs can contain API keys that must stay on their TLS peer.
+var nodeClient = func() *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+	return &http.Client{Timeout: timeout, Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+}()
 
 // rpcError is a JSON-RPC error. Nodes send it with HTTP 200, so the status
 // alone would read a refusal as an empty answer.
@@ -99,7 +109,7 @@ type rpcError struct {
 	Message string `json:"message"`
 }
 
-func (e *rpcError) Error() string { return fmt.Sprintf("rpc error %d: %s", e.Code, e.Message) }
+func (e *rpcError) Error() string { return fmt.Sprintf("rpc error %d", e.Code) }
 
 // rpc calls method on a JSON-RPC endpoint and decodes its result into out.
 func (r *Reader) rpc(ctx context.Context, endpoint, method string, params []any, out any) error {
@@ -137,7 +147,7 @@ func (r *Reader) do(ctx context.Context, method, endpoint string, body []byte, h
 	}
 	req, err := http.NewRequestWithContext(ctx, method, endpoint, rd)
 	if err != nil {
-		return nil, err
+		return nil, errors.New("invalid node request")
 	}
 	for k, v := range header {
 		req.Header[k] = v
@@ -151,9 +161,12 @@ func (r *Reader) do(ctx context.Context, method, endpoint string, body []byte, h
 		return nil, fmt.Errorf("reaching %s: %w", host(endpoint), unwrapURL(err))
 	}
 	defer func() { _ = res.Body.Close() }()
-	raw, err := io.ReadAll(io.LimitReader(res.Body, maxBody))
+	raw, err := io.ReadAll(io.LimitReader(res.Body, maxBody+1))
 	if err != nil {
 		return nil, err
+	}
+	if len(raw) > maxBody {
+		return nil, errors.New("node response exceeds size limit")
 	}
 	if res.StatusCode/100 != 2 {
 		return nil, fmt.Errorf("%s answered %d", host(endpoint), res.StatusCode)
