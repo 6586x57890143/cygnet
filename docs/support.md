@@ -118,6 +118,7 @@ checks the readers see real transfers. Run it before changing a reader:
 | `cygnet.checkout` | the Worker | a checkout, for the person who opened it |
 | `cygnet.supporter` | any bird | someone's backing: active, gold, since, until |
 | `cygnet.supporters` | any bird | everyone backing the birds now, for a role |
+| `cygnet.payment_methods` | any bird | public rails currently on offer, for support cards; no checkout or account data |
 
 The Worker says who signed in, and only the Worker is trusted to: its verbs refuse any
 other caller. The sign in asks Discord for `identify` alone, and the token is given back

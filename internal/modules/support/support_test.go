@@ -692,7 +692,7 @@ func TestTheModuleIsWellFormed(t *testing.T) {
 	if err := r.Add(m); err != nil {
 		t.Fatal(err)
 	}
-	if m.Name() != "support" || m.Perms() != 0 || m.Help().About == "" || len(m.Verbs()) != 5 {
+	if m.Name() != "support" || m.Perms() != 0 || m.Help().About == "" || len(m.Verbs()) != 6 {
 		t.Fatal("module")
 	}
 	if months(1) != "1 month" || months(12) != "12 months" || day(t0) != "25 oct 2026" || clip("abcdef", 5) != "ab..." || clip("abc", 5) != "abc" {

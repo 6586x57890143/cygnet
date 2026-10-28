@@ -109,3 +109,16 @@ func TestEveryPerkIconIsListed(t *testing.T) {
 		}
 	}
 }
+
+func TestTheAdvertUsesOnlyTheCurrentPaymentMethods(t *testing.T) {
+	b := icons
+	b.Methods = []Method{{Key: "base:ETH"}, {Key: "ethereum:ETH"}, {Key: "monero:XMR"}, {Key: "bad:<@everyone>"}, {Key: "invalid"}}
+	got := body(Advert(b))
+	if !strings.Contains(got, "<:eth:1> eth · <:xmr:1> xmr") || strings.Contains(got, "<:usdc:") || strings.Contains(got, "@everyone") {
+		t.Fatalf("wrong payment choices: %s", got)
+	}
+	b.Methods = []Method{}
+	if !strings.Contains(body(Advert(b)), "see the checkout for available currencies") {
+		t.Fatal("empty offer advertised a payment method")
+	}
+}

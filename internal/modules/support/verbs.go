@@ -130,7 +130,21 @@ type Backer struct {
 func (m *Module) Verbs() map[string]func(context.Context, string, json.RawMessage) (any, error) {
 	return map[string]func(context.Context, string, json.RawMessage) (any, error){
 		"offer": m.offer, "quote": m.quote, "checkout": m.checkout, "supporter": m.supporter, "supporters": m.supporters,
+		"payment_methods": m.paymentMethods,
 	}
+}
+
+// paymentMethods is the public payment choices, without checkout or
+// account data. Birds use it to advertise only rails currently offered.
+func (m *Module) paymentMethods(ctx context.Context, caller string, body json.RawMessage) (any, error) {
+	if _, _, err := m.read(caller, body, false); err != nil {
+		return nil, err
+	}
+	out := []OfferRail{}
+	for _, r := range m.rails() {
+		out = append(out, OfferRail{Key: r.Key, Label: r.Label})
+	}
+	return map[string][]OfferRail{"rails": out}, nil
 }
 
 // read decodes a call's body and who it is about. A verb only the Worker

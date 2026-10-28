@@ -102,3 +102,22 @@ func TestNativePaymentFlowsFromCheckoutIntoTheSharedSupporterList(t *testing.T) 
 		t.Fatalf("quoted destination changed: %+v %v", i, err)
 	}
 }
+
+func TestBirdsReadPaymentMethodsWithoutCheckoutOrUserData(t *testing.T) {
+	m := running(t, Wallets{EVM: evmWallet}, "http://unused")
+	out, err := ask(t, m.Verbs()["payment_methods"], "merlin", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rails := out.(map[string][]OfferRail)["rails"]
+	if len(rails) != 2 || rails[0].Key != "base:USDC" {
+		t.Fatalf("wrong methods: %+v", rails)
+	}
+	if _, err := ask(t, m.paymentMethods, "merlin", map[string]string{"user": "invalid"}); err == nil {
+		t.Fatal("ignored malformed caller input")
+	}
+	none := New(nil, nil, Wallets{}, 0, nil, "", nil, nil)
+	if _, err := none.paymentMethods(context.Background(), "merlin", nil); err == nil {
+		t.Fatal("offered payments without storage")
+	}
+}
