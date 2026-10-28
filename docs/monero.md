@@ -32,7 +32,8 @@ Do not put secret values in command arguments, `.env`, Git, terminal history or 
 `docker-compose.xmr.yml` is an optional override. It publishes no port and puts the
 wallet on its own network with cygnet, plus a separate network for node egress. It
 does not join the fleet or database networks. Loading the override requires
-`CYGNET_XMR_IMAGE`, an immutable `name@sha256:...` image reviewed for the host's CPU
+`CYGNET_XMR_IMAGE`, an immutable `name@sha256:...` reference or local `sha256:...`
+image identity reviewed for the host's CPU
 architecture and containing verified wallet binaries plus the offline startup guard.
 The supplied `docker/monero/Dockerfile` builds Monero 0.18.5.4 from official archives,
 checks the pinned signing-key fingerprint and signed release checksums, and uses a
@@ -45,7 +46,24 @@ docker buildx build --platform linux/arm64 -f docker/monero/Dockerfile --target 
 
 The CLI target is for interactive creation; it is not the long-running service.
 Publish the reviewed RPC image to an owned registry and use its registry digest in
-`CYGNET_XMR_IMAGE`. An image or binary upgrade needs the same review as the service itself.
+`CYGNET_XMR_IMAGE`, or transfer a checksum-verified image archive over private SSH
+and verify that Docker resolves the exact reviewed image identity after loading it.
+An archive import may retain the content-addressed image identity without its
+repository alias; verify that identity against the tested source image.
+An image or binary upgrade needs the same review as the service itself.
+
+For Foundry, the reviewed `scripts/provision-monero.sh` can be installed as
+`/usr/local/sbin/cygnet-monero-setup` after preparing root-owned runtime metadata
+in `/var/lib/cygnet-monero-runtime`: `project-dir` names `/home/deploy/cygnet`, and
+`image-ref` names the reviewed ARM64 image by digest. Run the initializer in your
+own private terminal with `ssh -t foundry 'sudo /usr/local/sbin/cygnet-monero-setup'`.
+It prompts for the restore height, two distinct random alphanumeric passwords of
+48 to 128 characters, primary address and private view key. Type `exit` at the
+wallet prompt to finish. The offline CLI containers have Docker logging disabled.
+The initializer refuses existing wallet paths and prepares the view-only wallet,
+TLS and password files without starting a listener or modifying the active bot
+environment. Non-secret rollout settings are saved in root-only `activation.env`
+under the runtime metadata directory for the separate activation step.
 
 On Windows with Docker Desktop, `pwsh -File scripts/monero-smoke.ps1` rebuilds the
 images and exercises disposable offline stagenet fixtures. It checks rejection of
