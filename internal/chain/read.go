@@ -48,6 +48,8 @@ const (
 type Transfer struct {
 	Tx     string
 	Idx    int
+	Event  string
+	To     string
 	Amount *big.Int
 	From   string
 	// At is when the chain took it, where the reader knows (Solana); zero
@@ -59,6 +61,9 @@ type Transfer struct {
 // endpoint.
 type Reader struct {
 	HTTP *http.Client
+	// Native is an Alchemy Transfers API endpoint per chain. Credentials
+	// stay on cygnet; an unset endpoint disables the native rail.
+	Native map[string]string
 	// RPC is an endpoint by chain ("base"), in place of the rail's own: a
 	// paid node, or a test server.
 	RPC map[string]string
@@ -531,7 +536,7 @@ func (r *Reader) received(ctx context.Context, endpoint string, rail Rail, owner
 // priceBand is the US dollar range a quoted coin's price must fall in to be
 // believed: far wider than it moves, far narrower than a bad answer. A
 // checkout priced from a wrong spot price sells months for change.
-var priceBand = map[string][2]int64{"SOL": {1, 10_000}}
+var priceBand = map[string][2]int64{"SOL": {1, 10_000}, "ETH": {10, 100_000}}
 
 // decimal is a plain decimal number: no exponent, no fraction.
 var decimal = regexp.MustCompile(`^[0-9]+(\.[0-9]+)?$`)

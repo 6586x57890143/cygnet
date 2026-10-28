@@ -68,6 +68,34 @@ against its own `symbol()` and `decimals()`.
 | USDC, USDT on Solana; SOL | `getSignaturesForAddress` on the wallet's token accounts (or the wallet, for SOL), then `getTransaction`: what the wallet's balance of the mint gained | finalized |
 | USDC on Base, Polygon | `eth_getLogs` for ERC-20 `Transfer` to the wallet, 1000 blocks a request | 30 blocks deep on Base, 128 on Polygon |
 | USDT on TRON | TronGrid's `/v1/accounts/<wallet>/transactions/trc20` | `only_confirmed` |
+| ETH on Base, Ethereum | Alchemy Transfers API, ordinary and contract sends; standard RPC verifies successful receipts and canonical blocks | RPC `finalized` |
+
+Native ETH needs `CYGNET_NATIVE_BASE` or `CYGNET_NATIVE_ETHEREUM`, each an Alchemy
+Transfers API URL, and uses the existing EVM receiving wallet. Set an independent
+standard RPC with `CYGNET_RPC_BASE` or `CYGNET_RPC_ETHEREUM` for receipt checks.
+The indexer is trusted for internal transfer values and completeness; checking a
+receipt does not independently prove every internal transfer. Do not enable the
+rail until both endpoints work. Scans fetch at most 50 transfers per round, carry
+pagination across rounds and replay safely after an expired pagination token.
+All prices and amounts use integers or exact rational numbers, never floating point.
+
+New checkouts keep their receiving address. Changing an environment variable never
+changes an address already shown to a payer. Do not rotate the receiving wallet with
+checkouts still open or lapsed: the watchers follow the configured wallet. Payment
+times before a checkout was created cannot pay it. An expired price keeps watching
+for earlier payments still awaiting finality; it no longer displays payment details.
+
+The checkout groups currency choices with only their supported networks, working
+as ordinary radios without script. With script, choose a currency first, then its
+network. POSTs require the exact support origin, including between sibling domains.
+The quote timer reads `mm:ss`, advances from elapsed browser time and switches to
+expired guidance once. Background-tab delays never extend it. The server enforces
+expiry independently; an already-expired quote never renders a wallet-open link.
+
+`tools/supportart` also writes the shared module's `support/icons` PNGs. Birds read
+these through `support.IconPNG` and register them in their application emoji library;
+Ethereum, Solana and Monero network names reuse the native asset's mark. New marks
+alone do not advertise or enable an unsupported payment rail.
 
 Each watched account has a cursor (`support_cursor`): a block, a time or a signature.
 The first read starts at the present and reads nothing older, so a wallet's history is

@@ -201,6 +201,10 @@ func (m *Module) quote(ctx context.Context, caller string, body json.RawMessage)
 		life = volatileLife
 	}
 	ask := store.Ask{User: user, Months: a.Months, Cents: a.Cents, Rail: rail.Key}
+	ask.Destination = m.wallets.of(rail.Family)
+	if rail.Family == chain.EVM {
+		ask.Destination = strings.ToLower(ask.Destination)
+	}
 	// A price is read only for a new checkout, and before the store's
 	// transaction, never inside it: one already open comes back without
 	// one, price feed down or not, and a slow feed holds no connection.
@@ -264,6 +268,9 @@ func (m *Module) checkout(ctx context.Context, caller string, body json.RawMessa
 func (m *Module) view(i store.Invoice) Checkout {
 	rail, _ := chain.Find(i.Rail)
 	to := m.wallets.of(rail.Family)
+	if i.Destination != "" {
+		to = i.Destination
+	}
 	c := Checkout{
 		ID: i.ID, State: i.State, Months: i.Months, Cents: i.Cents, Price: i.Price, Gold: i.Gold,
 		Rail: i.Rail, Label: rail.Label, Amount: rail.Format(i.Amount), Units: i.Amount.String(),

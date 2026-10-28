@@ -31,6 +31,32 @@ import (
 
 // glyphs: 'w' is ink, 'a' the heart's red, 'b' amber.
 var glyphs = map[string][]string{
+	"eth": {
+		".....e.....",
+		"....eee....",
+		"...eeeee...",
+		"..eeeeeee..",
+		".eeeeeeeee.",
+		"eeeeeeeeeee",
+		".eeeeeeeee.",
+		"..ee...ee..",
+		"...eeeee...",
+		"....eee....",
+		".....e.....",
+	},
+	"xmr": {
+		"...ooooo...",
+		".ooooooooo.",
+		".ooooooooo.",
+		"oocooooocoo",
+		"ooccoooccoo",
+		"oocccocccoo",
+		"oococccocoo",
+		"oocoocoocoo",
+		".ccooooocc.",
+		".ccccccccc.",
+		"...ccccc...",
+	},
 	"badge": { // two hands of three feathers each, holding a heart up
 		"...........",
 		"...aa.aa...",
@@ -166,7 +192,7 @@ var glyphs = map[string][]string{
 }
 
 type scheme struct {
-	name                                 string
+	name                                  string
 	ground, frame, lit, shade, ink, heart color.NRGBA
 }
 
@@ -192,6 +218,7 @@ var coinInk = map[rune]color.NRGBA{
 	'v': warm(0x9945FF, 5), 'm': warm(0x43B4CA, 5), 'g': warm(0x14F195, 5),
 	'k': warm(0x0052FF, 3), 'p': warm(0x8247E5, 5), 'r': warm(0xEF0027, 3),
 	'c': rgb(0xFFF8E6),
+	'e': warm(0x8C8CDB, 5), 'o': warm(0xFF6600, 5),
 }
 
 // warm is a colour one nth of the way to merlin's cream.
@@ -219,9 +246,15 @@ func main() {
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		log.Fatal(err)
 	}
+	if err := os.MkdirAll(filepath.Join("support", "icons"), 0o755); err != nil {
+		log.Fatal(err)
+	}
 	for _, s := range schemes {
-		for _, name := range []string{"badge", "previews", "early", "say", "usdc", "usdt", "sol", "base", "polygon", "tron"} {
+		for _, name := range []string{"badge", "previews", "early", "say", "usdc", "usdt", "sol", "eth", "xmr", "base", "polygon", "tron"} {
 			write(filepath.Join(out, name+"_"+s.name+".png"), tile(glyphs[name], s, s.frame, s.lit))
+			if s.name == "dusk" {
+				write(filepath.Join("support", "icons", name+".png"), tile(glyphs[name], s, s.frame, s.lit))
+			}
 		}
 		write(filepath.Join(out, "badge_gold_"+s.name+".png"), tile(glyphs["badge"], s, goldFrame, goldLit))
 	}

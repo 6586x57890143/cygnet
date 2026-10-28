@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/6586x57890143/cygnet/internal/chain"
@@ -63,6 +64,12 @@ func (m *Module) tick(ctx context.Context) {
 // transfers again, which the store takes as already seen.
 func (m *Module) scan(ctx context.Context, r chain.Rail) error {
 	to := m.wallets.of(r.Family)
+	if r.Native {
+		to = strings.ToLower(to)
+		return m.cursor(ctx, r.Key+":"+to, m.now(), func(c store.Cursor) ([]chain.Transfer, string, error) {
+			return m.reader.EVMNative(ctx, r, to, c.At)
+		}, r)
+	}
 	switch r.Family {
 	case chain.EVM, chain.Tron:
 		return m.cursor(ctx, r.Key, m.now(), func(c store.Cursor) ([]chain.Transfer, string, error) {
@@ -150,7 +157,14 @@ func (m *Module) cursor(ctx context.Context, key string, since time.Time, next f
 	w, cancel := writes(ctx)
 	defer cancel()
 	for _, t := range got {
-		rec, err := m.store.Record(w, store.Payment{Rail: r.Key, Tx: t.Tx, Idx: t.Idx, Amount: t.Amount, Sender: t.From, Sent: t.At, Seen: m.now()})
+		to := t.To
+		if to == "" {
+			to = m.wallets.of(r.Family)
+			if r.Family == chain.EVM {
+				to = strings.ToLower(to)
+			}
+		}
+		rec, err := m.store.Record(w, store.Payment{Rail: r.Key, Tx: t.Tx, Idx: t.Idx, Event: t.Event, To: to, Amount: t.Amount, Sender: t.From, Sent: t.At, Seen: m.now()})
 		if err != nil {
 			return m.failed(ctx, key, err)
 		}

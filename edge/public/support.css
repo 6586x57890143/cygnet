@@ -214,6 +214,11 @@ button.quiet { display: inline-block; width: auto; min-height: 28px; padding: 6p
 fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
 legend { margin-bottom: 6px; color: var(--muted); font: 600 12px var(--mono); letter-spacing: .14em; }
 .row { display: grid; gap: 6px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.networks { display: grid; gap: 14px; }
+.currencies { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.currencies[hidden], .asset-networks[hidden] { display: none; }
+.currencies label { flex: 1 1 76px; }
+.asset-networks .row { grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); }
 .seg .row { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; border: 2px solid var(--bronze); }
 .opt { position: relative; display: grid; justify-items: center; align-content: center; gap: 2px; padding: 10px 6px; background: var(--well); border: 2px solid transparent; cursor: pointer; text-align: center; }
 .opt input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
@@ -228,6 +233,7 @@ legend { margin-bottom: 6px; color: var(--muted); font: 600 12px var(--mono); le
 .seg .opt:has(input:checked) .sub { color: inherit; opacity: .85; }
 .summary { margin: 0; padding: 10px 12px; background: var(--well); border-left: 4px solid var(--gold); font-size: 14px; }
 .summary b { white-space: nowrap; }
+.countdown { display: inline-block; min-width: 5ch; font-family: var(--mono); font-variant-numeric: tabular-nums; }
 /* Once signed in, how it works is a click away: they read it before. */
 details.works summary { cursor: pointer; list-style: none; }
 details.works summary::-webkit-details-marker { display: none; }

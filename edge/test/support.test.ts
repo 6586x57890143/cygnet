@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { reserved } from "../src/signup.ts";
-import { checkSays, date, dollars, length, list, supportDocument, type Checkout, type Offer, type SupportView } from "../src/support.ts";
+import { checkSays, date, dollars, length, list, paymentGroups, supportDocument, type Checkout, type Offer, type SupportView } from "../src/support.ts";
 
 const offer: Offer = {
   plans: [
@@ -70,6 +70,41 @@ const unmarked = (html: string) =>
 const duo = (name: string, cls: string, size: number) =>
   `<span class="duo ${cls}"><img class="dark" src="/art/support/${name}_dusk.png" alt="" width="${size}" height="${size}"><img class="light" src="/art/support/${name}_paper.png" alt="" width="${size}" height="${size}"></span>`;
 
+test("currencies retain only offered networks and unknown names remain escaped", () => {
+  const rails = [...offer.rails,
+    { key: "base:ETH", label: "eth on base" },
+    { key: "ethereum:ETH", label: "eth on ethereum" },
+    { key: "monero:XMR", label: "xmr on monero" },
+    { key: "base:ETH", label: "duplicate" },
+    { key: '<img src=x>:XMR', label: "invalid" }];
+  const groups = paymentGroups(rails);
+  assert.deepEqual(groups.map((g) => g.asset), ["usdc", "usdt", "sol", "eth", "xmr"]);
+  assert.deepEqual(groups.find((g) => g.asset === "eth")!.rails.map((r) => r.key), ["base:ETH", "ethereum:ETH"]);
+  assert.equal(groups.flatMap((g) => g.rails).length, 9);
+  const html = text(render({ kind: "support", offer: { ...offer, rails }, status: null, signedIn: true }));
+  assert.equal(html.match(/name="rail" value=/g)?.length, 9);
+  assert.equal(html.match(/name="rail" value="[^"]+" checked/g)?.length, 1);
+  assert.equal(html.match(/class="asset-networks"/g)?.length, 5);
+  assert.doesNotMatch(html, /value="<img|aria-label="duplicate"/);
+  assert.match(html, /eth_dusk\.png/);
+  assert.match(html, /xmr_dusk\.png/);
+  assert.deepEqual(paymentGroups([]), []);
+});
+
+test("support mutations reject missing, foreign and sibling origins before touching services", async () => {
+  const { default: worker } = await import("../src/index.ts");
+  for (const path of ["quote", "in", "out"]) {
+    for (const origin of [null, "null", "https://cygnet.lol", "https://evil.example", "http://support.cygnet.lol"]) {
+      const headers = origin === null ? {} : { origin };
+      const response = await worker.fetch(new Request(`https://support.cygnet.lol/${path}`, { method: "POST", headers }), {} as Env, {} as ExecutionContext);
+      assert.equal(response.status, 403, `${path}: ${origin}`);
+      assert.equal(response.headers.get("referrer-policy"), "no-referrer");
+    }
+  }
+  const response = await worker.fetch(new Request("https://support.cygnet.lol/out", { method: "POST", headers: { origin: "https://support.cygnet.lol" } }), {} as Env, {} as ExecutionContext);
+  assert.equal(response.status, 404, "same origin reaches the unconfigured service check");
+});
+
 test("the owner's pages are in the owner's voice", () => {
   const pages = {
     signedOut: render({ kind: "support", offer, status: null, signedIn: false }),
@@ -106,7 +141,7 @@ test("the letter says who, what it costs, what it buys and how", () => {
     "it's $5 a month, paid in crypto. it goes to me directly rather than to a company.",
     "a month is $5, 3 months $14, 6 months $27 and a year $50.",
     "$10 or $20 a month gets you the gold badge.",
-    "you pay in usdc, usdt or sol, on solana, base, polygon or tron, from any wallet.",
+    "you pay in usdc on solana, base or polygon, usdt on solana or tron or sol on solana, from any wallet.",
     "nothing renews by itself",
     "preview builds of the bots before they ship",
     "early access to my alpha projects",
@@ -114,7 +149,7 @@ test("the letter says who, what it costs, what it buys and how", () => {
     assert.ok(says.includes(want), `the letter lacks ${want}`);
   }
   // Every coin and chain it names wears its mark; solana wears sol's.
-  for (const [mark, times] of [["usdc", 1], ["usdt", 1], ["sol", 2], ["base", 1], ["polygon", 1], ["tron", 1]] as const) {
+  for (const [mark, times] of [["usdc", 1], ["usdt", 1], ["sol", 4], ["base", 1], ["polygon", 1], ["tron", 1]] as const) {
     assert.equal(html.split(duo(mark, "mark", 16)).length - 1, times, mark);
   }
   assert.ok(html.includes(`<p class="kicker">supporter</p>\n    <h1>${duo("badge", "badge", 40)}back the birds</h1>`), "the title, its badge in both drawings");
@@ -153,10 +188,10 @@ test("signed in, the choices are every plan, rate and rail on offer", () => {
   // The ways to pay: a tile for each rail, its coin and its chain marked.
   assert.equal(html.match(/name="rail" value=/g)?.length, 6);
   assert.ok(
-    html.includes(`name="rail" value="solana:USDC" checked aria-label="usdc on solana"><span class="name"><span class="marked">${duo("usdc", "mark", 16)}usdc</span></span><span class="sub">on <span class="marked">${duo("sol", "mark", 16)}solana</span></span>`),
-    "usdc on solana, both marked",
+    html.includes(`name="rail" value="solana:USDC" checked aria-label="usdc on solana"><span class="name"><span class="marked">${duo("sol", "mark", 16)}solana</span></span>`),
+    "usdc's network is marked",
   );
-  assert.match(html, /name="rail" value="tron:USDT" aria-label="usdt on tron">.*?usdt_dusk.*?tron_dusk/);
+  assert.match(html, /name="rail" value="tron:USDT" aria-label="usdt on tron">.*?tron_dusk/);
   // The summary is the script's to fill; without it, it stays out of the way.
   assert.match(html, /<p class="summary" aria-live="polite" hidden><\/p>/);
   // Signed in, how it works is folded away.
@@ -178,7 +213,7 @@ test("a checkout shows exactly what to send, where, and checks itself", () => {
   assert.match(unmarked(html), /<dt>on<\/dt><dd>usdc on solana<\/dd>/);
   assert.ok(html.includes(`<dt>on</dt><dd><span class="marked">${duo("usdc", "mark", 16)}usdc</span> on <span class="marked">${duo("sol", "mark", 16)}solana</span></dd>`), "the rail, marked");
   assert.doesNotMatch(readFileSync(new URL("../public/support.css", import.meta.url), "utf8"), /text-transform/, "nothing on the page is lowercased by style");
-  assert.match(html, /send exactly this within <b>59m 0s<\/b>/);
+  assert.match(html, /send exactly this within <b><time class="countdown" data-countdown data-remaining="3540000">59:00<\/time><\/b>/);
   assert.match(html, /<a class="pay" href="solana:mvines9iiHiQTysrwkJjGf2gb9Ex9jXJX8ns3qwf2kN\?amount=28\.004217&#38;spl-token=EPjF/);
   assert.match(html, /<dt>for<\/dt><dd>3 months, gold badge<\/dd>/);
   assert.match(html, /<dt>price<\/dt><dd>\$28<\/dd>/);
@@ -190,7 +225,10 @@ test("a checkout shows exactly what to send, where, and checks itself", () => {
   const sol = render({ kind: "checkout", c: { ...checkout, rail: "solana:SOL", label: "sol", quote: "150.00" }, now });
   assert.match(sol, /\$28 <span class="dim">at \$150\.00 a sol<\/span>/);
   const lapsed = text(render({ kind: "checkout", c: { ...checkout, state: "lapsed" }, now }));
-  assert.match(lapsed, /time is up\. if you already sent it, it still counts/);
+  assert.match(lapsed, /time is up\. if you already sent it, keep this page open/);
+  assert.doesNotMatch(lapsed, /data-countdown|class="pay"/, "expired quotes don't invite a new payment");
+  const expired = render({ kind: "checkout", c: { ...checkout, expires: now - 1 }, now });
+  assert.doesNotMatch(expired, /data-countdown|class="pay"/, "expiry doesn't wait for the background sweep");
   assert.match(lapsed, /data-wait=/, "a lapsed checkout still takes a payment, so it still checks");
   const paid = text(render({ kind: "checkout", c: { ...checkout, state: "paid", paid: now, until: Date.UTC(2027, 0, 25) }, now }));
   assert.match(paid, /it's in, thank you\. you're backing the birds until 25 jan 2027\./);
@@ -222,7 +260,7 @@ test("the quiet check says when to stop", () => {
   assert.equal(checkSays({ ...checkout, state: "lapsed" }), 204);
   assert.equal(checkSays({ ...checkout, state: "paid" }), 200);
   assert.equal(checkSays({ ...checkout, state: "void" }), 410);
-  assert.equal(checkSays({ ...checkout, state: "lapsed", stale: true }), 410);
+  assert.equal(checkSays({ ...checkout, state: "lapsed", stale: true }), 204);
   assert.equal(checkSays(null), 410);
 });
 

@@ -24,10 +24,15 @@ const (
 	IconUSDC     = "usdc"
 	IconUSDT     = "usdt"
 	IconSOL      = "sol"
+	IconETH      = "eth"
+	IconXMR      = "xmr"
+	IconBase     = "base"
+	IconPolygon  = "polygon"
+	IconTron     = "tron"
 )
 
 // Icons is every key a card asks for, for a bird to check it has them all.
-var Icons = []string{IconBadge, IconPreviews, IconEarly, IconSay, IconUSDC, IconUSDT, IconSOL}
+var Icons = []string{IconBadge, IconPreviews, IconEarly, IconSay, IconUSDC, IconUSDT, IconSOL, IconETH, IconXMR, IconBase, IconPolygon, IconTron}
 
 // Brand is what a bird lends the words: its icons and whose work it is.
 type Brand struct {

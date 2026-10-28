@@ -157,7 +157,7 @@ func (m *Module) OnEvent(ev bot.Event) {
 func (m *Module) rails() []chain.Rail {
 	var out []chain.Rail
 	for _, r := range chain.Rails {
-		if m.wallets.of(r.Family) != "" {
+		if m.wallets.of(r.Family) != "" && (!r.Native || (m.reader != nil && m.reader.Native[r.Chain] != "")) {
 			out = append(out, r)
 		}
 	}
@@ -166,7 +166,7 @@ func (m *Module) rails() []chain.Rail {
 
 func (m *Module) rail(key string) (chain.Rail, bool) {
 	r, ok := chain.Find(key)
-	return r, ok && m.wallets.of(r.Family) != ""
+	return r, ok && m.wallets.of(r.Family) != "" && (!r.Native || (m.reader != nil && m.reader.Native[r.Chain] != ""))
 }
 
 // ownerProfile is who the money goes to, their name and picture read at
@@ -248,7 +248,9 @@ func (m *Module) click(ctx context.Context, e *events.ComponentInteractionCreate
 	return e.UpdateMessage(discord.NewMessageUpdateV2(card).WithAllowedMentions(core.NoPings()))
 }
 
-func (m *Module) isKeeper(user snowflake.ID) bool { return user != 0 && slices.Contains(m.keepers, user) }
+func (m *Module) isKeeper(user snowflake.ID) bool {
+	return user != 0 && slices.Contains(m.keepers, user)
+}
 
 // giftForm asks whom to give backing and for how long.
 func giftForm(gold bool) discord.ModalCreate {
