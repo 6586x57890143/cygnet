@@ -111,8 +111,23 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  wallet-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/monero/Dockerfile
+          target: wallet-rpc
+          platforms: linux/amd64,linux/arm64
+          push: false
+          cache-from: type=gha,scope=monero-wallet
+          cache-to: type=gha,mode=max,scope=monero-wallet
+
   push-image:
-    needs: [lint-test, secret-scan, prose, docker-build]
+    needs: [lint-test, secret-scan, prose, docker-build, wallet-image]
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:

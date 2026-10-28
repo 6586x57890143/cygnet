@@ -587,7 +587,15 @@ func supporters(s *store.Support, bootstrap core.Admins, profile func(context.Co
 		if err != nil || len(password) == 0 || len(password) > 4096 {
 			return nil, errors.New("read CYGNET_XMR_RPC_PASSWORD_FILE: missing or invalid secret file")
 		}
-		r.Monero, err = chain.NewMonero(endpoint, w.Monero, os.Getenv("CYGNET_XMR_NETWORK"), os.Getenv("CYGNET_XMR_RPC_USER"), strings.TrimRight(string(password), "\r\n"))
+		var roots [][]byte
+		if path := os.Getenv("CYGNET_XMR_RPC_CA_FILE"); path != "" {
+			certificate, err := os.ReadFile(path)
+			if err != nil || len(certificate) == 0 || len(certificate) > 65536 {
+				return nil, errors.New("read CYGNET_XMR_RPC_CA_FILE: missing or invalid certificate")
+			}
+			roots = append(roots, certificate)
+		}
+		r.Monero, err = chain.NewMonero(endpoint, w.Monero, os.Getenv("CYGNET_XMR_NETWORK"), os.Getenv("CYGNET_XMR_RPC_USER"), strings.TrimRight(string(password), "\r\n"), roots...)
 		if err != nil {
 			return nil, err
 		}

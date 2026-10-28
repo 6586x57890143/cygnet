@@ -3,6 +3,7 @@ package chain
 import (
 	"context"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"math/big"
 	"net/http"
@@ -123,7 +124,7 @@ func TestMoneroAddressesValidateNetworkTypeAndChecksum(t *testing.T) {
 
 func TestMoneroConfigurationStaysPrivateAndPinsTheWallet(t *testing.T) {
 	primary := moneroAddress(18, 1)
-	for _, endpoint := range []string{"https://public.example/json_rpc", "http://user:pass@127.0.0.1:1", "http://127.0.0.1:1?key=secret", "http://127.0.0.1:1#x", "ftp://127.0.0.1:1", "http://127.0.0.1:1/other", "://bad"} {
+	for _, endpoint := range []string{"https://public.example/json_rpc", "http://user:pass@127.0.0.1:1", "http://127.0.0.1:1?key=secret", "http://127.0.0.1:1#x", "ftp://127.0.0.1:1", "http://127.0.0.1:1/other", "http://xmr-wallet:18088", "http://192.168.1.2:18088", "://bad"} {
 		if _, err := NewMonero(endpoint, primary, "Mainnet", "u", "p"); err == nil {
 			t.Errorf("accepted endpoint %s", endpoint)
 		}
@@ -136,20 +137,31 @@ func TestMoneroConfigurationStaysPrivateAndPinsTheWallet(t *testing.T) {
 	if _, err := NewMonero("http://xmr-wallet:18088", primary, "Stagenet", "u", "p"); err == nil {
 		t.Fatal("accepted wrong network")
 	}
-	w, err := NewMonero("http://xmr-wallet:18088", primary, "", "u", "p")
+	w, err := NewMonero("https://xmr-wallet:18088", primary, "", "u", "p")
 	if err != nil || w.Network != "Mainnet" {
 		t.Fatal(err)
 	}
 }
 
-func TestMoneroReadinessRequiresSynchronizedViewOnlyWallet(t *testing.T) {
+func TestMoneroReadinessRequiresPinnedAddressAndSuccessfulRefresh(t *testing.T) {
 	now := time.Now()
-	info := map[string]any{"address": moneroAddress(18, 1), "network_type": "Mainnet", "wallet_type": "Watch only", "wallet_block_height": 100, "daemon_block_height": 100}
+	address := moneroAddress(18, 1)
+	height := uint64(100)
+	refreshFails := false
 	w := walletNode(t, func(method string, _ map[string]json.RawMessage) any {
-		if method != "get_wallet_info" {
-			t.Errorf("unexpected method %s", method)
+		switch method {
+		case "get_address":
+			return map[string]any{"address": address}
+		case "refresh":
+			if refreshFails {
+				return nil
+			}
+			return map[string]any{"blocks_fetched": 0, "received_money": false}
+		case "get_height":
+			return map[string]any{"height": height}
 		}
-		return info
+		t.Errorf("unexpected method %s", method)
+		return nil
 	})
 	if w.Ready(now) {
 		t.Fatal("ready before validation")
@@ -157,14 +169,21 @@ func TestMoneroReadinessRequiresSynchronizedViewOnlyWallet(t *testing.T) {
 	if err := w.Check(context.Background(), now); err != nil || !w.Ready(now.Add(time.Second)) || w.Ready(now.Add(3*time.Minute)) || w.Ready(now.Add(-time.Second)) {
 		t.Fatalf("readiness: %v", err)
 	}
-	for field, bad := range map[string]any{"address": moneroAddress(18, 2), "network_type": "Stagenet", "wallet_type": "Normal", "wallet_block_height": 90, "daemon_block_height": 0} {
-		old := info[field]
-		info[field] = bad
-		if err := w.Check(context.Background(), now); err == nil || w.Ready(now) {
-			t.Errorf("accepted unhealthy %s", field)
+	for _, mode := range []string{"wrong-address", "zero-height", "refresh-failed"} {
+		address, height, refreshFails = moneroAddress(18, 1), 100, false
+		switch mode {
+		case "wrong-address":
+			address = moneroAddress(18, 2)
+		case "zero-height":
+			height = 0
+		case "refresh-failed":
+			refreshFails = true
 		}
-		info[field] = old
+		if err := w.Check(context.Background(), now); err == nil || w.Ready(now) {
+			t.Errorf("accepted unhealthy %s", mode)
+		}
 	}
+	address, height, refreshFails = moneroAddress(18, 1), 100, false
 	if err := w.Check(context.Background(), now); err != nil {
 		t.Fatal(err)
 	}
@@ -174,6 +193,60 @@ func TestMoneroReadinessRequiresSynchronizedViewOnlyWallet(t *testing.T) {
 	}
 	if err := w.rpc(context.Background(), "sweep_all", nil, nil); err == nil {
 		t.Fatal("client exposes spending")
+	}
+}
+
+func TestMoneroLegacyDigestRequiresVerifiedTLSAndLongPassword(t *testing.T) {
+	password := strings.Repeat("disposable-test-", 3)
+	challenge := `Digest realm="wallet", nonce="tls-fixture", algorithm=MD5, qop="auth"`
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") == "" {
+			w.Header().Set("WWW-Authenticate", challenge)
+			w.WriteHeader(401)
+			return
+		}
+		credentials, err := digest.ParseCredentials(r.Header.Get("Authorization"))
+		if err != nil {
+			t.Error(err)
+			w.WriteHeader(401)
+			return
+		}
+		chal, _ := digest.ParseChallenge(challenge)
+		expected, _ := digest.Digest(chal, digest.Options{Username: "fixture", Password: password, Method: r.Method, URI: r.URL.RequestURI(), Cnonce: credentials.Cnonce, Count: credentials.Nc})
+		if credentials.Response != expected.Response {
+			w.WriteHeader(401)
+			return
+		}
+		_, _ = fmt.Fprint(w, `{"id":1,"result":{"height":100}}`)
+	}))
+	defer srv.Close()
+	certificate := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
+	w, err := NewMonero(srv.URL, moneroAddress(18, 1), "Mainnet", "fixture", password, certificate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.rpc(context.Background(), "get_height", map[string]any{}, &struct{}{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		password string
+		roots    [][]byte
+	}{{password, nil}, {"short", [][]byte{certificate}}} {
+		w, err := NewMonero(srv.URL, moneroAddress(18, 1), "Mainnet", "fixture", tc.password, tc.roots...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := w.rpc(context.Background(), "get_height", map[string]any{}, &struct{}{}); err == nil {
+			t.Fatal("legacy Digest accepted without verified TLS or a long password")
+		}
+	}
+	for _, roots := range [][][]byte{{[]byte("not PEM")}, {certificate, certificate}} {
+		if _, err := NewMonero(srv.URL, moneroAddress(18, 1), "Mainnet", "fixture", password, roots...); err == nil {
+			t.Fatal("invalid certificate configuration accepted")
+		}
+	}
+	if _, err := NewMonero("http://127.0.0.1:1", moneroAddress(18, 1), "Mainnet", "fixture", password, certificate); err == nil {
+		t.Fatal("TLS trust anchor accepted for plaintext endpoint")
 	}
 }
 

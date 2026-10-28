@@ -80,8 +80,16 @@ func (n *xmrNode) module(t *testing.T) *Module {
 		_ = json.NewDecoder(req.Body).Decode(&in)
 		var result any
 		switch in.Method {
-		case "get_wallet_info":
-			result = map[string]any{"address": primary, "network_type": "Mainnet", "wallet_type": n.kind, "wallet_block_height": 100, "daemon_block_height": 100}
+		case "get_address":
+			address := primary
+			if n.kind != "Watch only" {
+				address = xmrAddress(18, 2)
+			}
+			result = map[string]any{"address": address}
+		case "refresh":
+			result = map[string]any{"blocks_fetched": 0, "received_money": false}
+		case "get_height":
+			result = map[string]any{"height": 100}
 		case "create_address":
 			n.created++
 			addresses := []string{}
@@ -168,15 +176,15 @@ func TestMoneroCheckoutAccumulatesConfirmedReceiptsAndFeedsMerlin(t *testing.T) 
 	}
 }
 
-func TestMoneroWatchTickRejectsSpendKeysAndRecovers(t *testing.T) {
+func TestMoneroWatchTickRejectsWrongWalletAndRecovers(t *testing.T) {
 	n := &xmrNode{kind: "Normal"}
 	m := n.module(t)
 	m.tick(context.Background())
 	if m.reader.Monero.Ready(t0) || len(m.rails()) != 0 {
-		t.Fatal("spend-enabled service offered")
+		t.Fatal("wrong wallet service offered")
 	}
 	keep, err := m.keeperView(context.Background(), t0)
-	if err != nil || !strings.Contains(keep, "xmr on monero") || !strings.Contains(keep, "not synchronized") {
+	if err != nil || !strings.Contains(keep, "xmr on monero") || !strings.Contains(keep, "pinned address") {
 		t.Fatalf("keeper cannot see the failed rail: %s %v", keep, err)
 	}
 	n.kind = "Watch only"

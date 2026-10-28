@@ -3,6 +3,8 @@ package chain
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -74,8 +76,9 @@ func MoneroAddress(address string) (network string, subaddress bool, ok bool) {
 
 // NewMonero accepts only loopback, private IPs or the dedicated container
 // name. Redirects and environment HTTP proxies cannot forward credentials.
-// Wallet RPC must offer SHA-256 Digest authentication (disable-md5=true).
-func NewMonero(endpoint, primary, network, user, password string) (*Monero, error) {
+// Legacy Digest is accepted only over certificate-verified TLS with a long
+// password. Optional PEM roots pin a private wallet service's trust anchor.
+func NewMonero(endpoint, primary, network, user, password string, certificates ...[]byte) (*Monero, error) {
 	u, err := url.Parse(endpoint)
 	if network == "" {
 		network = "Mainnet"
@@ -89,13 +92,26 @@ func NewMonero(endpoint, primary, network, user, password string) (*Monero, erro
 	if host != "localhost" && host != "xmr-wallet" && !ip.IsLoopback() && !ip.IsPrivate() {
 		return nil, errors.New("monero: wallet RPC must stay on the private network")
 	}
+	if u.Scheme == "http" && host != "localhost" && !ip.IsLoopback() {
+		return nil, errors.New("monero: non-loopback wallet RPC requires TLS")
+	}
 	if u.Path == "" || u.Path == "/" {
 		u.Path = "/json_rpc"
 	}
 	if u.Path != "/json_rpc" {
 		return nil, errors.New("monero: invalid RPC path")
 	}
-	base := &http.Transport{Proxy: nil, MaxIdleConnsPerHost: 2, IdleConnTimeout: time.Minute, DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+	secure := &tls.Config{MinVersion: tls.VersionTLS12}
+	if len(certificates) > 1 || (len(certificates) == 1 && u.Scheme != "https") {
+		return nil, errors.New("monero: invalid private TLS configuration")
+	}
+	if len(certificates) == 1 {
+		secure.RootCAs = x509.NewCertPool()
+		if !secure.RootCAs.AppendCertsFromPEM(certificates[0]) {
+			return nil, errors.New("monero: invalid private TLS certificate")
+		}
+	}
+	base := &http.Transport{Proxy: nil, TLSClientConfig: secure, MaxIdleConnsPerHost: 2, IdleConnTimeout: time.Minute, DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
 		host, port, err := net.SplitHostPort(address)
 		if err != nil {
 			return nil, errors.New("monero: invalid private peer")
@@ -125,8 +141,14 @@ func NewMonero(endpoint, primary, network, user, password string) (*Monero, erro
 	}}
 	m := &Monero{Primary: primary, Network: network, endpoint: u.String()}
 	transport := &digest.Transport{Username: user, Password: password, Transport: base, Digest: func(req *http.Request, challenge *digest.Challenge, options digest.Options) (*digest.Credentials, error) {
-		if !strings.EqualFold(challenge.Algorithm, "SHA-256") {
-			return nil, errors.New("monero: SHA-256 authentication required")
+		switch strings.ToUpper(challenge.Algorithm) {
+		case "SHA-256":
+		case "MD5", "MD5-SESS":
+			if req.URL.Scheme != "https" || len(password) < 32 {
+				return nil, errors.New("monero: legacy authentication requires verified TLS and a long password")
+			}
+		default:
+			return nil, errors.New("monero: unsupported wallet authentication")
 		}
 		credentials, err := digest.Digest(challenge, options)
 		if err == nil {
@@ -140,7 +162,7 @@ func NewMonero(endpoint, primary, network, user, password string) (*Monero, erro
 
 func (m *Monero) rpc(ctx context.Context, method string, params, out any) error {
 	switch method {
-	case "get_wallet_info", "create_address", "store", "get_transfers":
+	case "get_address", "get_height", "refresh", "create_address", "store", "get_transfers":
 	default:
 		return errors.New("monero: method not allowed")
 	}
@@ -197,17 +219,28 @@ func (m *Monero) Check(ctx context.Context, now time.Time) error {
 	m.checked.Store(0)
 	var info struct {
 		Address string `json:"address"`
-		Network string `json:"network_type"`
-		Type    string `json:"wallet_type"`
-		Height  uint64 `json:"wallet_block_height"`
-		Daemon  uint64 `json:"daemon_block_height"`
 	}
-	if err := m.rpc(ctx, "get_wallet_info", map[string]any{}, &info); err != nil {
+	if err := m.rpc(ctx, "get_address", map[string]any{"account_index": 0}, &info); err != nil {
 		return err
 	}
-	if info.Address != m.Primary || info.Network != m.Network || info.Type != "Watch only" || info.Daemon == 0 || info.Height == 0 ||
-		(info.Daemon > info.Height && info.Daemon-info.Height > 2) || (info.Height > info.Daemon && info.Height-info.Daemon > 2) {
-		return errors.New("monero: pinned view-only wallet is not synchronized")
+	if info.Address != m.Primary {
+		return errors.New("monero: wallet does not match its pinned address")
+	}
+	// Released wallet RPC has no wallet-type/daemon-height metadata call.
+	// The image's offline startup guard verifies type and network before
+	// RPC starts. A successful refresh reaches the configured daemon's tip;
+	// an unavailable daemon or an unfinished refresh never marks it ready.
+	if err := m.rpc(ctx, "refresh", map[string]any{}, &struct{}{}); err != nil {
+		return err
+	}
+	var head struct {
+		Height uint64 `json:"height"`
+	}
+	if err := m.rpc(ctx, "get_height", map[string]any{}, &head); err != nil {
+		return err
+	}
+	if head.Height == 0 {
+		return errors.New("monero: pinned wallet is not synchronized")
 	}
 	m.checked.Store(now.UnixMilli())
 	return nil
