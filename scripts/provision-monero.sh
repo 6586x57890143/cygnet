@@ -30,9 +30,13 @@ PY
 printf 'Node is synchronized at height %s.\n' "$height"
 read -r -p 'Saved wallet restore height: ' restore_height
 [[ $restore_height =~ ^[1-9][0-9]{0,8}$ ]] && (( restore_height <= height )) || { echo 'Invalid restore height.' >&2; exit 1; }
-read -r -s -p 'View-only wallet-file password (48+ letters/numbers): ' wallet_password; printf '\n'
-read -r -s -p 'RPC password (a different 48+ letters/numbers): ' rpc_password; printf '\n'
-[[ $wallet_password =~ ^[a-zA-Z0-9]{48,128}$ && $rpc_password =~ ^[a-zA-Z0-9]{48,128}$ && $wallet_password != "$rpc_password" ]] || { echo 'Use two distinct random alphanumeric passwords of 48 to 128 characters.' >&2; exit 1; }
+read -r -s -p 'View-only wallet-file password (48-128 ASCII letters/digits): ' wallet_password; printf '\n'
+(( ${#wallet_password} >= 48 && ${#wallet_password} <= 128 )) || { echo 'The wallet-file password must be 48 to 128 characters long.' >&2; exit 1; }
+[[ $wallet_password =~ ^[a-zA-Z0-9]+$ ]] || { echo 'The wallet-file password must contain only A-Z, a-z and 0-9: no symbols, spaces or pasted line endings.' >&2; exit 1; }
+read -r -s -p 'RPC password (a different 48-128 ASCII letters/digits): ' rpc_password; printf '\n'
+(( ${#rpc_password} >= 48 && ${#rpc_password} <= 128 )) || { echo 'The RPC password must be 48 to 128 characters long.' >&2; exit 1; }
+[[ $rpc_password =~ ^[a-zA-Z0-9]+$ ]] || { echo 'The RPC password must contain only A-Z, a-z and 0-9: no symbols, spaces or pasted line endings.' >&2; exit 1; }
+[[ $wallet_password != "$rpc_password" ]] || { echo 'The RPC password must differ from the wallet-file password.' >&2; exit 1; }
 
 stage=$(mktemp -d "$base/.xmr-setup.XXXXXXXX")
 cleanup() {
