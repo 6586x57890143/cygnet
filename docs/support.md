@@ -80,6 +80,8 @@ against its own `symbol()` and `decimals()`.
 Native ETH needs `CYGNET_NATIVE_BASE` or `CYGNET_NATIVE_ETHEREUM`, each an Alchemy
 Transfers API URL, and uses the existing EVM receiving wallet. Set an independent
 standard RPC with `CYGNET_RPC_BASE` or `CYGNET_RPC_ETHEREUM` for receipt checks.
+Ordinary transfers also require the standard RPC transaction's hash, sender,
+recipient, value and block identity to match the indexed event.
 The indexer is trusted for internal transfer values and completeness; checking a
 receipt does not independently prove every internal transfer. Do not enable the
 rail until both endpoints work. Scans fetch at most 50 transfers per round, carry
@@ -111,13 +113,15 @@ Monero marker. Create it only during the reviewed activation step; do not put
 the API key or keyed URLs in the deployment environment.
 
 `cmd/native-check` validates the saved file through Cygnet's reader, including
-chain IDs, independent finalized RPC reads and a bounded native-transfer query
-to a public burn address. Build it for the host architecture, verify its transfer
+chain IDs, independent finalized RPC reads and real recent native transfers to
+public canonical WETH contracts. Build it for the host architecture, verify its transfer
 checksum, and run with `CYGNET_NATIVE_FILE` pointing at the private JSON file.
 Only the file path enters its environment. This preflight does not create invoices,
 record payments, query the owner's transfer history or replace funded settlement
 and Merlin role-grant checks. Shared node requests refuse redirects and environment
 proxies, cap response bodies and omit provider-supplied RPC messages from errors.
+It also validates the live ETH quote feed; set `CYGNET_XMR_PRICE_CHECK=1` to check
+the XMR quote feed during the combined rollout preflight.
 
 New checkouts keep their receiving address. Changing an environment variable never
 changes an address already shown to a payer. Do not rotate the receiving wallet with

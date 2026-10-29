@@ -126,13 +126,13 @@ func (r *Reader) rpc(ctx context.Context, endpoint, method string, params []any,
 		Error  *rpcError       `json:"error"`
 	}
 	if err := json.Unmarshal(raw, &env); err != nil {
-		return fmt.Errorf("%s: %w", method, err)
+		return fmt.Errorf("%s: invalid RPC envelope", method)
 	}
 	if env.Error != nil {
 		return fmt.Errorf("%s: %w", method, env.Error)
 	}
 	if err := json.Unmarshal(env.Result, out); err != nil {
-		return fmt.Errorf("%s: %w", method, err)
+		return fmt.Errorf("%s: invalid RPC result", method)
 	}
 	return nil
 }
@@ -192,7 +192,7 @@ func unwrapURL(err error) error {
 func hexInt(s string) (*big.Int, error) {
 	v, ok := new(big.Int).SetString(strings.TrimPrefix(s, "0x"), 16)
 	if !ok || !strings.HasPrefix(s, "0x") {
-		return nil, fmt.Errorf("%q is not a hex quantity", s)
+		return nil, errors.New("invalid hexadecimal quantity")
 	}
 	return v, nil
 }

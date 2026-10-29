@@ -206,6 +206,21 @@ minutes; its existing thank-you delivery remains best-effort. Check expiry remov
 the tracked role and renewal extends it. No production change is authorized merely
 by adding this file or merging application code.
 
+`scripts/monero-funded-smoke.py` drives the opt-in
+`TestMoneroFundedStagenetSettlementAndRestore` against a disposable public-stagenet
+wallet and the local test Postgres container. Its separate funding wallet contains
+only worthless test coins. The guarded view-only wallet and Cygnet test client
+share an internal network; only the wallets have node egress. No ports are published
+and the view service never mounts spending keys. The test uses a fixed mock USD
+price, actual released wallet RPC, actual on-chain transfers and an isolated
+Postgres schema. It checks overpayment, partial and late eligibility in one
+multi-destination transaction, ten real confirmations, receipt replay, the
+supporter API response and restoration from the private view key. It drops its
+test schema and removes its temporary services/networks on success, retaining
+local fixture files for diagnosis. This does not submit payments, grant roles or
+alter configuration in production. It is separate from Merlin's authorized
+one-time self-bot role/welcome smoke and from a future live fleet/checkout test.
+
 References: [wallet RPC](https://docs.getmonero.org/rpc-library/wallet-rpc/),
 [view-only wallets](https://www.getmonero.org/resources/user-guides/view_only.html),
 [CLI restore and lookahead](https://docs.getmonero.org/interacting/monero-wallet-cli-reference/),

@@ -27,6 +27,9 @@ func nativeFixture(t *testing.T) (*Reader, map[string]func([]json.RawMessage) an
 			return map[string]any{"number": "0x10", "hash": blockHash, "timestamp": "0x6553f100"}
 		},
 		"eth_getTransactionReceipt": func([]json.RawMessage) any { return receipt },
+		"eth_getTransactionByHash": func([]json.RawMessage) any {
+			return map[string]any{"hash": nativeHash, "from": wallet, "to": wallet, "value": "0x10000000000001", "blockNumber": "0x10", "blockHash": blockHash}
+		},
 		"alchemy_getAssetTransfers": func(p []json.RawMessage) any {
 			var filter map[string]any
 			_ = json.Unmarshal(p[0], &filter)
@@ -77,6 +80,51 @@ func TestExpiredNativePaginationReplaysTheRange(t *testing.T) {
 	got, cursor, err := r.EVMNative(context.Background(), rail(t, "base:ETH"), wallet, "16|32|expired")
 	if err == nil || len(got) != 0 || cursor != "16" {
 		t.Fatalf("expired page did not reset safely: %+v %s %v", got, cursor, err)
+	}
+}
+
+func TestNativeExternalTransferRequiresMatchingTransaction(t *testing.T) {
+	for _, scenario := range []string{"missing", "rpc error", "wrong hash", "wrong recipient", "wrong sender", "wrong block hash", "wrong block height", "bad height", "wrong value", "bad value", "oversized value", "contract creation"} {
+		t.Run(scenario, func(t *testing.T) {
+			r, methods, _, _, _ := nativeFixture(t)
+			if scenario == "rpc error" {
+				delete(methods, "eth_getTransactionByHash")
+			} else {
+				methods["eth_getTransactionByHash"] = func([]json.RawMessage) any {
+					if scenario == "missing" {
+						return nil
+					}
+					tx := map[string]any{"hash": nativeHash, "from": wallet, "to": wallet, "value": "0x10000000000001", "blockNumber": "0x10", "blockHash": blockHash}
+					switch scenario {
+					case "wrong hash":
+						tx["hash"] = blockHash
+					case "wrong recipient":
+						tx["to"] = "0x2222222222222222222222222222222222222222"
+					case "wrong sender":
+						tx["from"] = "0x2222222222222222222222222222222222222222"
+					case "wrong block hash":
+						tx["blockHash"] = nativeHash
+					case "wrong block height":
+						tx["blockNumber"] = "0x11"
+					case "bad height":
+						tx["blockNumber"] = "not hex"
+					case "wrong value":
+						tx["value"] = "0x1"
+					case "bad value":
+						tx["value"] = "not hex"
+					case "oversized value":
+						tx["value"] = "0x" + strings.Repeat("f", 65)
+					case "contract creation":
+						tx["to"] = nil
+					}
+					return tx
+				}
+			}
+			got, cursor, err := r.EVMNative(context.Background(), rail(t, "base:ETH"), wallet, "16")
+			if err == nil || len(got) != 0 || cursor != "16" {
+				t.Fatalf("unproven transfer accepted or cursor advanced: %v %q %v", got, cursor, err)
+			}
+		})
 	}
 }
 
