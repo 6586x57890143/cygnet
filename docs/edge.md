@@ -225,12 +225,21 @@ npm run check        # wrangler types, then tsc
 npm test             # rules, store, ledger tampering, the email budget, every page
 npx wrangler d1 migrations apply cygnet-edge --local && npm run dev
 node tools/og.mjs    # redraw public/art/og.gif, the link preview, from the live page
+node tools/og.mjs support # redraw the supporters club's merlin preview
 ```
 
 A link to any page unfurls as `public/art/og.gif`: the swan on the water at night,
 looping. Discord plays it; apps that don't animate show its first frame. It is drawn
 from what's deployed, so redraw it after the scene changes and deploy again. Another
 scene is `node tools/og.mjs evening`.
+
+`support.cygnet.lol` has its own `public/art/support/og.gif`: the page's animated
+merlin on her branch beside "bird bot supporters club". The same renderer captures
+her actual scene, with a clock and a layout sized for chat. Its image and canonical
+Open Graph URL are public constants; sharing a checkout does not put its invoice
+identifier, amount or wallet address into preview metadata. Its cache version lives
+in `src/support.ts`. To capture a different sky, use
+`node tools/og.mjs support https://support.cygnet.lol morning`.
 
 Discord keeps a picture by its URL, whatever page it came from, so a redrawn GIF needs
 the `?v=` on `og:image` in `src/page.ts` bumped, or Discord shows the old one.

@@ -5,6 +5,7 @@
 //
 //   node tools/og.mjs [scene] [url]   # night (default), morning, day or
 //                                     # evening; https://cygnet.lol
+//   node tools/og.mjs support [url] [scene] # the supporters club's merlin
 //
 // Needs Chrome or Edge, and ffmpeg on the PATH.
 import { spawn, execFileSync } from "node:child_process";
@@ -13,13 +14,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const scene = process.argv[2] ?? "night";
-const url = process.argv[3] ?? "https://cygnet.lol";
+const support = process.argv[2] === "support";
+const scene = (support ? process.argv[4] : process.argv[2]) ?? "night";
+const url = process.argv[3] ?? (support ? "https://support.cygnet.lol" : "https://cygnet.lol");
 // Where the scene is in the page's day, which starts at night and holds
 // each scene 75 s of every 100.
 const at = { night: 10, morning: 110, day: 210, evening: 310 }[scene];
 if (at === undefined) throw new Error(`no scene ${scene}`);
-const out = fileURLToPath(new URL("../public/art/og.gif", import.meta.url));
+const out = fileURLToPath(new URL(support ? "../public/art/support/og.gif" : "../public/art/og.gif", import.meta.url));
 // The page is laid out a little over the width where it goes wide, and
 // drawn at 4/3 so its glyphs are big enough to read in a chat: 1200 by
 // 630, then 800 by 420, still more than a chat shows.
@@ -86,6 +88,16 @@ try {
       window.tick = (dt) => { ms += dt; for (const f of queue.splice(0)) f(ms); };
       // The page has measured itself by then: the resize has it measure again.
       addEventListener("DOMContentLoaded", () => (document.head.append(Object.assign(document.createElement("style"), { textContent: \`
+        ${support ? `
+        .sheet, footer, button.theme, .still { display: none !important; }
+        main { position: static; display: block; width: 100%; max-width: none; min-height: 0; height: 100vh; margin: 0; padding: 0; }
+        .hero { position: absolute; left: 0; top: 0; width: 480px; height: 440px; margin: 0; }
+        .page { position: absolute; right: 26px; top: 124px; width: 400px; margin: 0; padding: 0; }
+        .page header { display: block; margin: 0; text-align: left; color: #ecd9ae; text-shadow: 0 2px 12px #040716; }
+        .page .kicker { font-size: 27px; letter-spacing: .04em; margin: 0 0 12px; color: #d9a62e; }
+        .page h1 { display: block; font-size: 60px; line-height: 1.08; letter-spacing: -.035em; margin: 0; }
+        .page .preview-domain { font-size: 18px; color: #c9ad85; margin: 22px 0 0; }
+        ` : `
         .soon, .fine, footer, button.theme, .ring, canvas.field { display: none !important; }
         main { display: block; min-height: 0; height: 100vh; padding: 0; }
         .hero { position: absolute; left: -130px; width: 720px; top: 0; height: 100%; }
@@ -94,7 +106,11 @@ try {
         .card .kicker { display: none; }
         .card h1 { font-size: 92px; line-height: 1; letter-spacing: -0.02em; }
         .card .line { white-space: nowrap; font-size: 20px; line-height: 1.3; height: 1.3em; overflow: hidden; margin: 18px 0 0; color: var(--text); opacity: .8; }
+        `}
       \` })), dispatchEvent(new Event("resize"))));
+      ${support ? `addEventListener("DOMContentLoaded", () => {
+        document.querySelector(".page header").innerHTML = '<p class="kicker">bird bot</p><h1>supporters<br>club</h1><p class="preview-domain">support.cygnet.lol</p>';
+      });` : ""}
     `,
   });
   await cdp("Page.navigate", { url });

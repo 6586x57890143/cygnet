@@ -46,6 +46,32 @@ const checkout: Checkout = {
 
 const render = (view: SupportView) => supportDocument(view, "key");
 
+test("shared support and private checkout links use the same public club preview", () => {
+  const previews = [
+    render({ kind: "support", offer, status: null, signedIn: true }),
+    render({ kind: "support", offer: null, status: null, signedIn: false }),
+    render({ kind: "checkout", c: checkout, now }),
+    render({ kind: "error", why: "private checkout unavailable" }),
+  ];
+  for (const html of previews) {
+    const head = html.slice(0, html.indexOf("</head>"));
+    assert.match(head, /property="og:title" content="bird bot supporters club"/);
+    assert.match(head, /property="og:url" content="https:\/\/support\.cygnet\.lol\/"/);
+    assert.match(head, /property="og:image" content="https:\/\/support\.cygnet\.lol\/art\/support\/og\.gif\?v=1"/);
+    assert.match(head, /property="og:image:type" content="image\/gif"/);
+    assert.match(head, /name="twitter:card" content="summary_large_image"/);
+    for (const privateValue of [checkout.id, checkout.to, checkout.amount, offer.owner.id, offer.owner.avatar!]) {
+      assert.ok(!head.includes(privateValue), "preview metadata must not include checkout or account data");
+    }
+  }
+  const gif = readFileSync(new URL("../public/art/support/og.gif", import.meta.url));
+  assert.equal(gif.subarray(0, 6).toString("ascii"), "GIF89a");
+  assert.equal(gif.readUInt16LE(6), 800);
+  assert.equal(gif.readUInt16LE(8), 420);
+  assert.ok(gif.includes(Buffer.from("NETSCAPE2.0")), "the preview must loop");
+  assert.ok(gif.length < 4 * 1024 * 1024, "keep the chat preview within its asset budget");
+});
+
 // words is what a person reads in the owner's letter and the choices: no
 // markup, no code blocks (addresses and amounts), no names in bold.
 const words = (html: string) =>

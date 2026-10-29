@@ -361,10 +361,17 @@ export function supportDocument(view: SupportView, sitekey: string, birds: Bird[
 <meta name="theme-color" content="#04071a" media="(prefers-color-scheme: dark)">
 ${watching ? `<noscript><meta http-equiv="refresh" content="15"></noscript>\n` : ""}<title>back the birds</title>
 <meta name="description" content="${description}">
-<meta property="og:title" content="back the birds">
+<meta property="og:title" content="bird bot supporters club">
 <meta property="og:description" content="${description}">
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="cygnet.lol">
+<meta property="og:site_name" content="bird bot supporters club">
+<meta property="og:url" content="https://support.cygnet.lol/">
+<meta property="og:image" content="https://support.cygnet.lol/art/support/og.gif?v=1">
+<meta property="og:image:type" content="image/gif">
+<meta property="og:image:width" content="800">
+<meta property="og:image:height" content="420">
+<meta property="og:image:alt" content="an animated ASCII merlin sitting on a branch beside bird bot supporters club">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="/art/support/badge_dusk.png">
 <link rel="preload" href="/fonts/cascadia-mono.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/support.css">
