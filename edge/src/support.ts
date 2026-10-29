@@ -366,7 +366,7 @@ ${watching ? `<noscript><meta http-equiv="refresh" content="15"></noscript>\n` :
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="bird bot supporters club">
 <meta property="og:url" content="https://support.cygnet.lol/">
-<meta property="og:image" content="https://support.cygnet.lol/art/support/og.gif?v=1">
+<meta property="og:image" content="https://support.cygnet.lol/art/support/og.gif?v=2">
 <meta property="og:image:type" content="image/gif">
 <meta property="og:image:width" content="800">
 <meta property="og:image:height" content="420">

@@ -57,7 +57,7 @@ test("shared support and private checkout links use the same public club preview
     const head = html.slice(0, html.indexOf("</head>"));
     assert.match(head, /property="og:title" content="bird bot supporters club"/);
     assert.match(head, /property="og:url" content="https:\/\/support\.cygnet\.lol\/"/);
-    assert.match(head, /property="og:image" content="https:\/\/support\.cygnet\.lol\/art\/support\/og\.gif\?v=1"/);
+    assert.match(head, /property="og:image" content="https:\/\/support\.cygnet\.lol\/art\/support\/og\.gif\?v=2"/);
     assert.match(head, /property="og:image:type" content="image\/gif"/);
     assert.match(head, /name="twitter:card" content="summary_large_image"/);
     for (const privateValue of [checkout.id, checkout.to, checkout.amount, offer.owner.id, offer.owner.avatar!]) {
