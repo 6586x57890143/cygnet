@@ -363,8 +363,10 @@ const YAW = 0.45, PITCH = 0.08;
         for (let i = i0; i <= i1; i++) {
           const px = bx + i * cw + cw / 2;
           if (px < -cw || px > w + cw) continue;
-          // Leave her box's own cells to her and the perch under her.
-          if (i >= 0 && i < cols && j >= 0 && j < rows && f.shade[j * cols + i] >= 0) continue;
+          // Keep the bird and her feet in front, but shade the perch with
+          // the same bark as the rest of this limb. Its model still owns
+          // the depth test, so the branch hides whichever toes go behind.
+          if (i >= 0 && i < cols && j >= 0 && j < rows && f.shade[j * cols + i] >= 0 && f.parts[j * cols + i] !== part.branch) continue;
           const t = (px - ox) * dx + (py - oy) * dy;
           if (t < from || t > to) continue;
           const r = rAt(t);
@@ -457,6 +459,9 @@ const YAW = 0.45, PITCH = 0.08;
         const q = j * cols + i, v = f.shade[q];
         if (v < 0) continue;
         const p = f.parts[q];
+        // wood() already drew the continuous textured surface. Painting
+        // the model's plain cylinder here would cover that treatment.
+        if (p === part.branch) continue;
         // The catchlight is a pinpoint: one cell, the first of it in
         // reading order; any cell beside it that also caught it is pupil,
         // or two bright cells side by side read as googly eyes.
