@@ -1,0 +1,7 @@
+# Optional: only cygnet reads these file-mounted discovery credentials.
+services:
+  bot:
+    environment:
+      CYGNET_NATIVE_FILE: /run/secrets/alchemy.json
+    volumes:
+      - ./secrets/alchemy.json:/run/secrets/alchemy.json:ro

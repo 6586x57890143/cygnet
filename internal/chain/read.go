@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -64,6 +65,8 @@ type Reader struct {
 	// Native is an Alchemy Transfers API endpoint per chain. Credentials
 	// stay on cygnet; an unset endpoint disables the native rail.
 	Native map[string]string
+	Monero *Monero
+	Kraken string
 	// RPC is an endpoint by chain ("base"), in place of the rail's own: a
 	// paid node, or a test server.
 	RPC map[string]string
@@ -86,8 +89,18 @@ func (r *Reader) client() *http.Client {
 	if r.HTTP != nil {
 		return r.HTTP
 	}
-	return &http.Client{Timeout: timeout}
+	return nodeClient
 }
+
+// Keep the connection pool while refusing redirects and environment proxies:
+// configured node URLs can contain API keys that must stay on their TLS peer.
+var nodeClient = func() *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+	return &http.Client{Timeout: timeout, Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+}()
 
 // rpcError is a JSON-RPC error. Nodes send it with HTTP 200, so the status
 // alone would read a refusal as an empty answer.
@@ -96,7 +109,7 @@ type rpcError struct {
 	Message string `json:"message"`
 }
 
-func (e *rpcError) Error() string { return fmt.Sprintf("rpc error %d: %s", e.Code, e.Message) }
+func (e *rpcError) Error() string { return fmt.Sprintf("rpc error %d", e.Code) }
 
 // rpc calls method on a JSON-RPC endpoint and decodes its result into out.
 func (r *Reader) rpc(ctx context.Context, endpoint, method string, params []any, out any) error {
@@ -113,13 +126,13 @@ func (r *Reader) rpc(ctx context.Context, endpoint, method string, params []any,
 		Error  *rpcError       `json:"error"`
 	}
 	if err := json.Unmarshal(raw, &env); err != nil {
-		return fmt.Errorf("%s: %w", method, err)
+		return fmt.Errorf("%s: invalid RPC envelope", method)
 	}
 	if env.Error != nil {
 		return fmt.Errorf("%s: %w", method, env.Error)
 	}
 	if err := json.Unmarshal(env.Result, out); err != nil {
-		return fmt.Errorf("%s: %w", method, err)
+		return fmt.Errorf("%s: invalid RPC result", method)
 	}
 	return nil
 }
@@ -134,7 +147,7 @@ func (r *Reader) do(ctx context.Context, method, endpoint string, body []byte, h
 	}
 	req, err := http.NewRequestWithContext(ctx, method, endpoint, rd)
 	if err != nil {
-		return nil, err
+		return nil, errors.New("invalid node request")
 	}
 	for k, v := range header {
 		req.Header[k] = v
@@ -148,9 +161,12 @@ func (r *Reader) do(ctx context.Context, method, endpoint string, body []byte, h
 		return nil, fmt.Errorf("reaching %s: %w", host(endpoint), unwrapURL(err))
 	}
 	defer func() { _ = res.Body.Close() }()
-	raw, err := io.ReadAll(io.LimitReader(res.Body, maxBody))
+	raw, err := io.ReadAll(io.LimitReader(res.Body, maxBody+1))
 	if err != nil {
 		return nil, err
+	}
+	if len(raw) > maxBody {
+		return nil, errors.New("node response exceeds size limit")
 	}
 	if res.StatusCode/100 != 2 {
 		return nil, fmt.Errorf("%s answered %d", host(endpoint), res.StatusCode)
@@ -176,7 +192,7 @@ func unwrapURL(err error) error {
 func hexInt(s string) (*big.Int, error) {
 	v, ok := new(big.Int).SetString(strings.TrimPrefix(s, "0x"), 16)
 	if !ok || !strings.HasPrefix(s, "0x") {
-		return nil, fmt.Errorf("%q is not a hex quantity", s)
+		return nil, errors.New("invalid hexadecimal quantity")
 	}
 	return v, nil
 }
@@ -544,6 +560,9 @@ var decimal = regexp.MustCompile(`^[0-9]+(\.[0-9]+)?$`)
 // USD is what one coin of asset ("SOL") is worth in US dollars now:
 // Coinbase's public spot price, which takes no key.
 func (r *Reader) USD(ctx context.Context, asset string) (*big.Rat, error) {
+	if asset == "XMR" {
+		return r.moneroUSD(ctx, time.Now())
+	}
 	base := r.Prices
 	if base == "" {
 		base = "https://api.coinbase.com"
@@ -562,6 +581,9 @@ func (r *Reader) USD(ctx context.Context, asset string) (*big.Rat, error) {
 		return nil, fmt.Errorf("price: %w", err)
 	}
 	band, known := priceBand[asset]
+	if len(res.Data.Amount) > 48 {
+		return nil, errors.New("price: oversized quote")
+	}
 	p, ok := new(big.Rat).SetString(res.Data.Amount)
 	if !known || !decimal.MatchString(res.Data.Amount) || !ok || res.Data.Currency != "USD" ||
 		p.Cmp(new(big.Rat).SetInt64(band[0])) < 0 || p.Cmp(new(big.Rat).SetInt64(band[1])) > 0 {

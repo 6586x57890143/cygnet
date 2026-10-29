@@ -1,3 +1,7 @@
 .git
 .env
+secrets
+xmr-wallet
+.xmr-enabled
+.eth-enabled
 *.pgo.tmp

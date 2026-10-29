@@ -271,6 +271,15 @@ test("a SOL checkout whose price ran out offers nothing to pay", () => {
   assert.doesNotMatch(html, new RegExp(checkout.to));
 });
 
+test("XMR explains its own address, partial payments and confirmation delay", () => {
+  const html = text(render({ kind: "checkout", c: { ...checkout, rail: "monero:XMR", label: "xmr on monero", amount: "0.025", to: "monero-checkout-address", pay: "monero:monero-checkout-address?tx_amount=0.025" }, now }));
+  assert.match(html, /this address belongs only to this checkout/);
+  assert.match(html, /smaller payments sent before its price runs out add up/);
+  assert.match(html, /at least 10 confirmations/);
+  assert.doesNotMatch(html, /the amount is how i know it's you/);
+  assert.match(html, /href="monero:monero-checkout-address\?tx_amount=0.025"/);
+});
+
 test("prices, dates and lists in the owner's words", () => {
   assert.equal(dollars(500), "$5");
   assert.equal(dollars(2750), "$27.50");

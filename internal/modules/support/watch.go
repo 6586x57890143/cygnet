@@ -50,6 +50,20 @@ func (m *Module) tick(ctx context.Context) {
 		m.log.Warn("sweeping checkouts", "err", err)
 	}
 	cancel()
+	if m.reader != nil && m.reader.Monero != nil {
+		rctx, cancel := context.WithTimeout(ctx, railTime)
+		_, _ = m.store.Cursor(rctx, "monero:XMR", m.now())
+		if err := m.prepareMonero(rctx); err != nil {
+			m.reader.Monero.Invalidate()
+			_ = m.failed(ctx, "monero:XMR", err)
+			m.log.Warn("reading a rail", "rail", "monero:XMR", "err", err)
+		} else {
+			write, done := writes(ctx)
+			_ = m.store.Advance(write, "monero:XMR", m.reader.Monero.Primary, m.now())
+			done()
+		}
+		cancel()
+	}
 	for _, r := range m.rails() {
 		rctx, cancel := context.WithTimeout(ctx, railTime)
 		if err := m.scan(rctx, r); err != nil {
@@ -64,6 +78,9 @@ func (m *Module) tick(ctx context.Context) {
 // transfers again, which the store takes as already seen.
 func (m *Module) scan(ctx context.Context, r chain.Rail) error {
 	to := m.wallets.of(r.Family)
+	if r.Family == chain.MoneroFamily {
+		return m.scanMonero(ctx, r)
+	}
 	if r.Native {
 		to = strings.ToLower(to)
 		return m.cursor(ctx, r.Key+":"+to, m.now(), func(c store.Cursor) ([]chain.Transfer, string, error) {

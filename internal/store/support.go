@@ -146,6 +146,7 @@ func scanInvoice(row pgx.Row) (Invoice, error) {
 type Ask struct {
 	User        snowflake.ID
 	Destination string
+	Wallet      string
 	Months      int
 	Cents       int
 	Rail        string
@@ -225,6 +226,20 @@ func (s *Support) Quote(ctx context.Context, a Ask, now time.Time, life time.Dur
 	id, err := invoiceID()
 	if err != nil {
 		return Invoice{}, err
+	}
+	if a.Rail == "monero:XMR" {
+		if a.Wallet == "" {
+			return Invoice{}, ErrNotOffered
+		}
+		err := tx.QueryRow(ctx, `update support_address set invoice=$2 where address=(
+		 select address from support_address where wallet=$1 and invoice is null order by minor for update skip locked limit 1)
+		 returning address`, a.Wallet, id).Scan(&a.Destination)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Invoice{}, ErrNoAmount
+		}
+		if err != nil {
+			return Invoice{}, err
+		}
 	}
 	for range amountTries {
 		amt, quote, err := amount(price)
@@ -310,11 +325,12 @@ type Recorded struct {
 func (r Recorded) Paid() bool { return r.Invoice.ID != "" }
 
 // Record keeps a payment, once: one seen again is not new and changes
-// nothing. One whose amount is a live checkout's on its rail pays it and
-// buys its period, after any the person already has, in the same
-// transaction, so a payment and what it bought can't come apart.
+// nothing. Exact amounts match shared-address rails; Monero receipts add
+// up against a checkout's dedicated address. Reaching the price buys its
+// period, after any the person already has, in the same transaction.
 func (s *Support) Record(ctx context.Context, p Payment) (Recorded, error) {
 	var out Recorded
+	byDestination := p.Rail == "monero:XMR"
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return out, err
@@ -325,6 +341,7 @@ func (s *Support) Record(ctx context.Context, p Payment) (Recorded, error) {
 	var user int64
 	var months int
 	var gold bool
+	var required string
 	// A quoted (volatile) checkout pays only for a payment the chain took
 	// within VolatileSlack of its time, however late cygnet reads it; one
 	// sent later is kept, unmatched, for the owner. Without a chain time,
@@ -333,11 +350,11 @@ func (s *Support) Record(ctx context.Context, p Payment) (Recorded, error) {
 	if sent.IsZero() {
 		sent = p.Seen
 	}
-	err = tx.QueryRow(ctx, `select id, user_id, months, gold from support_invoice
-		where rail = $1 and amount = $2::numeric and state in ('open', 'lapsed')
+	err = tx.QueryRow(ctx, `select id, user_id, months, gold, amount::text from support_invoice
+		where rail = $1 and (amount = $2::numeric or ($6 and rail='monero:XMR' and destination=$4)) and state in ('open', 'lapsed')
 		and (quote is null or expires > $3)
 		and (destination = '' or destination = $4)
-		and made <= $5 for update`, p.Rail, p.Amount.String(), sent.Add(-VolatileSlack), p.To, sent).Scan(&id, &user, &months, &gold)
+		and made <= $5 for update`, p.Rail, p.Amount.String(), sent.Add(-VolatileSlack), p.To, sent, byDestination).Scan(&id, &user, &months, &gold, &required)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		id = nil
@@ -355,6 +372,15 @@ func (s *Support) Record(ctx context.Context, p Payment) (Recorded, error) {
 	out.New = true
 	if id == nil {
 		return out, tx.Commit(ctx)
+	}
+	if byDestination {
+		var enough bool
+		if err := tx.QueryRow(ctx, "select coalesce(sum(amount),0) >= $2::numeric from support_payment where invoice=$1", *id, required).Scan(&enough); err != nil {
+			return out, err
+		}
+		if !enough {
+			return out, tx.Commit(ctx)
+		}
 	}
 	if _, err := tx.Exec(ctx, "update support_invoice set state = 'paid', paid = $2 where id = $1", *id, p.Seen); err != nil {
 		return out, err

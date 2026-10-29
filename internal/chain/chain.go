@@ -2,7 +2,7 @@
 // supporter's payment arrive (docs/support.md): the rails it takes, the
 // exact amount a checkout asks for on each, and readers that list the
 // transfers into a wallet since a cursor. It holds no key and signs
-// nothing; every call is a public read.
+// nothing. Monero uses a separate private view-only wallet service.
 //
 // No web3 library: an ERC-20 transfer is a log with one fixed topic, TRON
 // has a REST endpoint for its token transfers, and Solana's RPC returns
@@ -29,9 +29,10 @@ import (
 type Family string
 
 const (
-	EVM    Family = "evm"
-	Tron   Family = "tron"
-	Solana Family = "solana"
+	EVM          Family = "evm"
+	Tron         Family = "tron"
+	Solana       Family = "solana"
+	MoneroFamily Family = "monero"
 )
 
 // Rail is one asset on one chain that a checkout can be paid in.
@@ -66,7 +67,7 @@ type Rail struct {
 }
 
 // Rails is every rail cygnet takes, in the order a checkout offers them:
-// the cheapest to send first. Every contract and mint here is the one
+// low-fee choices first. Every contract and mint here is the one
 // merlin's tip jar checked live against its own symbol() and decimals()
 // (Base's is native USDC, not USDbC; Polygon's native USDC, not USDC.e).
 //
@@ -74,6 +75,7 @@ type Rail struct {
 // arbitrary tokens needs an indexer and a price for each; a supporter
 // swaps first, which every wallet does in a tap.
 var Rails = []Rail{
+	{Key: "monero:XMR", Chain: "monero", Label: "xmr on monero", Family: MoneroFamily, Decimals: 12, RPC: "private wallet RPC", Tx: "https://xmrchain.net/tx/%s"},
 	{Key: "solana:USDC", Chain: "solana", Label: "usdc on solana", Family: Solana, Decimals: 6, Stable: true,
 		Token: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", RPC: "https://api.mainnet-beta.solana.com", Tx: "https://solscan.io/tx/%s"},
 	{Key: "solana:USDT", Chain: "solana", Label: "usdt on solana", Family: Solana, Decimals: 6, Stable: true,
@@ -129,6 +131,9 @@ func (r Rail) Base(cents int, usd *big.Rat) (*big.Int, error) {
 	units := new(big.Rat).SetFrac(new(big.Int).Mul(big.NewInt(int64(cents)), pow10(r.Decimals)), big.NewInt(100))
 	units.Quo(units, usd)
 	out := ceil(units)
+	if r.Family == MoneroFamily {
+		return out, nil
+	}
 	step := pow10(r.Decimals - 4)
 	if m := new(big.Int).Mod(out, step); m.Sign() != 0 {
 		out.Add(out, new(big.Int).Sub(step, m))
@@ -163,6 +168,9 @@ func (r Rail) Pick(cents int, usd *big.Rat) (*big.Int, error) {
 	if err != nil {
 		return nil, err
 	}
+	if r.Family == MoneroFamily {
+		return base, nil
+	}
 	change, err := rand.Int(rand.Reader, r.MaxChange())
 	if err != nil {
 		return nil, err
@@ -189,6 +197,10 @@ func (r Rail) Format(amount *big.Int) string {
 // the recipient is the wallet, never a token account, and the amount is in
 // whole coins). "" elsewhere, where the address and amount are copied.
 func (r Rail) Pay(to string, amount *big.Int, label, message string) string {
+	if r.Family == MoneroFamily {
+		q := url.Values{"tx_amount": {r.Format(amount)}, "recipient_name": {label}}
+		return "monero:" + to + "?" + strings.ReplaceAll(q.Encode(), "+", "%20")
+	}
 	if r.Family != Solana {
 		return ""
 	}
@@ -217,6 +229,9 @@ func Valid(family Family, address string) bool {
 		return err == nil
 	case Solana:
 		return solanaKey(address) == nil
+	case MoneroFamily:
+		_, _, valid := MoneroAddress(address)
+		return valid
 	}
 	return false
 }

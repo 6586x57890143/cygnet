@@ -1,0 +1,41 @@
+# Optional override; the normal deployment does not load or enable this.
+# Use a reviewed image pinned by digest with the official wallet RPC binary
+# and the offline startup guard. See docs/monero.md before enabling.
+services:
+  bot:
+    networks:
+      xmr: {}
+    volumes:
+      - ./secrets/xmr-rpc-password:/run/secrets/xmr-rpc-password:ro
+      - ./secrets/xmr-rpc-ca.crt:/run/secrets/xmr-rpc-ca.crt:ro
+
+  xmr-wallet:
+    image: ${CYGNET_XMR_IMAGE:?set an immutable reviewed wallet image}
+    user: "65532:65532"
+    entrypoint: ["/usr/local/bin/monero-guard"]
+    environment:
+      CYGNET_XMR_PRIMARY: ${CYGNET_SUPPORT_MONERO:?set the pinned primary address}
+      CYGNET_XMR_NETWORK: ${CYGNET_XMR_NETWORK:-Mainnet}
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 64
+    mem_limit: 512m
+    cpus: 1.0
+    volumes:
+      - ./xmr-wallet:/wallet
+      - ./secrets/xmr-wallet.conf:/run/secrets/xmr-wallet.conf:ro
+      - ./secrets/xmr-wallet-password:/run/secrets/xmr-wallet-password:ro
+      - ./secrets/xmr-rpc-tls.key:/run/secrets/xmr-rpc-tls.key:ro
+      - ./secrets/xmr-rpc-ca.crt:/run/secrets/xmr-rpc-ca.crt:ro
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    networks: [xmr, xmr-egress]
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: {max-size: "5m", max-file: "2"}
+
+networks:
+  xmr:
+    internal: true
+  xmr-egress: {}

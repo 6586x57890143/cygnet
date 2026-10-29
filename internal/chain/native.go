@@ -115,6 +115,9 @@ func (r *Reader) EVMNative(ctx context.Context, rail Rail, to, cursor string) ([
 			!strings.HasPrefix(strings.ToLower(t.ID), strings.ToLower(t.Hash)+":") || len(t.ID) > 256 {
 			return nil, cursor, errors.New("native: invalid indexed transfer")
 		}
+		if len(t.Raw.Value) > 66 {
+			return nil, cursor, errors.New("native: invalid amount")
+		}
 		amount, err := hexInt(t.Raw.Value)
 		if err != nil || amount.Sign() <= 0 || amount.BitLen() > 256 {
 			return nil, cursor, errors.New("native: invalid amount")
@@ -157,6 +160,31 @@ func (r *Reader) EVMNative(ctx context.Context, rail Rail, to, cursor string) ([
 		if err != nil || bh != at || !hash32.MatchString(block.Hash) || !strings.EqualFold(block.Hash, receipt.BlockHash) {
 			return nil, cursor, errors.New("native: receipt is not canonical")
 		}
+		// An ordinary transfer's recipient and amount are independently
+		// available in the transaction. Do not trust indexed values where
+		// the standard RPC can prove them; internal values still need traces.
+		if t.Category == "external" {
+			var tx *struct {
+				Hash, From, Value string
+				To                *string
+				BlockNumber       string
+				BlockHash         string
+			}
+			if err := r.rpc(ctx, endpoint, "eth_getTransactionByHash", []any{t.Hash}, &tx); err != nil {
+				return nil, cursor, err
+			}
+			if tx == nil || tx.To == nil || !strings.EqualFold(tx.Hash, t.Hash) || !strings.EqualFold(*tx.To, to) || !strings.EqualFold(tx.From, t.From) || !strings.EqualFold(tx.BlockHash, block.Hash) || len(tx.Value) > 66 {
+				return nil, cursor, errors.New("native: indexed transfer does not match its transaction")
+			}
+			txHeight, err := nativeHeight(tx.BlockNumber)
+			if err != nil || txHeight != at {
+				return nil, cursor, errors.New("native: transaction is not in the canonical block")
+			}
+			value, err := hexInt(tx.Value)
+			if err != nil || value.Cmp(amount) != 0 {
+				return nil, cursor, errors.New("native: indexed value does not match its transaction")
+			}
+		}
 		stamp, err := nativeHeight(block.Timestamp)
 		if err != nil || stamp == 0 || stamp > 1<<62 {
 			return nil, cursor, errors.New("native: invalid block time")
@@ -171,6 +199,9 @@ func (r *Reader) EVMNative(ctx context.Context, rail Rail, to, cursor string) ([
 }
 
 func nativeHeight(raw string) (uint64, error) {
+	if len(raw) > 18 || !strings.HasPrefix(raw, "0x") {
+		return 0, errors.New("native: invalid block quantity")
+	}
 	n, err := hexInt(raw)
 	if err != nil || !n.IsUint64() || n.Uint64() == ^uint64(0) {
 		return 0, errors.New("native: invalid block quantity")

@@ -286,8 +286,8 @@ function checkoutBody(c: Checkout, now: number): string {
         <dt>price</dt><dd>${dollars(c.price)}${c.quote ? ` <span class="dim">at $${esc(c.quote)} a ${esc(asset)}</span>` : ""}</dd>
       </dl>
       ${c.pay && active ? `<a class="pay" href="${esc(c.pay)}">open it in your wallet</a>` : ""}
-      <p class="fine"><span class="pulse"></span>this page checks for it by itself. it can take a few minutes after you send.</p>
-      <p class="fine">the amount is how i know it's you, so send exactly this, with the fee on top. from an exchange, check that what arrives is this amount.</p>
+      <p class="fine"><span class="pulse"></span>this page checks for it by itself. ${c.rail === "monero:XMR" ? "xmr needs at least 10 confirmations and must be available to spend, so it can take 20 minutes or longer." : "it can take a few minutes after you send."}</p>
+      <p class="fine">${c.rail === "monero:XMR" ? "this address belongs only to this checkout. smaller payments sent before its price runs out add up, and anything extra is a gift." : "the amount is how i know it's you, so send exactly this, with the fee on top. from an exchange, check that what arrives is this amount."}</p>
       <a class="again" href="/">start over</a>`;
 }
 
