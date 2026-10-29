@@ -203,6 +203,8 @@ button:active, a.pay:active { box-shadow: none; transform: translateY(2px); }
 button:focus-visible, a:focus-visible, input:focus-visible + span, select:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
 button.quiet { display: inline-block; width: auto; min-height: 28px; padding: 6px 2px; background: none; color: var(--muted); font: 13px var(--mono); text-decoration: underline 1px dotted; text-underline-offset: 3px; box-shadow: none; }
 .act .cf-turnstile { margin-bottom: 10px; }
+.act .verification { font-size: 13px; color: var(--muted); }
+.act button:disabled { opacity: .6; cursor: wait; }
 .out { text-align: right; }
 
 /* The choices. */

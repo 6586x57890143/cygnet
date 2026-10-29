@@ -199,7 +199,7 @@ function letter(o: Offer | null, birds: Bird[], signedIn = false): string {
 }
 
 const widget = (sitekey: string) =>
-  `<div class="cf-turnstile" data-sitekey="${esc(sitekey)}" data-theme="auto" data-size="flexible" data-appearance="interaction-only"></div>`;
+  `<div class="cf-turnstile" data-sitekey="${esc(sitekey)}" data-theme="auto" data-size="flexible" data-appearance="always" data-action="support_signin" data-callback="supportVerified" data-error-callback="supportVerificationFailed" data-expired-callback="supportVerificationExpired" data-timeout-callback="supportVerificationExpired"></div>`;
 
 // supportBody is /support: the letter, then the way in. Signed out, a sign
 // in behind Turnstile; signed in, their backing and the checkout's choices.
@@ -207,7 +207,7 @@ function supportBody(o: Offer | null, status: Status | null, signedIn: boolean, 
   const body = letter(o, birds, signedIn);
   if (!o) return body + `<p class="note">backing opens soon. come back in a bit.</p>`;
   if (!signedIn) {
-    return body + `<form class="act" method="post" action="/in">${widget(sitekey)}<button type="submit">sign in with discord to start</button></form>`;
+    return body + `<form class="act" method="post" action="/in">${widget(sitekey)}<p class="verification" role="status" aria-live="polite">checking you're a person before signing in.</p><button type="submit" disabled>sign in with discord to start</button><noscript><p>enable javascript to complete the verification.</p></noscript></form>`;
   }
   let you = "";
   if (status?.active && status.until) {
@@ -397,7 +397,7 @@ ${watching ? `<noscript><meta http-equiv="refresh" content="15"></noscript>\n` :
   <footer><span class="by">${flock}kept by cygnet</span><a href="https://cygnet.lol/privacy">privacy</a></footer>
   </div>
 </main>
-<script type="module" src="/support.js"></script>${turnstile ? `\n<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>` : ""}
+<script type="module" src="/support.js"></script>${turnstile ? `\n<script src="/support-verification.js"></script>\n<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>` : ""}
 </body>
 </html>`;
 }

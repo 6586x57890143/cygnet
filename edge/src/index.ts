@@ -203,15 +203,18 @@ async function landing(req: Request, env: Env, l: Launch): Promise<Response> {
 // the form.
 async function human(req: Request, env: Env, l: Launch, next: (form: FormData) => Promise<Response>): Promise<Response> {
   const form = await req.formData();
+  const token = form.get("cf-turnstile-response");
+  if (typeof token !== "string" || token.length === 0 || token.length > 2048) return html(env, l, { kind: "error", why: say.robot }, 403);
   const ok = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
     method: "POST",
+    signal: AbortSignal.timeout(10_000),
     body: new URLSearchParams({
       secret: env.TURNSTILE_SECRET,
-      response: String(form.get("cf-turnstile-response") ?? ""),
+      response: token,
       remoteip: req.headers.get("cf-connecting-ip") ?? "",
     }),
-  }).then((r) => r.json<{ success: boolean }>());
-  if (!ok.success) return html(env, l, { kind: "error", why: say.robot }, 403);
+  }).then(async (r) => r.ok ? r.json<{ success: boolean; hostname?: string; action?: string }>() : null).catch(() => null);
+  if (ok?.success !== true || (l === supportPage && (ok.hostname !== new URL(req.url).hostname || ok.action !== "support_signin"))) return html(env, l, { kind: "error", why: say.robot }, 403);
   return next(form);
 }
 
@@ -847,7 +850,10 @@ async function html(env: Env, l: Launch, view: View, status = 200): Promise<Resp
 async function supportHtml(env: Env, view: SupportView, status = 200): Promise<Response> {
   return new Response(supportDocument(view, env.TURNSTILE_SITEKEY, await store(env).flock(Date.now())), {
     status,
-    headers: secure({ "content-type": "text/html; charset=utf-8", "cache-control": "no-store" }),
+    // no-referrer also turns a browser form's Origin into null. Keep
+    // same-origin forms identifiable, without referring checkout URLs
+    // to Discord or any other external destination.
+    headers: secure({ "content-type": "text/html; charset=utf-8", "cache-control": "no-store" }, "same-origin"),
   });
 }
 
@@ -865,12 +871,12 @@ async function birdArt(env: Env, file: string): Promise<Response> {
 // secure adds the headers every response carries: nothing framed, nothing
 // referred, scripts only from this site and Turnstile, pictures only from
 // here and Discord's CDN, and fonts only from here.
-function secure(h: Record<string, string>): Headers {
+function secure(h: Record<string, string>, referrer: "no-referrer" | "same-origin" = "no-referrer"): Headers {
   return new Headers({
     ...h,
     "content-security-policy":
       "default-src 'none'; img-src 'self' https://cdn.discordapp.com; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; connect-src 'self' https://challenges.cloudflare.com; form-action 'self' https://discord.com; base-uri 'none'; frame-ancestors 'none'",
-    "referrer-policy": "no-referrer",
+    "referrer-policy": referrer,
     "x-content-type-options": "nosniff",
     // Shared by people, never found by search or taken for training.
     "x-robots-tag": "noindex, nofollow, noarchive, noai, noimageai",
