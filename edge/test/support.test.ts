@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { reserved } from "../src/signup.ts";
+import { keyed, reserved } from "../src/signup.ts";
 import { checkSays, date, dollars, length, list, paymentGroups, supportDocument, type Checkout, type Offer, type SupportView } from "../src/support.ts";
 
 const offer: Offer = {
@@ -129,6 +129,88 @@ test("support mutations reject missing, foreign and sibling origins before touch
   }
   const response = await worker.fetch(new Request("https://support.cygnet.lol/out", { method: "POST", headers: { origin: "https://support.cygnet.lol" } }), {} as Env, {} as ExecutionContext);
   assert.equal(response.status, 404, "same origin reaches the unconfigured service check");
+});
+
+test("support form pages preserve browser origins through sign-in, quote and sign-out", async (t) => {
+  const { default: worker } = await import("../src/index.ts");
+  const calls: string[] = [];
+  t.mock.method(globalThis, "fetch", async (url: string, init: RequestInit) => {
+    if (url === "https://challenges.cloudflare.com/turnstile/v0/siteverify") {
+      calls.push("turnstile");
+      return Response.json({ success: true, hostname: "support.cygnet.lol", action: "support_signin" });
+    }
+    assert.equal(url, "https://hub.example/v1/call");
+    const request = JSON.parse(String(init.body));
+    calls.push(request.method);
+    return Response.json({ body: request.method === "cygnet.offer" ? offer : request.method === "cygnet.supporter" ? { active: false, gold: false } : checkout });
+  });
+  const env = {
+    CYGNET_HUB_URL: "https://hub.example", CYGNET_HUB_TOKEN: "fixture",
+    HMAC_KEY: "fixture-only-cookie-key", DISCORD_CLIENT_ID: String(123456789012345678n),
+    TURNSTILE_SECRET: "fixture", TURNSTILE_SITEKEY: "fixture",
+    DB: { prepare() { return { bind() { return this; }, async all() { return { results: [] }; } }; } },
+  } as unknown as Env;
+  const origin = "https://support.cygnet.lol";
+  const get = await worker.fetch(new Request(origin), env, {} as ExecutionContext);
+  assert.equal(get.status, 200);
+  assert.equal(get.headers.get("referrer-policy"), "same-origin", "no-referrer would null real form Origins");
+  assert.match(await get.text(), /method="post" action="\/in"/);
+  const login = await worker.fetch(new Request(origin + "/in", { method: "POST", headers: { origin }, body: new URLSearchParams({ "cf-turnstile-response": "fixture" }) }), env, {} as ExecutionContext);
+  assert.equal(login.status, 303);
+  const oauth = new URL(login.headers.get("location")!);
+  assert.equal(oauth.origin, "https://discord.com");
+  assert.equal(oauth.searchParams.get("redirect_uri"), origin + "/auth/discord");
+  assert.equal(oauth.searchParams.get("scope"), "identify");
+  assert.match(login.headers.get("set-cookie")!, /^cy_state=.+; Max-Age=600; Path=\/; HttpOnly; Secure; SameSite=Lax$/);
+  assert.ok(calls.includes("turnstile"));
+  const value = `support.${offer.owner.id}.${Date.now() + 600_000}`;
+  const cookie = `cy_support=${value}~${await keyed(env.HMAC_KEY, "cookie", value)}`;
+  const signed = await worker.fetch(new Request(origin, { headers: { cookie } }), env, {} as ExecutionContext);
+  assert.equal(signed.headers.get("referrer-policy"), "same-origin");
+  const quote = await worker.fetch(new Request(origin + "/quote", { method: "POST", headers: { origin, cookie }, body: new URLSearchParams({ months: "1", cents: "500", rail: "base:ETH" }) }), env, {} as ExecutionContext);
+  assert.equal(quote.status, 303);
+  assert.equal(quote.headers.get("location"), "/" + checkout.id);
+  assert.ok(calls.includes("cygnet.quote"));
+  const out = await worker.fetch(new Request(origin + "/out", { method: "POST", headers: { origin, cookie } }), env, {} as ExecutionContext);
+  assert.equal(out.status, 303);
+  assert.equal(out.headers.get("location"), "/");
+  assert.equal(out.headers.get("set-cookie"), "cy_support=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax");
+});
+
+test("sign-in refuses missing, oversized, failed, replayed and wrong-context verification", async (t) => {
+  const { default: worker } = await import("../src/index.ts");
+  const env = {
+    CYGNET_HUB_URL: "https://hub.example", CYGNET_HUB_TOKEN: "fixture",
+    TURNSTILE_SECRET: "fixture", TURNSTILE_SITEKEY: "fixture",
+    DB: { prepare() { return { bind() { return this; }, async all() { return { results: [] }; } }; } },
+  } as unknown as Env;
+  let response: unknown, calls = 0;
+  t.mock.method(globalThis, "fetch", async () => {
+    calls++;
+    if (response instanceof Error) throw response;
+    return response instanceof Response ? response : Response.json(response);
+  });
+  for (const token of ["", "x".repeat(2049)]) {
+    const result = await worker.fetch(new Request("https://support.cygnet.lol/in", { method: "POST", headers: { origin: "https://support.cygnet.lol" }, body: new URLSearchParams({ "cf-turnstile-response": token }) }), env, {} as ExecutionContext);
+    assert.equal(result.status, 403);
+  }
+  assert.equal(calls, 0, "invalid input should not call Siteverify");
+  for (response of [
+    { success: false, "error-codes": ["timeout-or-duplicate"] },
+    { success: true, hostname: "cygnet.lol", action: "support_signin" },
+    { success: true, hostname: "support.cygnet.lol", action: "other_action" },
+    { success: true }, { success: "true", hostname: "support.cygnet.lol", action: "support_signin" },
+    new Response("unavailable", { status: 503 }), new Response("not JSON"), new Error("network unavailable"),
+  ]) {
+    const result = await worker.fetch(new Request("https://support.cygnet.lol/in", { method: "POST", headers: { origin: "https://support.cygnet.lol" }, body: new URLSearchParams({ "cf-turnstile-response": "fixture-token" }) }), env, {} as ExecutionContext);
+    assert.equal(result.status, 403);
+    assert.equal(result.headers.has("set-cookie"), false, "failed verification must not start OAuth");
+  }
+  const page = render({ kind: "support", offer, status: null, signedIn: false });
+  assert.match(page, /data-appearance="always"/);
+  assert.match(page, /data-action="support_signin"/);
+  assert.match(page, /button type="submit" disabled/);
+  assert.ok(page.indexOf('src="/support-verification.js"') < page.indexOf('src="https://challenges.cloudflare.com/turnstile/v0/api.js"'), "callbacks must exist before a cached Turnstile API executes");
 });
 
 test("the owner's pages are in the owner's voice", () => {
