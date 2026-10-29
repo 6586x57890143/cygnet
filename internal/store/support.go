@@ -96,9 +96,10 @@ func (s *Support) Offer(ctx context.Context) (Offer, error) {
 
 // Invoice is one checkout.
 type Invoice struct {
-	ID     string
-	User   snowflake.ID
-	Months int
+	ID          string
+	Destination string
+	User        snowflake.ID
+	Months      int
 	// Cents is the monthly rate, Price what the whole length costs, in US
 	// cents. Gold is paying more than the plain rate.
 	Cents, Price int
@@ -115,14 +116,14 @@ type Invoice struct {
 	PeriodEnds time.Time
 }
 
-const invoiceCols = "i.id, i.user_id, i.months, i.cents, i.price, i.gold, i.rail, i.amount::text, coalesce(i.quote, ''), i.made, i.expires, i.state, i.paid, p.ends"
+const invoiceCols = "i.id, i.user_id, i.months, i.cents, i.price, i.gold, i.rail, i.amount::text, coalesce(i.quote, ''), i.made, i.expires, i.state, i.paid, p.ends, i.destination"
 
 func scanInvoice(row pgx.Row) (Invoice, error) {
 	var i Invoice
 	var user int64
 	var amount string
 	var paid, ends *time.Time
-	err := row.Scan(&i.ID, &user, &i.Months, &i.Cents, &i.Price, &i.Gold, &i.Rail, &amount, &i.Quote, &i.Made, &i.Expires, &i.State, &paid, &ends)
+	err := row.Scan(&i.ID, &user, &i.Months, &i.Cents, &i.Price, &i.Gold, &i.Rail, &amount, &i.Quote, &i.Made, &i.Expires, &i.State, &paid, &ends, &i.Destination)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return i, ErrNoInvoice
 	}
@@ -143,10 +144,11 @@ func scanInvoice(row pgx.Row) (Invoice, error) {
 // Ask is a checkout someone wants: who, for how long, at which monthly
 // rate, on which rail.
 type Ask struct {
-	User   snowflake.ID
-	Months int
-	Cents  int
-	Rail   string
+	User        snowflake.ID
+	Destination string
+	Months      int
+	Cents       int
+	Rail        string
 }
 
 // Amount picks the exact amount a checkout of price cents asks for: the
@@ -235,9 +237,9 @@ func (s *Support) Quote(ctx context.Context, a Ask, now time.Time, life time.Dur
 		if err != nil {
 			return Invoice{}, err
 		}
-		_, err = sp.Exec(ctx, `insert into support_invoice (id, user_id, months, cents, price, gold, rail, amount, quote, made, expires)
-			values ($1, $2, $3, $4, $5, $6, $7, $8::numeric, nullif($9, ''), $10, $11)`,
-			id, int64(a.User), a.Months, a.Cents, price, a.Cents > plain, a.Rail, amt.String(), quote, now, now.Add(life))
+		_, err = sp.Exec(ctx, `insert into support_invoice (id, user_id, months, cents, price, gold, rail, amount, quote, made, expires, destination)
+			values ($1, $2, $3, $4, $5, $6, $7, $8::numeric, nullif($9, ''), $10, $11, $12)`,
+			id, int64(a.User), a.Months, a.Cents, price, a.Cents > plain, a.Rail, amt.String(), quote, now, now.Add(life), a.Destination)
 		if pe, ok := errors.AsType[*pgconn.PgError](err); ok && pe.Code == "23505" && pe.ConstraintName == "support_invoice_amount" {
 			_ = sp.Rollback(ctx)
 			continue
@@ -278,6 +280,8 @@ func (s *Support) Invoice(ctx context.Context, id string) (Invoice, error) {
 // the chain names them.
 type Payment struct {
 	Rail   string
+	Event  string
+	To     string
 	Tx     string
 	Idx    int
 	Amount *big.Int
@@ -331,15 +335,17 @@ func (s *Support) Record(ctx context.Context, p Payment) (Recorded, error) {
 	}
 	err = tx.QueryRow(ctx, `select id, user_id, months, gold from support_invoice
 		where rail = $1 and amount = $2::numeric and state in ('open', 'lapsed')
-		and (quote is null or expires > $3) for update`, p.Rail, p.Amount.String(), sent.Add(-VolatileSlack)).Scan(&id, &user, &months, &gold)
+		and (quote is null or expires > $3)
+		and (destination = '' or destination = $4)
+		and made <= $5 for update`, p.Rail, p.Amount.String(), sent.Add(-VolatileSlack), p.To, sent).Scan(&id, &user, &months, &gold)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		id = nil
 	case err != nil:
 		return out, err
 	}
-	tag, err := tx.Exec(ctx, `insert into support_payment (rail, tx, idx, amount, sender, seen, invoice)
-		values ($1, $2, $3, $4::numeric, $5, $6, $7) on conflict do nothing`, p.Rail, p.Tx, p.Idx, p.Amount.String(), p.Sender, p.Seen, id)
+	tag, err := tx.Exec(ctx, `insert into support_payment (rail, tx, idx, amount, sender, seen, invoice, event)
+		values ($1, $2, $3, $4::numeric, $5, $6, $7, $8) on conflict do nothing`, p.Rail, p.Tx, p.Idx, p.Amount.String(), p.Sender, p.Seen, id, p.Event)
 	if err != nil {
 		return out, err
 	}

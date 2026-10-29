@@ -57,6 +57,10 @@ type Rail struct {
 	// Stable is a dollar stablecoin, priced one to one; anything else is
 	// quoted at the market price when the checkout is made.
 	Stable bool
+	// Native uses the indexed native-transfer reader, including contract
+	// sends. It is offered only with a configured native index endpoint.
+	Native  bool
+	ChainID uint64
 	// Tx is the explorer link for one of its transactions.
 	Tx string
 }
@@ -82,6 +86,10 @@ var Rails = []Rail{
 		Token: "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", RPC: "https://api.trongrid.io", Tx: "https://tronscan.org/#/transaction/%s"},
 	{Key: "solana:SOL", Chain: "solana", Label: "sol", Family: Solana, Decimals: 9,
 		RPC: "https://api.mainnet-beta.solana.com", Tx: "https://solscan.io/tx/%s"},
+	{Key: "base:ETH", Chain: "base", Label: "eth on base", Family: EVM, Decimals: 18, Native: true, ChainID: 8453, Confirmations: 1,
+		RPC: "https://base-rpc.publicnode.com", Tx: "https://basescan.org/tx/%s"},
+	{Key: "ethereum:ETH", Chain: "ethereum", Label: "eth on ethereum", Family: EVM, Decimals: 18, Native: true, ChainID: 1, Confirmations: 1,
+		RPC: "https://ethereum-rpc.publicnode.com", Tx: "https://etherscan.io/tx/%s"},
 }
 
 // Find is the rail called key.

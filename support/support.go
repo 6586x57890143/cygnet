@@ -24,10 +24,15 @@ const (
 	IconUSDC     = "usdc"
 	IconUSDT     = "usdt"
 	IconSOL      = "sol"
+	IconETH      = "eth"
+	IconXMR      = "xmr"
+	IconBase     = "base"
+	IconPolygon  = "polygon"
+	IconTron     = "tron"
 )
 
 // Icons is every key a card asks for, for a bird to check it has them all.
-var Icons = []string{IconBadge, IconPreviews, IconEarly, IconSay, IconUSDC, IconUSDT, IconSOL}
+var Icons = []string{IconBadge, IconPreviews, IconEarly, IconSay, IconUSDC, IconUSDT, IconSOL, IconETH, IconXMR, IconBase, IconPolygon, IconTron}
 
 // Brand is what a bird lends the words: its icons and whose work it is.
 type Brand struct {
@@ -39,6 +44,17 @@ type Brand struct {
 	// Owner is the Discord user ID of whoever builds the birds, named on
 	// the advert as a mention; "" leaves them as "one person".
 	Owner string
+	// Methods is the current offer's rails. Nil preserves the legacy coin
+	// list; an explicitly empty list points to the checkout without making
+	// claims about availability. Birds should supply the current offer.
+	Methods []Method
+}
+
+// Method is one supported asset/network pair, as cygnet.payment_methods
+// returns it. No payment records or wallet credentials cross this seam.
+type Method struct {
+	Key   string `json:"key"`
+	Label string `json:"label"`
 }
 
 func (b Brand) inline(key string) string {
@@ -101,6 +117,23 @@ func Advert(b Brand) Page {
 		perks[i] = b.inline(p.Icon) + "**" + p.Name + "** " + p.Line
 	}
 	coin := func(key string) string { return b.inline(key) + key }
+	coins := []string{coin(IconUSDC), coin(IconUSDT), coin(IconSOL)}
+	if b.Methods != nil {
+		coins = nil
+		seen := map[string]bool{}
+		for _, method := range b.Methods {
+			_, asset, ok := strings.Cut(method.Key, ":")
+			asset = strings.ToLower(asset)
+			if !ok || len(asset) < 2 || len(asset) > 8 || strings.Trim(asset, "abcdefghijklmnopqrstuvwxyz") != "" || seen[asset] {
+				continue
+			}
+			seen[asset] = true
+			coins = append(coins, coin(asset))
+		}
+		if len(coins) == 0 {
+			coins = []string{"see the checkout for available currencies"}
+		}
+	}
 	return Page{
 		Title: b.inline(IconBadge) + "back the birds",
 		Line:  "keep the bird bots flying",
@@ -111,7 +144,7 @@ func Advert(b Brand) Page {
 			text(strings.Join(perks, "\n")),
 			discord.NewLargeSeparator(),
 			text(strings.Join([]string{
-				fact("pay with", coin(IconUSDC), coin(IconUSDT), coin(IconSOL)),
+				fact("pay with", coins...),
 				fact("terms", "a month or more, paid up front", "nothing renews by itself"),
 				fact("promise", "nothing the bots do is ever locked behind it"),
 			}, "\n")),

@@ -710,6 +710,11 @@ const supportHost = "support.cygnet.lol";
 // back, the footer's birds, and the support pages at its root.
 async function supportSite(req: Request, env: Env, ctx: ExecutionContext, url: URL, first: string, second?: string, third?: string): Promise<Response> {
   try {
+    // SameSite cookies also travel between sibling subdomains. Check the
+    // exact origin before any mutation, including sign in and sign out.
+    if (req.method === "POST" && req.headers.get("origin") !== url.origin) {
+      return new Response("open this page and try again", { status: 403, headers: secure(text) });
+    }
     if (first === "auth" && second === "discord" && third === undefined && req.method === "GET") return await callback(req, env, ctx, url);
     if (first === "bird" && second && third === undefined && req.method === "GET") return await birdArt(env, second);
     if (third !== undefined) return new Response("nothing here", { status: 404, headers: secure(text) });

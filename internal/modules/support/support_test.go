@@ -9,6 +9,7 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/rest"
 	"github.com/disgoorg/snowflake/v2"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/6586x57890143/cygnet/internal/chain"
 	"github.com/6586x57890143/cygnet/internal/core"
@@ -37,9 +39,8 @@ const (
 	keeper       = snowflake.ID(5)
 )
 
-// supports is the store on CYGNET_TEST_DATABASE_URL with every rail's
-// cursor cleared, since the rails are the real ones and other runs read
-// them too.
+// Each test gets its own schema: the real rail names and immutable payment
+// history must not collide with another test, package or repeated run.
 func supports(t *testing.T) *store.Support {
 	t.Helper()
 	dsn := os.Getenv("CYGNET_TEST_DATABASE_URL")
@@ -51,14 +52,33 @@ func supports(t *testing.T) *store.Support {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(pool.Close)
-	if err := store.Migrate(ctx, pool); err != nil {
+	schema := pgx.Identifier{fmt.Sprintf("support_test_%x", rand.Uint64())}.Sanitize()
+	if _, err := pool.Exec(ctx, "create schema "+schema); err != nil {
+		pool.Close()
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, "delete from support_cursor"); err != nil {
+	t.Cleanup(func() {
+		defer pool.Close()
+		if _, err := pool.Exec(context.Background(), "drop schema "+schema+" cascade"); err != nil {
+			t.Errorf("cleaning test schema: %v", err)
+		}
+	})
+	u, err := url.Parse(dsn)
+	if err != nil {
 		t.Fatal(err)
 	}
-	return store.NewSupport(pool)
+	query := u.Query()
+	query.Set("search_path", strings.Trim(schema, `"`))
+	u.RawQuery = query.Encode()
+	testPool, err := store.Open(ctx, u.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(testPool.Close)
+	if err := store.Migrate(ctx, testPool); err != nil {
+		t.Fatal(err)
+	}
+	return store.NewSupport(testPool)
 }
 
 // someone is a person no other test or run shares.
@@ -672,7 +692,7 @@ func TestTheModuleIsWellFormed(t *testing.T) {
 	if err := r.Add(m); err != nil {
 		t.Fatal(err)
 	}
-	if m.Name() != "support" || m.Perms() != 0 || m.Help().About == "" || len(m.Verbs()) != 5 {
+	if m.Name() != "support" || m.Perms() != 0 || m.Help().About == "" || len(m.Verbs()) != 6 {
 		t.Fatal("module")
 	}
 	if months(1) != "1 month" || months(12) != "12 months" || day(t0) != "25 oct 2026" || clip("abcdef", 5) != "ab..." || clip("abc", 5) != "abc" {

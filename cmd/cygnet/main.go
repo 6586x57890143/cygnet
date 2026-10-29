@@ -581,10 +581,13 @@ func supporters(s *store.Support, bootstrap core.Admins, profile func(context.Co
 	if owner == 0 && w != (support.Wallets{}) {
 		return nil, errors.New("CYGNET_SUPPORT_* is set but not whose it is: set CYGNET_SUPPORT_OWNER or CYGNET_BOOTSTRAP_ADMIN_USER_ID")
 	}
-	r := &chain.Reader{RPC: map[string]string{}, TronKey: os.Getenv("CYGNET_TRONGRID_KEY")}
+	r := &chain.Reader{RPC: map[string]string{}, Native: map[string]string{}, TronKey: os.Getenv("CYGNET_TRONGRID_KEY")}
 	for _, rail := range chain.Rails {
 		if v := os.Getenv("CYGNET_RPC_" + strings.ToUpper(rail.Chain)); v != "" {
 			r.RPC[rail.Chain] = v
+		}
+		if rail.Native {
+			r.Native[rail.Chain] = os.Getenv("CYGNET_NATIVE_" + strings.ToUpper(rail.Chain))
 		}
 	}
 	page := ""

@@ -10,6 +10,16 @@
 // without this file, and with reduced motion nothing here moves.
 
 import { bark, branch as perchPoints, frame, model, part, perch, pose, ramp } from "./merlin.js";
+import { startCountdown } from "./countdown.js";
+
+for (const timer of document.querySelectorAll("[data-countdown]")) {
+  const stop = startCountdown(timer, { onExpire: () => {
+    document.querySelector("[data-active-quote]")?.setAttribute("hidden", "");
+    document.querySelector("[data-expired-quote]")?.removeAttribute("hidden");
+    document.querySelector("a.pay")?.remove();
+  } });
+  addEventListener("pagehide", stop, { once: true });
+}
 
 const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -506,6 +516,48 @@ const YAW = 0.45, PITCH = 0.08;
     show();
   });
   matchMedia("(prefers-color-scheme: light)").addEventListener("change", show);
+})();
+
+// Currency first, then its supported networks. Before script runs every
+// group is visible and every payment choice is an ordinary radio.
+(() => {
+  const form = document.querySelector("form.checkout");
+  if (!form) return;
+  const picker = form.querySelector(".currencies");
+  const groups = [...form.querySelectorAll(".asset-networks")];
+  if (!picker || !groups.length) return;
+  const previous = new Map();
+  for (const group of groups) {
+    const label = document.createElement("label");
+    label.className = "opt";
+    const input = document.createElement("input");
+    input.type = "radio";
+    input.name = "asset";
+    input.value = group.dataset.asset;
+    input.setAttribute("aria-label", group.dataset.asset);
+    input.checked = !!group.querySelector("input:checked");
+    const name = document.createElement("span");
+    name.className = "name";
+    for (const child of group.querySelector("legend").childNodes) name.append(child.cloneNode(true));
+    label.append(input, name);
+    picker.append(label);
+  }
+  const show = () => {
+    const asset = picker.querySelector("input:checked")?.value;
+    for (const group of groups) {
+      const selected = group.querySelector('input[name="rail"]:checked');
+      if (selected) previous.set(group.dataset.asset, selected.value);
+      group.hidden = group.disabled = group.dataset.asset !== asset;
+    }
+    const active = groups.find((g) => !g.disabled);
+    if (!active) return;
+    const inputs = [...active.querySelectorAll('input[name="rail"]')];
+    const chosen = inputs.find((input) => input.value === previous.get(asset)) ?? inputs[0];
+    if (chosen) chosen.checked = true;
+  };
+  form.addEventListener("change", show);
+  show();
+  picker.hidden = false;
 })();
 
 // The checkout's choices, summed up as they change: what you picked, in

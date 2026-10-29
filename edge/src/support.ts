@@ -16,6 +16,7 @@
 import type { Launch } from "./signup.ts";
 import type { Bird } from "./store.ts";
 import { frame, model, text } from "../public/merlin.js";
+import { formatCountdown } from "../public/countdown.js";
 
 // Offer is cygnet.offer's answer.
 export interface Offer {
@@ -123,7 +124,7 @@ const tile = (name: string) => duo(name, "tile", 32);
 
 // marks is the coins and chains that have a mark, by the word the page
 // writes for them; solana the chain wears sol's, as solana does.
-const marks: Record<string, string> = { usdc: "usdc", usdt: "usdt", sol: "sol", solana: "sol", base: "base", polygon: "polygon", tron: "tron" };
+const marks: Record<string, string> = { usdc: "usdc", usdt: "usdt", sol: "sol", solana: "sol", eth: "eth", ethereum: "eth", xmr: "xmr", monero: "xmr", base: "base", polygon: "polygon", tron: "tron" };
 
 // marked is a coin's or chain's name with its mark in front, at 16 px: an
 // eighth of the tile, so each pixel of the mark is one of the screen's.
@@ -140,14 +141,22 @@ const markedText = (s: string) => s.split(" ").map(marked).join(" ");
 // paying is the assets and chains a checkout takes, in words, each with
 // its mark: "usdc, usdt or sol, on solana, base, polygon or tron".
 function paying(rails: Offer["rails"]): string {
-  const assets: string[] = [];
-  const chains: string[] = [];
-  for (const r of rails) {
-    const [chain, asset] = r.key.split(":");
-    if (!assets.includes(asset.toLowerCase())) assets.push(asset.toLowerCase());
-    if (!chains.includes(chain)) chains.push(chain);
+  return list(paymentGroups(rails).map((g) => `${marked(g.asset)} on ${list(g.rails.map((r) => marked(r.key.split(":")[0])))}`));
+}
+
+// paymentGroups keeps only actual asset/network pairs, in offer order.
+// The same groups work as ordinary radio choices without JavaScript.
+export function paymentGroups(rails: Offer["rails"]): { asset: string; rails: Offer["rails"] }[] {
+  const groups = new Map<string, Offer["rails"]>();
+  const seen = new Set<string>();
+  for (const rail of rails) {
+    if (!/^[a-z]{2,16}:[A-Z]{2,8}$/.test(rail.key) || seen.has(rail.key)) continue;
+    seen.add(rail.key);
+    const asset = rail.key.split(":")[1].toLowerCase();
+    if (!groups.has(asset)) groups.set(asset, []);
+    groups.get(asset)!.push(rail);
   }
-  return `${list(assets.map(marked))}, on ${list(chains.map(marked))}`;
+  return [...groups].map(([asset, rails]) => ({ asset, rails }));
 }
 
 // flock is the birds on the roster, each with its picture, joined the
@@ -226,13 +235,11 @@ function supportBody(o: Offer | null, status: Status | null, signedIn: boolean, 
       option("cents", c, i === 0, `${i > 0 ? tile("badge_gold") : tile("badge")}<span class="name">${dollars(c)}</span><span class="sub">a month${i > 0 ? ", gold badge" : ""}</span>`, `${dollars(c)} a month${i > 0 ? ", gold badge" : ""}`),
     )
     .join("");
-  const rails = o.rails
-    .map((r, i) => {
-      const [chain, asset] = r.key.split(":");
-      const coin = asset.toLowerCase();
-      return option("rail", r.key, i === 0, `<span class="name">${marked(coin)}</span><span class="sub">on ${marked(chain)}</span>`, r.label);
-    })
-    .join("");
+  const rails = paymentGroups(o.rails).map((g, i) => {
+    const choices = g.rails.map((r, j) => option("rail", r.key, i === 0 && j === 0,
+      `<span class="name">${marked(r.key.split(":")[0])}</span>`, r.label)).join("");
+    return `<fieldset class="asset-networks" data-asset="${g.asset}"><legend>${marked(g.asset)}</legend><div class="row">${choices}</div></fieldset>`;
+  }).join("");
   // What each length costs at each amount, for the summary to read.
   const prices = Object.fromEntries(o.plans.map((p) => [p.months, p.prices]));
   return (
@@ -240,11 +247,11 @@ function supportBody(o: Offer | null, status: Status | null, signedIn: boolean, 
     `${you}<form class="checkout" method="post" action="/quote" data-prices="${esc(JSON.stringify(prices))}">
       <fieldset class="seg"><legend>${status?.active ? "add on" : "how long"}</legend><div class="row">${plans}</div></fieldset>
       <fieldset class="cards"><legend>how much a month</legend><div class="row">${rates}</div></fieldset>
-      <fieldset class="methods"><legend>pay with</legend><div class="row">${rails}</div></fieldset>
+      <fieldset class="methods"><legend>pay with</legend><div class="currencies" hidden></div><div class="networks">${rails}</div></fieldset>
       <p class="summary" aria-live="polite" hidden></p>
       <button type="submit">go to checkout</button>
     </form>
-    <p class="fine">the next page shows the exact amount and where to send it. an amount holds for an hour. in sol it holds for 20 minutes.</p>
+    <p class="fine">the next page shows the exact amount, network and where to send it. stablecoin amounts hold for an hour. other prices hold for 20 minutes.</p>
     <form method="post" action="/out" class="out"><button class="quiet" type="submit">not you? sign out</button></form>`
   );
 }
@@ -267,10 +274,9 @@ function checkoutBody(c: Checkout, now: number): string {
       <a class="again" href="/">start again</a>`;
   }
   const asset = c.rail.split(":")[1]?.toLowerCase() ?? "";
-  const head =
-    c.state === "open"
-      ? `<p class="note">send exactly this within <b>${wait(c.expires - now)}</b>.</p>`
-      : `<p class="note warn">this checkout's time is up. if you already sent it, it still counts, so keep this page open. if not, start a new one.</p>`;
+  const active = c.state === "open" && c.expires > now;
+  const head = `${active ? `<p class="note" data-active-quote>send exactly this within <b><time class="countdown" data-countdown data-remaining="${c.expires - now}">${formatCountdown(c.expires - now)}</time></b>.</p>` : ""}
+      <p class="note warn" data-expired-quote${active ? " hidden" : ""}>this checkout's time is up. if you already sent it, keep this page open while it checks. if not, start a new one.</p>`;
   return `${head}
       <div class="copy"><span class="what">send</span><code>${esc(c.amount)}</code><span class="unit">${marked(asset)}</span><button type="button" data-copy="${esc(c.amount)}" hidden>copy</button></div>
       <div class="copy"><span class="what">to</span><code>${esc(c.to)}</code><button type="button" data-copy="${esc(c.to)}" hidden>copy</button></div>
@@ -279,7 +285,7 @@ function checkoutBody(c: Checkout, now: number): string {
         <dt>for</dt><dd>${what}</dd>
         <dt>price</dt><dd>${dollars(c.price)}${c.quote ? ` <span class="dim">at $${esc(c.quote)} a ${esc(asset)}</span>` : ""}</dd>
       </dl>
-      ${c.pay ? `<a class="pay" href="${esc(c.pay)}">open it in your wallet</a>` : ""}
+      ${c.pay && active ? `<a class="pay" href="${esc(c.pay)}">open it in your wallet</a>` : ""}
       <p class="fine"><span class="pulse"></span>this page checks for it by itself. it can take a few minutes after you send.</p>
       <p class="fine">the amount is how i know it's you, so send exactly this, with the fee on top. from an exchange, check that what arrives is this amount.</p>
       <a class="again" href="/">start over</a>`;
@@ -288,7 +294,9 @@ function checkoutBody(c: Checkout, now: number): string {
 // checkSays is what the checkout's quiet check answers: 204 while it
 // waits, 200 once paid, 410 once it can't be.
 export function checkSays(c: Checkout | null): number {
-  if (!c || c.state === "void" || c.stale) return 410;
+  // A price can expire while an earlier payment is still confirming.
+  // Keep watching it; only a terminal checkout stops the quiet check.
+  if (!c || c.state === "void") return 410;
   return c.state === "paid" ? 200 : 204;
 }
 
