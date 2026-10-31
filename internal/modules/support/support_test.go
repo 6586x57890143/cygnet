@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -599,8 +600,8 @@ func TestThePanelShowsYourBackingAndTheKeeperTheTakings(t *testing.T) {
 	if strings.Contains(keep, "%!") {
 		t.Fatalf("a payment rendered badly:\n%s", keep)
 	}
-	for _, want := range []string{"**supporters**", "**30 days**", "usdc on base", "**chains** usdc on base", "4.5 usdc on base matched no checkout, 1h 0m ago: [the transfer](https://basescan.org/tx/0x"} {
-		if !strings.Contains(keep, want) {
+	for _, want := range []string{"supporters", "30 days", "usdc on base", "chains usdc on base", "4.5 usdc on base matched no checkout, 1h 0m ago: [the transfer](https://basescan.org/tx/0x"} {
+		if !strings.Contains(oneSpace(keep), want) {
 			t.Errorf("the keeper's panel lacks %q:\n%s", want, keep)
 		}
 	}
@@ -666,7 +667,7 @@ func TestOnlyTheKeeperGivesBacking(t *testing.T) {
 		redrawn = d.(discord.MessageUpdate)
 		return nil
 	}
-	if err := m.click(ctx, e); err != nil || !strings.Contains(coretest.Text("", *redrawn.Components), "**supporters**") {
+	if err := m.click(ctx, e); err != nil || !strings.Contains(coretest.Text("", *redrawn.Components), "supporters") {
 		t.Fatalf("check again: %v", err)
 	}
 }
@@ -788,3 +789,7 @@ func TestAnEVMReadThatFailsPartWayKeepsWhatItRead(t *testing.T) {
 		t.Fatalf("cursor %+v, want one span on from %d and the error kept", c, from)
 	}
 }
+
+// oneSpace collapses the padding of a code block grid (core.Readout) to one
+// space, so a fact reads "label value" whatever the column width.
+func oneSpace(s string) string { return regexp.MustCompile(` {2,}`).ReplaceAllString(s, " ") }
