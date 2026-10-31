@@ -5,12 +5,16 @@ import (
 	"time"
 )
 
-func TestReadoutIsFacts(t *testing.T) {
+// Facts are a code block grid lined up in one column, a long list wraps
+// inside it after a comma, and a mention or link, which a code block would
+// show as typed, goes under the grid where it renders.
+func TestReadoutIsACodeBlockGrid(t *testing.T) {
 	got := Readout([][2]string{
 		{"gateway", "42 ms"},
-		{"intents", "guilds, members, message content"},
+		{"kept", "<@1>, <@2>"},
+		{"intents", "guilds, members, messages, voice, moderation"},
 	})
-	want := "**gateway** 42 ms\n**intents** guilds, members, message content\n"
+	want := "```\ngateway  42 ms\nintents  guilds, members, messages,\n         voice, moderation\n```\n**kept** <@1>, <@2>\n"
 	if got != want {
 		t.Errorf("readout:\n%s\nwant:\n%s", got, want)
 	}

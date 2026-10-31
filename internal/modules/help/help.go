@@ -291,15 +291,13 @@ func (f *files) add(file *discord.File, url string) string {
 	return url
 }
 
-// grid is a module's commands as facts (DESIGN.md): the invocation in
-// bold, then its options, and who may run it when that isn't everyone. A
-// subcommand is a line of its own under its full invocation, which is what
-// somebody types.
+// grid is a module's commands as a code block grid (core.Readout): the
+// invocation, then its options, and who may run it when that isn't
+// everyone. A subcommand is a line of its own under its full invocation,
+// which is what somebody types.
 func grid(cmds []core.Command) string {
-	var lines []string
-	add := func(name, rest string) {
-		lines = append(lines, strings.TrimSuffix("**"+name+"** "+rest, " "))
-	}
+	var rows [][2]string
+	add := func(name, rest string) { rows = append(rows, [2]string{name, rest}) }
 	for _, c := range cmds {
 		who := ""
 		switch c.Tier {
@@ -324,7 +322,10 @@ func grid(cmds []core.Command) string {
 			add("/"+cr.Name, join(names(cr.Options), who))
 		}
 	}
-	return strings.Join(lines, "\n")
+	if len(rows) == 0 {
+		return ""
+	}
+	return strings.TrimSuffix(core.Readout(rows), "\n")
 }
 
 func names(opts []discord.ApplicationCommandOption) string {

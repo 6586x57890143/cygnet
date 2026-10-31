@@ -355,7 +355,7 @@ func ids(cs []discord.LayoutComponent) string {
 func has(t *testing.T, text string, want ...string) {
 	t.Helper()
 	for _, w := range want {
-		if !strings.Contains(text, w) {
+		if !strings.Contains(oneSpace(text), w) {
 			t.Fatalf("no %q in\n%s", w, text)
 		}
 	}
@@ -572,3 +572,7 @@ func TestModule(t *testing.T) {
 		t.Fatal("links")
 	}
 }
+
+// oneSpace collapses the padding of a code block grid (core.Readout) to one
+// space, so a fact reads "label value" whatever the column width.
+func oneSpace(s string) string { return regexp.MustCompile(` {2,}`).ReplaceAllString(s, " ") }

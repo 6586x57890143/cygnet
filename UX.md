@@ -88,8 +88,9 @@ The rules every bird shares, which `brand/voice_test.go` holds the status lines 
   embed: a webhook can't make a real Discord reply, and a box outweighs the message it
   annotates. When cygnet needs more than a line, it borrows `/help`'s colour identity and
   layout rather than inventing a new one.
-- Facts are fields in a record and bold-label lines in a panel (`core.Readout`), and a
-  code block holds only what somebody copies: DESIGN.md's Facts.
+- Facts are fields in a record and a code block grid in a panel or a record's
+  description (`core.Readout`): DESIGN.md's Facts. `/help`'s command list is the same
+  grid.
 - **A log card** is drawn by `ledger.Render` and laid out as DESIGN.md's Log cards.
 - Numbers: `42 ms` with a space, one decimal under 10 ms. Durations use the two largest
   units: `45s`, `12m`, `3h 12m`, `2d 4h`. A value not measured yet says so, never `0`.

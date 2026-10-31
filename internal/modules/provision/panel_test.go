@@ -25,7 +25,7 @@ func TestPanel(t *testing.T) {
 		t.Fatal("the panel is for the admin alone")
 	}
 	text := coretest.Text("", (*sent)[0].Components)
-	for _, want := range []string{"**provision**", "**layout** none yet", "once a layout is applied"} {
+	for _, want := range []string{"**provision**", "layout  none yet", "once a layout is applied"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("no %q in\n%s", want, text)
 		}
@@ -50,7 +50,7 @@ func TestPanel(t *testing.T) {
 		t.Fatal(err)
 	}
 	text = coretest.Text("", *got.(discord.MessageUpdate).Components)
-	for _, want := range []string{"✓ saved", "**layout** flock", "**drift** act", "puts it back and says what she did in #cygnet"} {
+	for _, want := range []string{"✓ saved", "layout  flock", "drift   act", "puts it back and says what she did in #cygnet"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("no %q in\n%s", want, text)
 		}
