@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -564,7 +565,7 @@ func TestThePanelShowsYourBackingAndTheKeeperTheTakings(t *testing.T) {
 	ctx := context.Background()
 	user := someone()
 	text := panel(t, m, user.String())
-	if !strings.Contains(text, "**backing** not yet") || strings.Contains(text, "supporters") {
+	if !strings.Contains(oneSpace(text), "backing not yet") || strings.Contains(oneSpace(text), "supporters") {
 		t.Fatalf("someone who doesn't yet:\n%s", text)
 	}
 	if b := strings.Join(buttons(t, m, user.String()), ","); b != "back the birds" {
@@ -576,14 +577,14 @@ func TestThePanelShowsYourBackingAndTheKeeperTheTakings(t *testing.T) {
 	if _, err := m.store.Gift(ctx, user, 1, true, keeper, t0.Add(-time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	if text := panel(t, m, user.String()); !strings.Contains(text, "**backing** gold, until 25 nov 2026") || !strings.Contains(text, "since 25 oct 2026") {
+	if text := panel(t, m, user.String()); !strings.Contains(oneSpace(text), "backing gold, until 25 nov 2026") || !strings.Contains(oneSpace(text), "since 25 oct 2026") {
 		t.Fatalf("a gold supporter:\n%s", text)
 	}
 	if b := strings.Join(buttons(t, m, user.String()), ","); b != "add to it" {
 		t.Fatalf("a supporter's buttons: %s", b)
 	}
 	m.now = func() time.Time { return t0.AddDate(0, 2, 0) }
-	if text := panel(t, m, user.String()); !strings.Contains(text, "**backing** ran out 25 nov 2026") {
+	if text := panel(t, m, user.String()); !strings.Contains(oneSpace(text), "backing ran out 25 nov 2026") {
 		t.Fatalf("after it ran out:\n%s", text)
 	}
 	m.now = func() time.Time { return t0 }
@@ -599,8 +600,8 @@ func TestThePanelShowsYourBackingAndTheKeeperTheTakings(t *testing.T) {
 	if strings.Contains(keep, "%!") {
 		t.Fatalf("a payment rendered badly:\n%s", keep)
 	}
-	for _, want := range []string{"**supporters**", "**30 days**", "usdc on base", "**chains** usdc on base", "4.5 usdc on base matched no checkout, 1h 0m ago: [the transfer](https://basescan.org/tx/0x"} {
-		if !strings.Contains(keep, want) {
+	for _, want := range []string{"supporters", "30 days", "usdc on base", "chains usdc on base", "4.5 usdc on base matched no checkout, 1h 0m ago: [the transfer](https://basescan.org/tx/0x"} {
+		if !strings.Contains(oneSpace(keep), want) {
 			t.Errorf("the keeper's panel lacks %q:\n%s", want, keep)
 		}
 	}
@@ -666,7 +667,7 @@ func TestOnlyTheKeeperGivesBacking(t *testing.T) {
 		redrawn = d.(discord.MessageUpdate)
 		return nil
 	}
-	if err := m.click(ctx, e); err != nil || !strings.Contains(coretest.Text("", *redrawn.Components), "**supporters**") {
+	if err := m.click(ctx, e); err != nil || !strings.Contains(coretest.Text("", *redrawn.Components), "supporters") {
 		t.Fatalf("check again: %v", err)
 	}
 }
@@ -788,3 +789,7 @@ func TestAnEVMReadThatFailsPartWayKeepsWhatItRead(t *testing.T) {
 		t.Fatalf("cursor %+v, want one span on from %d and the error kept", c, from)
 	}
 }
+
+// oneSpace collapses the padding of a code block grid (core.Readout) to one
+// space, so a fact reads "label value" whatever the column width.
+func oneSpace(s string) string { return regexp.MustCompile(` {2,}`).ReplaceAllString(s, " ") }
