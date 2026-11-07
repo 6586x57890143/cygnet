@@ -17,7 +17,7 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
 # Pinned by digest: a rebuild of an old commit produces the same image,
 # and the tag lookup is off the path.
 # gcr.io/distroless/static-debian13:nonroot as of 2026-10-10.
-FROM gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:25ac8f0c3b2334a9eb05452266bd4697864a8c8ef0ef71e5e6480d7f92868329
 # Links the GHCR package to the repository, which is what lets the
 # workflow's GITHUB_TOKEN push to it.
 LABEL org.opencontainers.image.source=https://github.com/6586x57890143/cygnet
