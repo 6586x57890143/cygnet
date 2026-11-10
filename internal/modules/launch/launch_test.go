@@ -163,7 +163,7 @@ func submit(t *testing.T, m *Module, name string, g *discord.Guild) (string, err
 	e, _ := coretest.Modal(t, nameID, map[string]string{"name": name}, nil)
 	e.Client().Caches = cache.New(cache.WithCaches(cache.FlagGuilds))
 	if g != nil {
-		e.Client().Caches.AddGuild(*g)
+		e.Client().Caches.AddGuild(discord.CacheGuild{Guild: *g})
 	}
 	var got discord.MessageUpdate
 	e.Respond = func(_ discord.InteractionResponseType, d discord.InteractionResponseData, _ ...rest.RequestOpt) error {
@@ -222,8 +222,8 @@ func TestName(t *testing.T) {
 	// launch sends nothing.
 	renamed := g
 	renamed.Name = "silcord hq"
-	m.OnEvent(&events.GuildUpdate{Guild: renamed, OldGuild: g})
-	m.OnEvent(&events.GuildUpdate{Guild: g, OldGuild: g})
+	m.OnEvent(&events.GuildUpdate{Guild: renamed, OldGuild: discord.CacheGuild{Guild: g}})
+	m.OnEvent(&events.GuildUpdate{Guild: g, OldGuild: discord.CacheGuild{Guild: g}})
 	m.refresh(discord.Guild{ID: 99, Name: "x"})
 	for range 100 {
 		if w.got("silcord", "title") == "silcord hq" {

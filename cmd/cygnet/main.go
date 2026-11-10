@@ -314,7 +314,8 @@ func run(log *slog.Logger) error {
 		if client == nil {
 			return discord.Guild{}, false
 		}
-		return client.Caches.Guild(id)
+		g, ok := client.Caches.Guild(id)
+		return g.Guild, ok
 	}, func(i discord.Interaction) bool { return router.Admin(i) }, log).Flock(fleet))
 	// The key sealed sign ins are opened with (tools/sealkey): without it,
 	// nobody can ask to be added when their launch opens.
@@ -637,9 +638,15 @@ type members struct {
 	quiet  rest.Client
 }
 
-func (m members) Guilds() []discord.Guild { return slices.Collect(m.client().Caches.Guilds()) }
-func (m members) Rest() rest.Rest         { return m.client().Rest }
-func (m members) Quiet() rest.Client      { return m.quiet }
+func (m members) Guilds() []discord.Guild {
+	var gs []discord.Guild
+	for g := range m.client().Caches.Guilds() {
+		gs = append(gs, g.Guild)
+	}
+	return gs
+}
+func (m members) Rest() rest.Rest    { return m.client().Rest }
+func (m members) Quiet() rest.Client { return m.quiet }
 
 // edge is the Worker at cygnet.lol that /launch registers with,
 // if CYGNET_EDGE_URL and CYGNET_EDGE_TOKEN (the Worker's ADMIN_TOKEN) are set.

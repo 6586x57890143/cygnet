@@ -5,7 +5,7 @@ go 1.27.2
 require (
 	github.com/6586x57890143/cygnet/link v0.0.0
 	github.com/coder/websocket v1.8.15
-	github.com/disgoorg/disgo v0.19.6
+	github.com/disgoorg/disgo v0.20.0
 	github.com/disgoorg/omit v1.0.0
 	github.com/disgoorg/snowflake/v2 v2.0.3
 	github.com/icholy/digest v1.2.0
