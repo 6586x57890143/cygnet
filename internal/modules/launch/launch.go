@@ -313,7 +313,7 @@ func (m *Module) named(ctx context.Context, e *events.ModalSubmitInteractionCrea
 	if err != nil {
 		return err
 	}
-	if err := m.edge.push(ctx, l, g); err != nil {
+	if err := m.edge.push(ctx, l, g.Guild); err != nil {
 		return fmt.Errorf("%w: %w", core.Tell(refusalEdge(err)), err)
 	}
 	card, err := m.panel(ctx, g.ID, "✓ **"+g.Name+"** has its page; its name and picture follow the server when they change")
