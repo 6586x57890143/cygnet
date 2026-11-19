@@ -28,6 +28,11 @@ func birdsIn(t *testing.T, mode string) (*Module, *guildFake, snowflake.ID) {
 	return m, g, reports
 }
 
+// declares sets what skua's manifest says it needs.
+func declares(m *Module, p discord.Permissions) {
+	m.fleet.(*fakeFleet).answers["skua"] = link.Manifest{App: skuaApp.String(), Perms: fmt.Sprint(int64(p))}
+}
+
 func chanID(g *guildFake, name string) snowflake.ID {
 	for _, c := range g.chans {
 		if bare(c.name) == name && c.typ != discord.ChannelTypeGuildCategory {
@@ -115,12 +120,13 @@ func TestRefusedProposed(t *testing.T) {
 
 func TestRefusedActed(t *testing.T) {
 	m, g, reports := birdsIn(t, Act)
+	declares(m, discord.PermissionSendMessages)
 	rules := chanID(g, "rules")
 	// skua's own overwrite on #rules lets it add reactions and keeps it
 	// from attaching files; a grant has to keep both.
 	for i, c := range g.chans {
 		if c.id == rules {
-			g.chans[i].ows = append(g.chans[i].ows, discord.RolePermissionOverwrite{RoleID: skuaRole, Allow: discord.PermissionAddReactions, Deny: discord.PermissionAttachFiles | discord.PermissionSendMessages})
+			g.chans[i].ows = append(g.chans[i].ows, discord.RolePermissionOverwrite{RoleID: skuaRole, Allow: discord.PermissionAddReactions, Deny: discord.PermissionAttachFiles})
 		}
 	}
 	// #rules denies everyone sending; server wide skua may, so the channel
@@ -145,6 +151,7 @@ func TestRefusedActed(t *testing.T) {
 
 	// A grant Discord refuses is reported as such.
 	m, g, reports = birdsIn(t, Act)
+	declares(m, discord.PermissionSendMessages)
 	g.fail["overwrite"] = errBoom
 	if out, _ := refused(t, m, chanID(g, "rules"), perms.MessageSend); out["did"] != "reported" {
 		t.Fatalf("refused grant: %v", out)
@@ -157,6 +164,68 @@ func TestRefusedActed(t *testing.T) {
 }
 
 var errBoom = &link.Error{Code: link.Internal}
+
+// Act grants on its own only what a bird declares, nothing that punishes or
+// reshapes the server, and never over an admin's deny on the bird itself:
+// a member can cause a refusal, so they must not cause the grant. The rest
+// is proposed, for an admin to press.
+func TestActProposesWhatItWontGrant(t *testing.T) {
+	rules := func(g *guildFake) snowflake.ID { return chanID(g, "rules") }
+	for name, c := range map[string]struct {
+		declared discord.Permissions
+		ownDeny  bool
+		op       perms.Op
+		channel  bool
+	}{
+		"undeclared":        {0, false, perms.MessageSend, true},
+		"admin denied skua": {discord.PermissionSendMessages, true, perms.MessageSend, true},
+		"a ban":             {discord.PermissionBanMembers, false, perms.MemberBan, false},
+	} {
+		m, g, reports := birdsIn(t, Act)
+		declares(m, c.declared)
+		if c.ownDeny {
+			for i, ch := range g.chans {
+				if ch.id == rules(g) {
+					g.chans[i].ows = append(g.chans[i].ows, discord.RolePermissionOverwrite{RoleID: skuaRole, Deny: discord.PermissionSendMessages})
+				}
+			}
+		}
+		var at snowflake.ID
+		if c.channel {
+			at = rules(g)
+		}
+		out, err := refused(t, m, at, c.op)
+		if err != nil || out["did"] != "proposed" {
+			t.Fatalf("%s: %v, %v", name, out, err)
+		}
+		if len(rowButtons(g.posts(reports)[0].Components)) != 1 {
+			t.Fatalf("%s: no grant button for an admin", name)
+		}
+		if g.roles[2].Permissions.Has(discord.PermissionBanMembers) {
+			t.Fatalf("%s: skua's role was widened", name)
+		}
+		for _, ch := range g.chans {
+			for _, o := range ch.ows {
+				if ch.id == rules(g) && o.RoleID == skuaRole && o.Allow.Has(discord.PermissionSendMessages) {
+					t.Fatalf("%s: overwrite granted %+v", name, o)
+				}
+			}
+		}
+	}
+}
+
+// noCalls fails the test by panicking on any call to Discord.
+type noCalls struct{ Grants }
+
+// A refusal in a server cygnet doesn't keep costs no call to Discord.
+func TestRefusedElsewhereAsksNothing(t *testing.T) {
+	m, _, _ := birdsIn(t, Act)
+	m.grants.rest = noCalls{}
+	out, err := m.Missing(context.Background(), "skua", json.RawMessage(`{"guild":"999","op":"message.send"}`))
+	if err != nil || out.(map[string]string)["lacks"] != "0" {
+		t.Fatalf("%v, %v", out, err)
+	}
+}
 
 // A report posted while reports were containers can't drop the Components
 // V2 flag, so pressing its grant edits it as a container still.
@@ -204,9 +273,6 @@ func TestRefusedRefusals(t *testing.T) {
 		"guild":   `{"guild":"x","op":"message.send"}`,
 		"channel": `{"guild":"3","channel":"x","op":"message.send"}`,
 		"op":      `{"guild":"3","op":"message.fly"}`,
-		"elsewhere": func() string {
-			return `{"guild":"999","channel":"` + chanID(g, "general").String() + `","op":"message.send"}`
-		}(),
 	} {
 		if _, err := m.Missing(context.Background(), "skua", json.RawMessage(body)); err == nil {
 			t.Errorf("%s: no refusal", name)
@@ -219,6 +285,7 @@ func TestRefusedRefusals(t *testing.T) {
 	if out, err := refused(t, m, chanID(g, "general"), perms.MessageEmbed); err != nil || out["lacks"] != "16384" {
 		t.Fatalf("with its guild: %v, %v", out, err)
 	}
+	m.grants.seen = nil // asked once a window: forget the ask above
 	body, _ := json.Marshal(perms.Missing{Channel: chanID(g, "general").String(), Op: perms.MessageEmbed})
 	if out, err := m.Missing(context.Background(), "skua", body); err != nil || out.(map[string]string)["lacks"] != "16384" {
 		t.Fatalf("channel alone: %v, %v", out, err)
@@ -253,7 +320,7 @@ func TestFleetIntents(t *testing.T) {
 // it away, she gives it back herself, as she would a bird.
 func TestRefusedCygnet(t *testing.T) {
 	m, g, reports := birdsIn(t, Act)
-	m.want = func() discord.Permissions { return discord.PermissionCreateInstantInvite }
+	m.want = func() discord.Permissions { return discord.PermissionCreateInstantInvite | discord.PermissionSendMessages }
 	m.grants.self = self
 	body, _ := json.Marshal(perms.Missing{Guild: guild.String(), Op: perms.MemberBan})
 	out, err := m.Missing(context.Background(), cygnet, body)
@@ -276,14 +343,9 @@ func TestRefusedCygnet(t *testing.T) {
 		t.Fatalf("cygnet's role was touched: %+v", g.roles[1])
 	}
 
-	// #rules denies her sending, which she has server wide: given back on
-	// the channel, for her role.
+	// #rules denies everyone sending, which she has server wide: given
+	// back on the channel, for her role.
 	rules := chanID(g, "rules")
-	for i, c := range g.chans {
-		if c.id == rules {
-			g.chans[i].ows = append(g.chans[i].ows, discord.RolePermissionOverwrite{RoleID: selfRole, Deny: discord.PermissionSendMessages})
-		}
-	}
 	body, _ = json.Marshal(perms.Missing{Guild: guild.String(), Channel: rules.String(), Op: perms.MessageSend})
 	if out, err := m.Missing(context.Background(), cygnet, body); err != nil || out.(map[string]string)["did"] != "granted" {
 		t.Fatalf("in a channel: %v, %v", out, err)
