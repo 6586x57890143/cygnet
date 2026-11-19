@@ -193,7 +193,7 @@ func run(log *slog.Logger) error {
 	// refusal watcher (link/perms): Discord refusing her for want of a
 	// permission, from any module, goes to provision as the bird cygnet,
 	// which reports it to the server's admins or gives it back herself.
-	watched := &http.Client{Timeout: 20 * time.Second, Transport: perms.Watch(nil, func(m perms.Missing) {
+	watched := &http.Client{Timeout: 20 * time.Second, Transport: guard.Brake(perms.Watch(nil, func(m perms.Missing) {
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
@@ -204,6 +204,8 @@ func run(log *slog.Logger) error {
 				}
 			}
 		}()
+	}), func(n int) {
+		log.Error("discord: braked, too many refused requests; holding off so the ip isn't banned", "count", n)
 	})}
 	// Backing the birds (docs/support.md): the wallets payments go to,
 	// checked so a typo fails here rather than publishing an address nobody
