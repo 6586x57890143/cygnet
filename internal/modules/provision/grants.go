@@ -71,6 +71,25 @@ type lack struct {
 	// owAllow and owDeny are the role's overwrite on the channel now: a
 	// grant writes it whole, so it keeps what it had.
 	owAllow, owDeny discord.Permissions
+	// want is what the bird's manifest declares it needs.
+	want discord.Permissions
+}
+
+// neverAuto is what act mode never hands a bird on its own word, however
+// its manifest reads: the power to punish, to reshape the server, or to
+// ping it all. A refusal for any of it is proposed, for a person to press.
+const neverAuto = discord.PermissionAdministrator | discord.PermissionBanMembers | discord.PermissionKickMembers |
+	discord.PermissionModerateMembers | discord.PermissionManageRoles | discord.PermissionManageGuild |
+	discord.PermissionManageChannels | discord.PermissionManageWebhooks | discord.PermissionMentionEveryone
+
+// auto is whether act mode may grant l without a person: only what the
+// bird's manifest declares, nothing in neverAuto, and never over a deny an
+// admin put on the bird's own role in that channel. A refusal is something
+// a member can cause (run a command where a bird was denied), so without
+// these a member could have cygnet undo an admin's choice.
+func (l lack) auto() bool {
+	lacks := discord.Permissions(l.lacks)
+	return lacks&^l.want == 0 && lacks&neverAuto == 0 && !(l.inChannel && l.owDeny&lacks != 0)
 }
 
 // Missing answers "cygnet.missing": a bird Discord refused says where and
@@ -114,16 +133,32 @@ func (m *Module) Missing(ctx context.Context, bird string, body json.RawMessage)
 	case err != nil:
 		return nil, link.Err(link.Invalid, "guild")
 	}
+	if bird != cygnet && !m.serves(guild) {
+		// Not a server cygnet keeps: nothing to grant, and asking Discord
+		// about it would only draw refusals of her own.
+		return map[string]string{"lacks": "0"}, nil
+	}
+	// Deduplicated before assess, which costs three reads: a bird refused
+	// on every message in a channel asks once per again.
+	if !m.fresh(lack{guild: guild, bird: bird, channel: channel, op: in.Op}, time.Now()) {
+		return map[string]string{"lacks": "0"}, nil
+	}
 	l, err := m.assess(ctx, r, guild, channel, bird, in.Op)
 	if err != nil {
 		return nil, err
 	}
 	out := map[string]string{"lacks": strconv.FormatUint(uint64(l.lacks), 10)}
-	if l.lacks == 0 || !m.fresh(l, time.Now()) {
+	if l.lacks == 0 {
 		return out, nil
 	}
 	out["did"] = m.answer(ctx, r, l)
 	return out, nil
+}
+
+// serves is whether guild is one cygnet keeps.
+func (m *Module) serves(guild snowflake.ID) bool {
+	_, ok := m.kept.Load(guild)
+	return ok
 }
 
 // fresh is whether l hasn't been reported within again, and marks it.
@@ -151,6 +186,7 @@ func (m *Module) assess(ctx context.Context, r Grants, guild, channel snowflake.
 		m.grants.mu.Lock()
 		b.App = m.grants.self
 		m.grants.mu.Unlock()
+		b.Want = m.want()
 	} else if b.manifest(ctx, m.fleet); b.Err != "" {
 		return lack{}, link.Err(link.Invalid, "cygnet couldn't read your manifest")
 	}
@@ -162,7 +198,7 @@ func (m *Module) assess(ctx context.Context, r Grants, guild, channel snowflake.
 	if err != nil {
 		return lack{}, err
 	}
-	l := lack{guild: guild, bird: bird, op: op}
+	l := lack{guild: guild, bird: bird, op: op, want: b.Want}
 	s := perms.Server{ID: guild.String()}
 	for _, role := range roles {
 		s.Roles = append(s.Roles, perms.Role{ID: role.ID.String(), Perms: perms.Permissions(role.Permissions)})
@@ -224,7 +260,7 @@ func (m *Module) answer(ctx context.Context, r Grants, l lack) string {
 		self := m.grants.self
 		m.grants.mu.Unlock()
 		card = l.self(install(self, m.selfWant(l), l.guild))
-	case mode == Act && l.role != 0:
+	case mode == Act && l.role != 0 && l.auto():
 		if err := m.grant(ctx, r, l); err != nil {
 			m.warn("granting a bird", l.guild, err)
 			card = l.card(brand.ColorError, false, "✗ couldn't: "+refusal(err))
@@ -233,8 +269,9 @@ func (m *Module) answer(ctx context.Context, r Grants, l lack) string {
 			card = l.granted(automatic)
 		}
 	default:
-		card = l.card(brand.ColorWarn, mode == Propose && l.role != 0, "")
-		if mode == Propose {
+		offer := (mode == Propose || mode == Act) && l.role != 0
+		card = l.card(brand.ColorWarn, offer, "")
+		if offer {
 			did = "proposed"
 		}
 	}
