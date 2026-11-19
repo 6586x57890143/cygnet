@@ -89,7 +89,7 @@ const neverAuto = discord.PermissionAdministrator | discord.PermissionBanMembers
 // these a member could have cygnet undo an admin's choice.
 func (l lack) auto() bool {
 	lacks := discord.Permissions(l.lacks)
-	return lacks&^l.want == 0 && lacks&neverAuto == 0 && !(l.inChannel && l.owDeny&lacks != 0)
+	return lacks&^l.want == 0 && lacks&neverAuto == 0 && (!l.inChannel || l.owDeny&lacks == 0)
 }
 
 // Missing answers "cygnet.missing": a bird Discord refused says where and
